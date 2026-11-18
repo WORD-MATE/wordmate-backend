@@ -43,10 +43,13 @@ describe('DataGSM 로그인·토큰 재발급·로그아웃', () => {
     getProfile: async () => profile,
   };
 
+  let loginCount = 0;
+  // 로그인은 IP당 1분 10회 제한이라 요청마다 IP를 바꾼다
   const login = (platform: 'IOS' | 'WEB' = 'IOS', redirectUri = TEST_REDIRECT_URI) =>
     inject(app, {
       method: 'POST',
       url: '/auth/datagsm',
+      remoteAddress: `10.0.0.${++loginCount}`,
       headers: { 'x-client-platform': platform },
       payload: { code: 'auth-code', codeVerifier: 'v'.repeat(43), redirectUri },
     });
