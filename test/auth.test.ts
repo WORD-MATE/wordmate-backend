@@ -31,9 +31,9 @@ class AuthTestController {
   }
 }
 
-const student: AuthUser = { userId: 's', role: 'STUDENT', isAdmin: false };
-const teacher: AuthUser = { userId: 't', role: 'TEACHER', isAdmin: false };
-const adminStudent: AuthUser = { userId: 'a', role: 'STUDENT', isAdmin: true };
+const student: AuthUser = { userId: 's', role: 'STUDENT', isAdmin: false, deviceId: 'd' };
+const teacher: AuthUser = { userId: 't', role: 'TEACHER', isAdmin: false, deviceId: 'd' };
+const adminStudent: AuthUser = { userId: 'a', role: 'STUDENT', isAdmin: true, deviceId: 'd' };
 
 describe('권한 가드', () => {
   let app: NestFastifyApplication;

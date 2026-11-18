@@ -4,6 +4,7 @@ export interface AuthUser {
   userId: string;
   role: Role;
   isAdmin: boolean;
+  deviceId: string;
 }
 
 declare module 'fastify' {

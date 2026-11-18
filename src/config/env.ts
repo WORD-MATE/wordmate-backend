@@ -21,6 +21,11 @@ export const envSchema = z.object({
   CORS_ORIGINS: commaList(z.url()),
   DATABASE_URL: z.url({ protocol: /^mysql$/ }),
   VALKEY_URL: z.url({ protocol: /^rediss?$/ }),
+  JWT_PRIVATE_KEY: z
+    .string()
+    .min(1)
+    .transform((pem) => pem.replaceAll(String.raw`\n`, '\n')),
+  JWT_KEY_ID: z.string().min(1).default('k1'),
   DATAGSM_CLIENT_ID: z.string().min(1),
   DATAGSM_REDIRECT_URIS: commaList(z.url()).refine(
     (uris) => uris.length > 0,

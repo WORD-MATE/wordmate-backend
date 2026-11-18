@@ -19,7 +19,8 @@
     "test:e2e": "vitest run --project e2e",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "jwt:keygen": "node scripts/generate-jwt-key.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.5",

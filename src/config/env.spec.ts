@@ -4,6 +4,7 @@ import { validateEnv } from './env.js';
 const required = {
   DATABASE_URL: 'mysql://user:pass@localhost:3306/wordmate',
   VALKEY_URL: 'redis://localhost:6379',
+  JWT_PRIVATE_KEY: 'pem',
   DATAGSM_CLIENT_ID: 'client-1',
   DATAGSM_REDIRECT_URIS: 'wordmate://callback, http://localhost:5173/callback',
 };
@@ -34,7 +35,14 @@ describe('validateEnv', () => {
   });
 
   it('필수 값이 없으면 항목 이름을 담아 에러를 던진다', () => {
-    expect(() => validateEnv({})).toThrow(/DATABASE_URL[\s\S]*VALKEY_URL[\s\S]*DATAGSM_CLIENT_ID/);
+    expect(() => validateEnv({})).toThrow(
+      /DATABASE_URL[\s\S]*VALKEY_URL[\s\S]*JWT_PRIVATE_KEY[\s\S]*DATAGSM_CLIENT_ID/,
+    );
+  });
+
+  it('JWT_PRIVATE_KEY의 \\n 문자열을 실제 줄바꿈으로 바꾼다', () => {
+    const env = validateEnv({ ...required, JWT_PRIVATE_KEY: String.raw`a\nb` });
+    expect(env.JWT_PRIVATE_KEY).toBe('a\nb');
   });
 
   it('URL 프로토콜이 틀리면 에러를 던진다', () => {
