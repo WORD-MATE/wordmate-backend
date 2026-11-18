@@ -17,9 +17,9 @@ describe('GET /health', () => {
     await app.close();
   });
 
-  it('200과 { status: "ok" }를 돌려준다', async () => {
+  it('DB와 Valkey가 살아 있으면 200을 돌려준다', async () => {
     const res = await app.inject({ method: 'GET', url: '/health' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ status: 'ok' });
+    expect(res.json()).toEqual({ status: 'ok', checks: { db: 'up', valkey: 'up' } });
   });
 });
