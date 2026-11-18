@@ -1,9 +1,7 @@
-import { existsSync } from 'node:fs';
 import { defineConfig } from 'drizzle-kit';
+import { loadEnvFiles } from './src/config/env.js';
 
-for (const file of ['.env.local', '.env']) {
-  if (existsSync(file)) process.loadEnvFile(file);
-}
+loadEnvFiles();
 
 export default defineConfig({
   dialect: 'mysql',

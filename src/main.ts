@@ -1,24 +1,28 @@
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module.js';
 import { createFastifyAdapter, setupApp } from './app.setup.js';
-import type { Env } from './config/env.js';
+import { loadEnvFiles, validateEnv } from './config/env.js';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule, createFastifyAdapter());
+  loadEnvFiles();
+  const env = validateEnv(process.env);
+
+  const app = await NestFactory.create<NestFastifyApplication>(
+    AppModule,
+    createFastifyAdapter(env),
+    { bufferLogs: true },
+  );
   app.enableShutdownHooks();
+  await setupApp(app, {
+    swagger: env.NODE_ENV !== 'production',
+    corsOrigins: env.CORS_ORIGINS,
+  });
 
-  const config = app.get(ConfigService<Env, true>);
-  setupApp(app, { swagger: config.get('NODE_ENV', { infer: true }) !== 'production' });
-
-  const host = config.get('HOST', { infer: true });
-  const port = config.get('PORT', { infer: true });
-
-  await app.listen(port, host);
-  Logger.log(`서버 시작: http://localhost:${port}`, 'Bootstrap');
+  await app.listen(env.PORT, env.HOST);
+  Logger.log(`서버 시작: http://localhost:${env.PORT}`, 'Bootstrap');
 }
 
 await bootstrap();
