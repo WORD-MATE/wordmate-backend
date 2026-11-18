@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AccessTokenService } from '../src/common/auth/access-token.service.js';
 import { Auth } from '../src/common/auth/auth.decorator.js';
 import type { AuthUser } from '../src/common/auth/auth-user.js';
 import { createTestApp, inject } from './support/create-test-app.js';
@@ -31,40 +32,51 @@ class AuthTestController {
   }
 }
 
-const student: AuthUser = { userId: 's', role: 'STUDENT', isAdmin: false };
-const teacher: AuthUser = { userId: 't', role: 'TEACHER', isAdmin: false };
-const adminStudent: AuthUser = { userId: 'a', role: 'STUDENT', isAdmin: true };
+const student: AuthUser = { userId: 's', role: 'STUDENT', isAdmin: false, deviceId: 'd' };
+const teacher: AuthUser = { userId: 't', role: 'TEACHER', isAdmin: false, deviceId: 'd' };
+const adminStudent: AuthUser = { userId: 'a', role: 'STUDENT', isAdmin: true, deviceId: 'd' };
 
 describe('권한 가드', () => {
   let app: NestFastifyApplication;
 
-  const call = (url: string, user?: AuthUser) =>
+  const call = async (url: string, user?: AuthUser) =>
     inject(app, {
       url: `/test-auth/${url}`,
-      headers: user ? { 'x-test-user': JSON.stringify(user) } : {},
+      headers: user
+        ? { authorization: `Bearer ${await app.get(AccessTokenService).sign(user)}` }
+        : {},
     });
 
   beforeAll(async () => {
-    app = await createTestApp({
-      controllers: [AuthTestController],
-      beforeInit: (nest) => {
-        nest
-          .getHttpAdapter()
-          .getInstance()
-          .addHook('onRequest', async (request) => {
-            const header = request.headers['x-test-user'];
-            if (typeof header === 'string') request.user = JSON.parse(header);
-          });
-      },
-    });
+    app = await createTestApp({ controllers: [AuthTestController] });
   });
 
   afterAll(async () => {
     await app.close();
   });
 
-  it('ALL은 로그인 없이 통과한다', async () => {
+  it('ALL은 로그인 없이 통과하고, 잘못된 토큰이 붙어도 비로그인으로 처리한다', async () => {
     expect((await call('public')).statusCode).toBe(200);
+    const res = await inject(app, {
+      url: '/test-auth/public',
+      headers: { authorization: 'Bearer broken' },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('로그인이 필요한 API에 잘못된 토큰을 보내면 401 AUTH_INVALID', async () => {
+    const res = await inject(app, {
+      url: '/test-auth/default',
+      headers: { authorization: 'Bearer broken' },
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().code).toBe('AUTH_INVALID');
+  });
+
+  it('웹은 __Host-at 쿠키로 인증한다', async () => {
+    const token = await app.get(AccessTokenService).sign(teacher);
+    const res = await inject(app, { url: '/test-auth/default', cookies: { '__Host-at': token } });
+    expect(res.statusCode).toBe(200);
   });
 
   it('@Auth가 없으면 로그인이 필요하다', async () => {

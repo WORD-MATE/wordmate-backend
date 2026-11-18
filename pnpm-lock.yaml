@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@fastify/cookie':
+        specifier: 11.1.5
+        version: 11.1.5
       '@fastify/helmet':
         specifier: 13.2.0
         version: 13.2.0
@@ -47,6 +50,9 @@ importers:
       ioredis:
         specifier: 6.0.0
         version: 6.0.0
+      jose:
+        specifier: 6.2.17
+        version: 6.2.17
       mysql2:
         specifier: 3.24.6
         version: 3.24.6(@types/node@26.6.6)
@@ -213,6 +219,9 @@ packages:
 
   '@fastify/ajv-compiler@4.0.7':
     resolution: {integrity: sha512-VP0yIfwlc1ohj733keYDqyHm1VWeP9VQxYomunhr90jkC4aNNibbkrRiaNgPgqj1ORxUenILR4qzA/ppYBNAtQ==}
+
+  '@fastify/cookie@11.1.5':
+    resolution: {integrity: sha512-hs7e0otf7n/lJMpt63EFdQb5/u8kO6DeexEtLPVTybSdItC6SwJ1O0vtTyWvKNR70LZcHLlsUr/y3jFpqtyWRA==}
 
   '@fastify/cors@11.4.1':
     resolution: {integrity: sha512-WuPATGGyc3YzpOfumovBJ4xC2RPBBFyDFElwldFRBCgM2G27xH9DnXTho9+nc2Ho6gLD1hKTetdOntR+G38+7A==}
@@ -1660,6 +1669,9 @@ packages:
   jackspeak@3.4.3:
     resolution: {integrity: sha512-OGlZQpz2yfahA/Rd1Y8Cd9SIEsqvXkLVoSw/cgwhnhFMDbsQFeZYoJJ7bIZBS9BcamUW96asq/npPWugM+RQBw==}
 
+  jose@6.2.17:
+    resolution: {integrity: sha512-wOuK9V1yujQFH5S0ZWmLcDZN7+IKh9bUCC2ZPCf2HDlol3WWHy+PPyNjEI75FXRLMp3vDKQcupP59xhVU95hcg==}
+
   joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
     engines: {node: '>=10'}
@@ -2521,6 +2533,11 @@ snapshots:
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
       fast-uri: 4.2.3
+
+  '@fastify/cookie@11.1.5':
+    dependencies:
+      cookie: 2.0.2
+      fastify-plugin: 6.0.1
 
   '@fastify/cors@11.4.1':
     dependencies:
@@ -3669,6 +3686,8 @@ snapshots:
       '@isaacs/cliui': 8.0.2
     optionalDependencies:
       '@pkgjs/parseargs': 0.11.0
+
+  jose@6.2.17: {}
 
   joycon@3.1.1: {}
 

@@ -44,6 +44,9 @@ jobs:
           docker run -d --name app -p 3000:3000 \
             -e DATABASE_URL=mysql://u:p@127.0.0.1:3399/none \
             -e VALKEY_URL=redis://127.0.0.1:6399 \
+            -e JWT_PRIVATE_KEY="$(openssl genpkey -algorithm ed25519)" \
+            -e DATAGSM_CLIENT_ID=ci \
+            -e DATAGSM_REDIRECT_URIS=wordmate://oauth/callback \
             wordmate-backend:ci
           for i in $(seq 1 20); do
             status=$(curl -s -o /dev/null -w '%{http_code}' localhost:3000/health || true)
