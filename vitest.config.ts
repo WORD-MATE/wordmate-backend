@@ -6,7 +6,22 @@ export default defineConfig({
     decorator: { legacy: true, emitDecoratorMetadata: true },
   },
   test: {
-    include: ['src/**/*.spec.ts', 'test/**/*.test.ts'],
     environment: 'node',
+    projects: [
+      {
+        extends: true,
+        test: { name: 'unit', include: ['src/**/*.spec.ts'] },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'e2e',
+          include: ['test/**/*.test.ts'],
+          globalSetup: ['test/support/global-setup.ts'],
+          hookTimeout: 120_000,
+          testTimeout: 30_000,
+        },
+      },
+    ],
   },
 });

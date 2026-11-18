@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { validateEnv } from './config/env.js';
+import { InfraModule } from './infra/infra.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 
 @Module({
@@ -11,6 +12,7 @@ import { HealthModule } from './modules/health/health.module.js';
       envFilePath: ['.env.local', '.env'],
       validate: validateEnv,
     }),
+    InfraModule,
     HealthModule,
   ],
 })
