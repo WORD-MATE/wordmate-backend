@@ -28,7 +28,9 @@ describe('users 테이블', () => {
       datagsmId: 'dg-1',
       isAdmin: false,
       status: 'ACTIVE',
-      deletedAt: null,
+      avatarId: 'default',
+      totalXp: 0,
+      suspendedUntil: null,
     });
     expect(row?.createdAt).toBeInstanceOf(Date);
   });

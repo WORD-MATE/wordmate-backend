@@ -3,7 +3,7 @@ type Values<T extends readonly string[]> = T[number];
 export const ROLE = ['STUDENT', 'TEACHER'] as const;
 export type Role = Values<typeof ROLE>;
 
-export const ACCOUNT_STATUS = ['ACTIVE', 'SUSPENDED', 'WITHDRAWN'] as const;
+export const ACCOUNT_STATUS = ['ACTIVE', 'SUSPENDED', 'INACTIVE', 'WITHDRAWN'] as const;
 export type AccountStatus = Values<typeof ACCOUNT_STATUS>;
 
 export const PLATFORM = ['IOS', 'ANDROID', 'WEB'] as const;
