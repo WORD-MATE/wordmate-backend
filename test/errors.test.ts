@@ -1,9 +1,11 @@
 import { Body, Controller, Get, HttpStatus, Post } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { Auth } from '../src/common/auth/auth.decorator.js';
 import { AppException } from '../src/common/errors/app-exception.js';
 import { createTestApp } from './support/create-test-app.js';
 
+@Auth('ALL')
 @Controller('test-errors')
 class ErrorTestController {
   @Get('app')

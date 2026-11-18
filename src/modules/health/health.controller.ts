@@ -2,6 +2,7 @@ import { Controller, Get, HttpStatus, Inject } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { z } from 'zod';
+import { Auth } from '../../common/auth/auth.decorator.js';
 import { AppException } from '../../common/errors/app-exception.js';
 import { ZodResponse } from '../../common/zod/decorators.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
@@ -15,6 +16,7 @@ const HealthResponse = z.object({
 });
 type HealthResponse = z.infer<typeof HealthResponse>;
 
+@Auth('ALL')
 @Controller('health')
 export class HealthController {
   constructor(

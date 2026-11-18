@@ -2,6 +2,7 @@ import { Controller, Get, Post } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { Auth } from '../src/common/auth/auth.decorator.js';
 import { ZodBody, ZodQuery, ZodResponse } from '../src/common/zod/decorators.js';
 import { createTestApp } from './support/create-test-app.js';
 
@@ -9,6 +10,7 @@ const CreateSample = z.object({ name: z.string().min(1).max(30), count: z.number
 const ListQuery = z.object({ size: z.coerce.number().int().max(50).default(20) });
 const Sample = z.object({ name: z.string(), count: z.number() }).meta({ id: 'ZodTestSample' });
 
+@Auth('ALL')
 @Controller('test-zod')
 class ZodTestController {
   @Post()
