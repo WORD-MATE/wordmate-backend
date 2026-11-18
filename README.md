@@ -21,12 +21,12 @@
 
 ```bash
 pnpm install
-cp .env.example .env.local
-pnpm jwt:keygen >> .env.local   # DATAGSM_CLIENT_ID도 채우기
 docker compose up -d
 pnpm db:migrate
 pnpm dev
 ```
+
+실행 전에 프로젝트 루트의 `.env`(또는 `.env.local`)에 아래 [환경 변수](#환경-변수)의 필수 값을 채웁니다. `JWT_PRIVATE_KEY`는 `pnpm jwt:keygen`으로 만듭니다.
 
 `http://localhost:3000/health`가 `{"status":"ok",...}`를 돌려주면 정상입니다. DB나 Valkey에 연결되지 않으면 503을 돌려줍니다.
 
