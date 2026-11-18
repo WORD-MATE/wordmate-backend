@@ -1,0 +1,35 @@
+# 의존성
+node_modules/
+.pnpm-store/
+
+# 빌드 결과
+dist/
+build/
+*.tsbuildinfo
+
+# 테스트
+coverage/
+
+# 환경 변수·비밀값
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# 로그
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS·에디터
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Claude Code 로컬 설정
+.claude/settings.local.json
