@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import { Reflector } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -32,6 +33,7 @@ export async function setupApp(
   options: { swagger: boolean; corsOrigins: string[] },
 ): Promise<void> {
   app.useLogger(new PinoNestLogger(app.getHttpAdapter().getInstance().log));
+  await app.register(cookie);
   await app.register(helmet, { contentSecurityPolicy: false });
   app.enableCors({
     origin: options.corsOrigins.length > 0 ? options.corsOrigins : false,
