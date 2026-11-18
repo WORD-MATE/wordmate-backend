@@ -1,0 +1,15 @@
+name: PR Label Check
+
+on:
+  pull_request:
+    types: [opened, reopened, labeled, unlabeled, synchronize]
+
+jobs:
+  require-label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 라벨 확인
+        if: ${{ toJSON(github.event.pull_request.labels) == '[]' }}
+        run: |
+          echo "::error::PR에 라벨을 1개 이상 붙여주세요."
+          exit 1
