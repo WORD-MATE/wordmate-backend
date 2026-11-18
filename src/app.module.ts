@@ -5,6 +5,7 @@ import { validateEnv } from './config/env.js';
 import { InfraModule } from './infra/infra.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { PoliciesModule } from './modules/policies/policies.module.js';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { HealthModule } from './modules/health/health.module.js';
     CommonModule,
     HealthModule,
     AuthModule,
+    PoliciesModule,
   ],
 })
 export class AppModule {}
