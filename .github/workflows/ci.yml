@@ -30,3 +30,25 @@ jobs:
       - run: pnpm test
       - run: pnpm test:e2e
       - run: pnpm build
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - run: docker build -t wordmate-backend:ci .
+
+      - name: 컨테이너 실행 확인
+        run: |
+          docker run -d --name app -p 3000:3000 \
+            -e DATABASE_URL=mysql://u:p@127.0.0.1:3399/none \
+            -e VALKEY_URL=redis://127.0.0.1:6399 \
+            wordmate-backend:ci
+          for i in $(seq 1 20); do
+            status=$(curl -s -o /dev/null -w '%{http_code}' localhost:3000/health || true)
+            if [ "$status" = "503" ]; then echo "부팅 확인 (DB 없음 → 503)"; exit 0; fi
+            sleep 1
+          done
+          docker logs app
+          exit 1
