@@ -126,11 +126,12 @@ create(@ZodBody(CreatePack) body: z.infer<typeof CreatePack>) { ... }
 Valkey의 `app:config` 키(JSON)로 설정하며 서버는 5초마다 다시 읽습니다. 관리자 API가 생기기 전까지는 직접 설정합니다.
 
 ```bash
-valkey-cli SET app:config '{"maintenance":{"enabled":true,"message":"정기 점검","endsAt":"2026-12-01T00:00:00.000Z"},"minVersion":{"IOS":"1.2.0"},"storeUrl":{"IOS":"https://apps.apple.com/..."}}'
+valkey-cli SET app:config '{"maintenance":{"enabled":true,"message":"정기 점검","endsAt":"2026-12-01T00:00:00.000Z"},"minVersion":{"IOS":"1.2.0"},"latestVersion":{"IOS":"1.5.0"},"storeUrl":{"IOS":"https://apps.apple.com/..."}}'
 ```
 
 - 점검 중: 503 `MAINTENANCE` (`detail`: `message`, `endsAt`)
 - 최소 버전 미만: 426 `UPDATE_REQUIRED` (`detail.storeUrl`, 웹은 `null`)
+- `GET /app/status`는 점검 중에도 200으로 점검 정보와 업데이트 상태(`REQUIRED` / `RECOMMENDED` / `NONE`)를 돌려줍니다.
 
 ## Docker
 
@@ -148,3 +149,16 @@ docker run -p 3000:3000 -e DATABASE_URL=... -e VALKEY_URL=... wordmate-backend
 5. `POST /auth/logout`: 리프레시 토큰만 있으면 됨 (앱은 본문 `refreshToken`, 웹은 쿠키)
 
 웹은 토큰을 응답 본문 대신 HttpOnly 쿠키로 받습니다.
+
+## 약관
+
+관리자 API가 생기기 전까지는 `policies` 테이블에 직접 넣습니다.
+
+```sql
+INSERT INTO policies (id, type, version, title, content, required, require_reagreement, effective_at)
+VALUES (UUID_TO_BIN(UUID()), 'TERMS', '1.0', '서비스 이용약관', '# 이용약관 ...', true, false, NOW(3));
+```
+
+- 필수(`required`) 약관에 동의하지 않은 사용자는 로그인 `nextStep`이 `TERMS_AGREEMENT`이고, 동의 전까지 대부분의 API가 403 `TERMS_AGREEMENT_REQUIRED`
+- 새 버전을 넣을 때 `require_reagreement = true`면 기존 사용자도 다시 동의해야 함
+- 서버는 약관 목록을 1분 캐시합니다.
