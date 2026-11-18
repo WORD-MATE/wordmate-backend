@@ -10,9 +10,10 @@ import type { Env } from './config/env.js';
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, createFastifyAdapter());
   app.enableShutdownHooks();
-  setupApp(app);
 
   const config = app.get(ConfigService<Env, true>);
+  setupApp(app, { swagger: config.get('NODE_ENV', { infer: true }) !== 'production' });
+
   const host = config.get('HOST', { infer: true });
   const port = config.get('PORT', { infer: true });
 

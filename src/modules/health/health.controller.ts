@@ -1,16 +1,19 @@
 import { Controller, Get, HttpStatus, Inject } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
+import { z } from 'zod';
 import { AppException } from '../../common/errors/app-exception.js';
+import { ZodResponse } from '../../common/zod/decorators.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import { VALKEY } from '../../infra/valkey/valkey.module.js';
 
 type CheckResult = 'up' | 'down';
 
-interface HealthResponse {
-  status: 'ok';
-  checks: { db: CheckResult; valkey: CheckResult };
-}
+const HealthResponse = z.object({
+  status: z.literal('ok'),
+  checks: z.object({ db: z.literal('up'), valkey: z.literal('up') }),
+});
+type HealthResponse = z.infer<typeof HealthResponse>;
 
 @Controller('health')
 export class HealthController {
@@ -20,6 +23,7 @@ export class HealthController {
   ) {}
 
   @Get()
+  @ZodResponse(HealthResponse)
   async check(): Promise<HealthResponse> {
     const [db, valkey] = await Promise.all([
       probe(() => this.db.execute(sql`select 1`)),
@@ -34,7 +38,7 @@ export class HealthController {
         { checks },
       );
     }
-    return { status: 'ok', checks };
+    return { status: 'ok', checks: { db: 'up', valkey: 'up' } };
   }
 }
 

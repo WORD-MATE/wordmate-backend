@@ -10,7 +10,7 @@ export async function createTestApp(extra: ModuleMetadata = {}): Promise<NestFas
     imports: [AppModule, ...(extra.imports ?? [])],
   }).compile();
   const app = moduleRef.createNestApplication<NestFastifyApplication>(createFastifyAdapter());
-  setupApp(app);
+  setupApp(app, { swagger: true });
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
   return app;
