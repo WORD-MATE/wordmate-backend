@@ -7,8 +7,10 @@ import type { AuthUser } from '../../common/auth/auth-user.js';
 import { SkipTermsCheck } from '../../common/auth/terms.decorator.js';
 import { ZodBody, ZodResponse } from '../../common/zod/decorators.js';
 import { AgreementService } from './agreement.service.js';
+import { Me } from './me.schema.js';
 import { NextStepService } from './next-step.service.js';
 import { AgreementStatus, NextStepResponse, SubmitAgreements } from './users.schemas.js';
+import { UsersService } from './users.service.js';
 
 const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 
@@ -19,7 +21,16 @@ export class UsersController {
   constructor(
     private readonly agreements: AgreementService,
     private readonly nextStep: NextStepService,
+    private readonly users: UsersService,
   ) {}
+
+  @ApiOperation({ summary: '내 정보', description: '약관 동의 전에도 호출할 수 있음' })
+  @SkipTermsCheck()
+  @Get()
+  @ZodResponse(Me)
+  me(@Req() request: FastifyRequest) {
+    return this.users.me(currentUser(request).userId);
+  }
 
   @ApiOperation({ summary: '약관 동의 현황', description: '약관 동의 전에도 호출할 수 있음' })
   @SkipTermsCheck()
