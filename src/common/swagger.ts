@@ -1,5 +1,6 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { PLATFORM } from './enums.js';
 import { collectedComponents } from './zod/openapi-schema.js';
 
 export const SWAGGER_UI_PATH = 'swagger-ui';
@@ -12,6 +13,15 @@ export function setupSwagger(app: NestFastifyApplication): void {
     .setOpenAPIVersion('3.1.0')
     .addBearerAuth()
     .addCookieAuth('__Host-at')
+    .addGlobalParameters(
+      { in: 'header', name: 'X-Client-Platform', required: true, schema: { enum: [...PLATFORM] } },
+      {
+        in: 'header',
+        name: 'X-Client-Version',
+        required: true,
+        schema: { type: 'string', example: '1.0.0' },
+      },
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

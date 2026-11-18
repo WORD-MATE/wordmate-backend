@@ -66,10 +66,24 @@ drizzle/     마이그레이션
 
 ## API 공통 규칙
 
+- **필수 헤더**: `X-Client-Platform` (`IOS` | `ANDROID` | `WEB`), `X-Client-Version` (예: `1.2.0`)
 - **에러 응답**: `{ "code": String, "message": String, "detail": Object | null, "traceId": String }`
 - **ID**: UUIDv7 문자열 / **시간**: ISO-8601 UTC / **날짜**: KST `YYYY-MM-DD`
 - **목록**: 커서 페이지네이션 `?cursor=&size=` (기본 20, 최대 50) → `{ items, nextCursor }`
 - **권한**: 엔드포인트마다 `@Auth('ALL' | 'USER' | 'STUDENT' | 'TEACHER' | 'ADMIN')`, 생략하면 `USER`
+- **재전송**: `@Idempotent()`가 붙은 API는 `Idempotency-Key`(UUID)를 같게 보내면 처음 응답을 돌려줌
+- **요청 제한**: 엔드포인트별 1분 120회 (`@Throttle`로 조정), 초과 시 429 + `Retry-After`
+
+### 데코레이터
+
+| 데코레이터                                        | 용도                                |
+| ------------------------------------------------- | ----------------------------------- |
+| `@Auth(...)`                                      | 접근 권한                           |
+| `@ZodBody` `@ZodQuery` `@ZodParam` `@ZodResponse` | 요청 검증·응답 정리·Swagger 문서    |
+| `@Idempotent()`                                   | Idempotency-Key 재전송 처리         |
+| `@AllowDuringMaintenance()`                       | 점검 중에도 허용                    |
+| `@SkipClientCheck()`                              | 헤더·버전·점검 검사 생략 (인프라용) |
+| `@Throttle()` `@SkipThrottle()`                   | 요청 제한 조정                      |
 
 ### 엔드포인트 작성 예시
 
@@ -94,5 +108,25 @@ create(@ZodBody(CreatePack) body: z.infer<typeof CreatePack>) { ... }
 | `PORT`         | `3000`        | 서버 포트                               |
 | `DATABASE_URL` | (필수)        | `mysql://user:pass@host:3306/db`        |
 | `VALKEY_URL`   | (필수)        | `redis://host:6379`                     |
+| `LOG_LEVEL`    | `info`        | `fatal`                                 | `error` | `warn` | `info` | `debug` | `trace` | `silent` |
+| `CORS_ORIGINS` | (없음)        | 허용할 웹 Origin, 쉼표로 구분           |
 
 값이 없거나 형식이 틀리면 서버가 시작되지 않습니다.
+
+## 점검 모드·강제 업데이트
+
+Valkey의 `app:config` 키(JSON)로 설정하며 서버는 5초마다 다시 읽습니다. 관리자 API가 생기기 전까지는 직접 설정합니다.
+
+```bash
+valkey-cli SET app:config '{"maintenance":{"enabled":true,"message":"정기 점검","endsAt":"2026-12-01T00:00:00.000Z"},"minVersion":{"IOS":"1.2.0"},"storeUrl":{"IOS":"https://apps.apple.com/..."}}'
+```
+
+- 점검 중: 503 `MAINTENANCE` (`detail`: `message`, `endsAt`)
+- 최소 버전 미만: 426 `UPDATE_REQUIRED` (`detail.storeUrl`, 웹은 `null`)
+
+## Docker
+
+```bash
+docker build -t wordmate-backend .
+docker run -p 3000:3000 -e DATABASE_URL=... -e VALKEY_URL=... wordmate-backend
+```

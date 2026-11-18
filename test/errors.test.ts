@@ -3,7 +3,7 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Auth } from '../src/common/auth/auth.decorator.js';
 import { AppException } from '../src/common/errors/app-exception.js';
-import { createTestApp } from './support/create-test-app.js';
+import { createTestApp, inject } from './support/create-test-app.js';
 
 @Auth('ALL')
 @Controller('test-errors')
@@ -38,7 +38,7 @@ describe('에러 응답 형식', () => {
   });
 
   it('AppException을 { code, message, detail, traceId }로 돌려준다', async () => {
-    const res = await app.inject({ method: 'GET', url: '/test-errors/app' });
+    const res = await inject(app, { method: 'GET', url: '/test-errors/app' });
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({
       code: 'ROOM_FULL',
@@ -49,7 +49,7 @@ describe('에러 응답 형식', () => {
   });
 
   it('예상하지 못한 에러는 내부 내용을 숨기고 500을 돌려준다', async () => {
-    const res = await app.inject({ method: 'GET', url: '/test-errors/unknown' });
+    const res = await inject(app, { method: 'GET', url: '/test-errors/unknown' });
     expect(res.statusCode).toBe(500);
     expect(res.json()).toMatchObject({ code: 'INTERNAL_ERROR', detail: null });
     expect(res.body).not.toContain('secret');
@@ -57,13 +57,13 @@ describe('에러 응답 형식', () => {
   });
 
   it('없는 경로는 404 NOT_FOUND', async () => {
-    const res = await app.inject({ method: 'GET', url: '/nope' });
+    const res = await inject(app, { method: 'GET', url: '/nope' });
     expect(res.statusCode).toBe(404);
     expect(res.json()).toMatchObject({ code: 'NOT_FOUND', detail: null });
   });
 
   it('JSON 형식이 틀리면 400 INVALID_REQUEST', async () => {
-    const res = await app.inject({
+    const res = await inject(app, {
       method: 'POST',
       url: '/test-errors/echo',
       headers: { 'content-type': 'application/json' },

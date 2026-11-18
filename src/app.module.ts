@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
-import { AuthGuard } from './common/auth/auth.guard.js';
+import { CommonModule } from './common/common.module.js';
 import { validateEnv } from './config/env.js';
 import { InfraModule } from './infra/infra.module.js';
 import { HealthModule } from './modules/health/health.module.js';
@@ -15,8 +14,8 @@ import { HealthModule } from './modules/health/health.module.js';
       validate: validateEnv,
     }),
     InfraModule,
+    CommonModule,
     HealthModule,
   ],
-  providers: [{ provide: APP_GUARD, useClass: AuthGuard }],
 })
 export class AppModule {}

@@ -12,12 +12,22 @@ describe('validateEnv', () => {
       NODE_ENV: 'development',
       HOST: '0.0.0.0',
       PORT: 3000,
+      LOG_LEVEL: 'info',
+      CORS_ORIGINS: [],
       ...required,
     });
   });
 
   it('문자열 PORT를 숫자로 바꾼다', () => {
     expect(validateEnv({ ...required, PORT: '8080' }).PORT).toBe(8080);
+  });
+
+  it('CORS_ORIGINS를 쉼표로 나눠 URL 목록으로 만든다', () => {
+    expect(
+      validateEnv({ ...required, CORS_ORIGINS: 'https://a.com, http://localhost:5173' })
+        .CORS_ORIGINS,
+    ).toEqual(['https://a.com', 'http://localhost:5173']);
+    expect(() => validateEnv({ ...required, CORS_ORIGINS: 'not-a-url' })).toThrow(/CORS_ORIGINS/);
   });
 
   it('필수 값이 없으면 항목 이름을 담아 에러를 던진다', () => {
