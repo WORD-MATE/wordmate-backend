@@ -13,7 +13,6 @@ coverage/
 # 환경 변수·비밀값
 .env
 .env.*
-!.env.example
 *.pem
 *.key
 

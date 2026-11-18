@@ -1,0 +1,8 @@
+minimumReleaseAge: 4320
+
+ignoredBuiltDependencies:
+  - cpu-features
+  - msgpackr-extract
+  - protobufjs
+  - ssh2
+  - "@scarf/scarf"
