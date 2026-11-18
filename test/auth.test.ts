@@ -3,7 +3,7 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Auth } from '../src/common/auth/auth.decorator.js';
 import type { AuthUser } from '../src/common/auth/auth-user.js';
-import { createTestApp } from './support/create-test-app.js';
+import { createTestApp, inject } from './support/create-test-app.js';
 
 @Controller('test-auth')
 class AuthTestController {
@@ -39,20 +39,23 @@ describe('권한 가드', () => {
   let app: NestFastifyApplication;
 
   const call = (url: string, user?: AuthUser) =>
-    app.inject({
+    inject(app, {
       url: `/test-auth/${url}`,
       headers: user ? { 'x-test-user': JSON.stringify(user) } : {},
     });
 
   beforeAll(async () => {
-    app = await createTestApp({ controllers: [AuthTestController] }, (nest) => {
-      nest
-        .getHttpAdapter()
-        .getInstance()
-        .addHook('onRequest', async (request) => {
-          const header = request.headers['x-test-user'];
-          if (typeof header === 'string') request.user = JSON.parse(header);
-        });
+    app = await createTestApp({
+      controllers: [AuthTestController],
+      beforeInit: (nest) => {
+        nest
+          .getHttpAdapter()
+          .getInstance()
+          .addHook('onRequest', async (request) => {
+            const header = request.headers['x-test-user'];
+            if (typeof header === 'string') request.user = JSON.parse(header);
+          });
+      },
     });
   });
 

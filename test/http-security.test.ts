@@ -2,7 +2,7 @@ import { Body, Controller, Post } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Auth } from '../src/common/auth/auth.decorator.js';
-import { createTestApp, TEST_CORS_ORIGIN } from './support/create-test-app.js';
+import { createTestApp, inject, TEST_CORS_ORIGIN } from './support/create-test-app.js';
 
 @Auth('ALL')
 @Controller('test-http')
@@ -25,13 +25,13 @@ describe('HTTP 보안 기본값', () => {
   });
 
   it('helmet 보안 헤더를 붙인다', async () => {
-    const res = await app.inject({ url: '/health' });
+    const res = await inject(app, { url: '/health' });
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.headers['x-powered-by']).toBeUndefined();
   });
 
   it('허용한 Origin에만 CORS를 열고 클라이언트 헤더를 허용한다', async () => {
-    const allowed = await app.inject({
+    const allowed = await inject(app, {
       method: 'OPTIONS',
       url: '/test-http/echo',
       headers: {
@@ -44,7 +44,7 @@ describe('HTTP 보안 기본값', () => {
     expect(allowed.headers['access-control-allow-credentials']).toBe('true');
     expect(String(allowed.headers['access-control-allow-headers'])).toContain('X-Client-Platform');
 
-    const denied = await app.inject({
+    const denied = await inject(app, {
       method: 'OPTIONS',
       url: '/test-http/echo',
       headers: { origin: 'https://evil.example', 'access-control-request-method': 'POST' },
@@ -53,7 +53,7 @@ describe('HTTP 보안 기본값', () => {
   });
 
   it('1MB를 넘는 본문은 413 PAYLOAD_TOO_LARGE', async () => {
-    const res = await app.inject({
+    const res = await inject(app, {
       method: 'POST',
       url: '/test-http/echo',
       payload: { text: 'a'.repeat(1024 * 1024) },

@@ -6,7 +6,7 @@ export class AppException extends HttpException {
   constructor(
     readonly code: string,
     message: string,
-    status: HttpStatus,
+    status: HttpStatus | number,
     readonly detail: ErrorDetail = null,
   ) {
     super(message, status);

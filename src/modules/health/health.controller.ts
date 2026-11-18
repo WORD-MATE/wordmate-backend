@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
+import { SkipClientCheck } from '../../common/client/client.decorators.js';
 import { AppException } from '../../common/errors/app-exception.js';
 import { withTimeout } from '../../common/with-timeout.js';
 import { ZodResponse } from '../../common/zod/decorators.js';
@@ -18,6 +19,7 @@ const HealthResponse = z.object({
 type HealthResponse = z.infer<typeof HealthResponse>;
 
 @Auth('ALL')
+@SkipClientCheck()
 @Controller('health')
 export class HealthController {
   constructor(
