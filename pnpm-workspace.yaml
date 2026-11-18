@@ -5,3 +5,4 @@ ignoredBuiltDependencies:
   - msgpackr-extract
   - protobufjs
   - ssh2
+  - "@scarf/scarf"

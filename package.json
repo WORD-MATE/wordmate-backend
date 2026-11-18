@@ -22,11 +22,13 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@fastify/static": "10.1.11",
     "@nestjs/bullmq": "12.0.2",
     "@nestjs/common": "12.5.0",
     "@nestjs/config": "12.1.1",
     "@nestjs/core": "12.5.0",
     "@nestjs/platform-fastify": "12.5.0",
+    "@nestjs/swagger": "12.1.2",
     "bullmq": "6.7.6",
     "drizzle-orm": "1.0.0-rc.5",
     "ioredis": "6.0.0",
