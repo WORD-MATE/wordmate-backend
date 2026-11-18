@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!dist", "!coverage", "!docs", "!.github/ISSUE_TEMPLATE"]
+    "includes": ["**", "!dist", "!coverage", "!docs", "!.github/ISSUE_TEMPLATE", "!drizzle"]
   },
   "formatter": {
     "enabled": true,
