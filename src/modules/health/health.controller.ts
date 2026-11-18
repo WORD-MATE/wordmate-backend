@@ -4,6 +4,7 @@ import type { Redis } from 'ioredis';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import { AppException } from '../../common/errors/app-exception.js';
+import { withTimeout } from '../../common/with-timeout.js';
 import { ZodResponse } from '../../common/zod/decorators.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import { VALKEY } from '../../infra/valkey/valkey.module.js';
@@ -48,10 +49,7 @@ const PROBE_TIMEOUT_MS = 2000;
 
 async function probe(fn: () => Promise<unknown>): Promise<CheckResult> {
   try {
-    await Promise.race([
-      fn(),
-      new Promise((_, reject) => setTimeout(reject, PROBE_TIMEOUT_MS).unref()),
-    ]);
+    await withTimeout(fn(), PROBE_TIMEOUT_MS);
     return 'up';
   } catch {
     return 'down';
