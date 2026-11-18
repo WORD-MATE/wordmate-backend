@@ -19,6 +19,7 @@ export const AppConfig = z.object({
     })
     .default({ enabled: false, message: '', endsAt: null }),
   minVersion: z.partialRecord(z.enum(PLATFORM), z.string().refine(isValidVersion)).default({}),
+  latestVersion: z.partialRecord(z.enum(PLATFORM), z.string().refine(isValidVersion)).default({}),
   storeUrl: z.partialRecord(z.enum(['IOS', 'ANDROID']), z.url()).default({}),
 });
 export type AppConfig = z.infer<typeof AppConfig>;

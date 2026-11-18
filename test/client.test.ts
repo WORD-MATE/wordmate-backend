@@ -24,6 +24,7 @@ class ClientTestController {
 const base: AppConfig = {
   maintenance: { enabled: false, message: '', endsAt: null },
   minVersion: {},
+  latestVersion: {},
   storeUrl: {},
 };
 
