@@ -102,6 +102,9 @@ services:
 
 networks:
   internal:
+    # 학교 서버 NIC MTU가 1400이라 기본값 1500이면 큰 응답 패킷이 버려져 외부 HTTPS 응답이 멈춘다
+    driver_opts:
+      com.docker.network.driver.mtu: "1400"
     ipam:
       config:
         - subnet: 172.30.0.0/24

@@ -90,8 +90,9 @@ jobs:
           printf '%s' "$TOKEN" | ssh dev "docker login ghcr.io -u $ACTOR --password-stdin"
           ssh dev "cd wordmate \
             && IMAGE_TAG=$TAG docker compose pull app migrate; status=\$?; docker logout ghcr.io; [ \$status -eq 0 ] \
+            && docker tag $IMAGE:$TAG $IMAGE:develop \
             && IMAGE_TAG=$TAG docker compose up -d --remove-orphans --wait app \
-            && docker image prune -f"
+            && { docker images $IMAGE --format '{{.Tag}}' | grep '^sha-' | grep -vx $TAG | xargs -r -I{} docker rmi $IMAGE:{}; docker image prune -f; }"
 
       - name: 헬스 체크
         run: |

@@ -20,7 +20,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "jwt:keygen": "node scripts/generate-jwt-key.mjs"
+    "jwt:keygen": "node scripts/generate-jwt-key.mjs",
+    "datagsm:login": "node scripts/datagsm-login.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.5",

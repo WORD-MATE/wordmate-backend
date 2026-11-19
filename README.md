@@ -189,7 +189,10 @@ docker compose ps
 docker compose logs -f app
 docker compose exec valkey valkey-cli         # 점검 모드 설정 등
 docker compose exec mysql mysql -uroot -p wordmate
+docker compose up -d --force-recreate app     # .env 수정 후 적용
 ```
+
+배포 때 받은 이미지에 `develop` 태그도 붙여 두므로, 서버에서 직접 `docker compose`를 실행해도 마지막 배포 이미지를 씁니다 (GHCR 로그인 불필요).
 
 ## 인증
 
@@ -200,6 +203,9 @@ docker compose exec mysql mysql -uroot -p wordmate
 5. `POST /auth/logout`: 리프레시 토큰만 있으면 됨 (앱은 본문 `refreshToken`, 웹은 쿠키)
 
 웹은 토큰을 응답 본문 대신 HttpOnly 쿠키로 받습니다.
+
+- DataGSM 인가 요청의 scope: `datagsm:account_read datagsm:student_read` (없으면 사용자 정보 조회 403 또는 학년·반 누락)
+- 클라이언트 없이 로그인 확인: `pnpm datagsm:login` (기본 대상은 개발 서버, 다른 서버는 `pnpm datagsm:login http://localhost:3000`). 브라우저로 DataGSM 로그인 → `POST /auth/datagsm` → `GET /users/me` → 로그아웃까지 실행합니다. 서버의 `DATAGSM_REDIRECT_URIS`에 `http://localhost:8765/callback`이 있어야 합니다.
 
 ### 기기
 
