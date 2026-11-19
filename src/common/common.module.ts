@@ -10,7 +10,7 @@ import { AuthGuard } from './auth/auth.guard.js';
 import { AuthenticationGuard } from './auth/authentication.guard.js';
 import { ClientGuard } from './client/client.guard.js';
 import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor.js';
-import { AppThrottlerGuard } from './rate-limit/app-throttler.guard.js';
+import { AppThrottlerGuard, defaultLimit } from './rate-limit/app-throttler.guard.js';
 import { ValkeyThrottlerStorage } from './rate-limit/valkey-throttler.storage.js';
 
 @Global()
@@ -19,7 +19,7 @@ import { ValkeyThrottlerStorage } from './rate-limit/valkey-throttler.storage.js
     ThrottlerModule.forRootAsync({
       inject: [VALKEY],
       useFactory: (valkey: Redis) => ({
-        throttlers: [{ name: 'default', ttl: 60_000, limit: 120 }],
+        throttlers: [{ name: 'default', ttl: 60_000, limit: defaultLimit }],
         storage: new ValkeyThrottlerStorage(valkey),
       }),
     }),

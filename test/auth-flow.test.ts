@@ -44,7 +44,7 @@ describe('DataGSM 로그인·토큰 재발급·로그아웃', () => {
   };
 
   let loginCount = 0;
-  // 로그인은 IP당 1분 10회 제한이라 요청마다 IP를 바꾼다
+  // 테스트끼리 로그인 요청 제한을 나눠 쓰지 않게 요청마다 IP를 바꾼다
   const login = (platform: 'IOS' | 'WEB' = 'IOS', redirectUri = TEST_REDIRECT_URI) =>
     inject(app, {
       method: 'POST',

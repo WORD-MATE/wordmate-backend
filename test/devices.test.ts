@@ -35,7 +35,7 @@ describe('기기 등록·목록·원격 로그아웃', () => {
   let profile = studentProfile();
   let loginCount = 0;
 
-  // 로그인은 IP당 1분 10회 제한이라 요청마다 IP를 바꾼다
+  // 테스트끼리 로그인 요청 제한을 나눠 쓰지 않게 요청마다 IP를 바꾼다
   const login = async (platform: Platform = 'IOS'): Promise<Session> => {
     const res = await inject(app, {
       method: 'POST',
