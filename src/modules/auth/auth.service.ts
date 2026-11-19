@@ -10,7 +10,7 @@ import type { NextStep, Platform } from '../../common/enums.js';
 import { CommonErrors } from '../../common/errors/app-exception.js';
 import type { Env } from '../../config/env.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
-import { type User, users } from '../../infra/db/schema/index.js';
+import { classes, type User, users } from '../../infra/db/schema/index.js';
 import { type Me, toMe } from '../users/me.schema.js';
 import { NextStepService } from '../users/next-step.service.js';
 import { TeacherClassService } from '../users/teacher-class.service.js';
@@ -123,6 +123,12 @@ export class AuthService {
           .update(users)
           .set({ ...fields, status: nextStatus(existing, profile, now) })
           .where(eq(users.id, existing.id));
+      }
+      if (profile.role === 'STUDENT' && profile.grade && profile.classNo) {
+        await tx
+          .insert(classes)
+          .values({ grade: profile.grade, classNo: profile.classNo })
+          .onDuplicateKeyUpdate({ set: { grade: profile.grade } });
       }
       const [saved] = await tx.select().from(users).where(eq(users.datagsmId, profile.datagsmId));
       return saved ?? null;
