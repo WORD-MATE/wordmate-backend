@@ -123,7 +123,7 @@ create(@ZodBody(CreatePack) body: z.infer<typeof CreatePack>) { ... }
 | `DATAGSM_RESOURCE_URL`  | `https://oauth.resource.datagsm.kr`      | DataGSM 사용자 정보 서버                                            |
 | `TRUST_PROXY`           | (없음)                                   | 신뢰할 리버스 프록시 IP·CIDR, 쉼표로 구분 (실제 클라이언트 IP 판별) |
 | `SWAGGER_ENABLED`       | `production`이 아니면 켜짐               | `true` / `false`로 Swagger 문서 강제 설정                           |
-| `SHARE_LINK_BASE`       | `wordmate://`                            | 공유 링크 앞부분. 웹 도메인이 생기면 `https://도메인`으로 바꿈        |
+| `SHARE_LINK_BASE`       | `wordmate://`                            | 공유 링크 앞부분. 웹 도메인이 생기면 `https://도메인`으로 바꿈      |
 
 값이 없거나 형식이 틀리면 서버가 시작되지 않습니다.
 

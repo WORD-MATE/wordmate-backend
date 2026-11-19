@@ -4,7 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { ZodParam, ZodResponse } from '../../common/zod/decorators.js';
-import { PREVIEW_WORD_LIMIT, PackShareService } from './pack-share.service.js';
+import { PackShareService, PREVIEW_WORD_LIMIT } from './pack-share.service.js';
 import { PackSummary, SharedPackPreview, ShareInfo } from './packs.schemas.js';
 
 const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
