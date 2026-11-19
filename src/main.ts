@@ -17,7 +17,7 @@ async function bootstrap(): Promise<void> {
   );
   app.enableShutdownHooks();
   await setupApp(app, {
-    swagger: env.NODE_ENV !== 'production',
+    swagger: env.SWAGGER_ENABLED ?? env.NODE_ENV !== 'production',
     corsOrigins: env.CORS_ORIGINS,
   });
 

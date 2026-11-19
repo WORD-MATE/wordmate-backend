@@ -22,6 +22,22 @@ describe('validateEnv', () => {
     });
   });
 
+  it('TRUST_PROXY는 IP·CIDR 목록, SWAGGER_ENABLED는 문자열 불리언', () => {
+    const env = validateEnv({
+      ...required,
+      TRUST_PROXY: '172.30.0.0/24, 10.0.0.1',
+      SWAGGER_ENABLED: 'true',
+    });
+    expect(env).toMatchObject({
+      TRUST_PROXY: ['172.30.0.0/24', '10.0.0.1'],
+      SWAGGER_ENABLED: true,
+    });
+    const defaults = validateEnv(required);
+    expect(defaults.TRUST_PROXY).toEqual([]);
+    expect(defaults.SWAGGER_ENABLED).toBeUndefined();
+    expect(() => validateEnv({ ...required, TRUST_PROXY: 'everyone' })).toThrow('TRUST_PROXY');
+  });
+
   it('문자열 PORT를 숫자로 바꾼다', () => {
     expect(validateEnv({ ...required, PORT: '8080' }).PORT).toBe(8080);
   });
