@@ -231,6 +231,21 @@ VALUES (UUID_TO_BIN(UUID()), 'TERMS', '1.0', '서비스 이용약관', '# 이용
 - 서버는 약관 목록을 1분 캐시합니다.
 - 공개 API(`@Auth('ALL')`)는 로그인 상태여도 약관 검사를 하지 않습니다.
 
+## 단어팩
+
+- 내 단어팩은 사용자당 50개, 이름은 1~30자이고 삭제되지 않은 내 팩끼리 겹칠 수 없습니다 (대소문자 무시).
+- 기본 단어팩(`type=DEFAULT`)은 관리자만 만들고 고칩니다. 추천순은 기본 팩이면 `sort_order`, 내 팩이면 최근 수정순입니다.
+- 삭제는 소프트 삭제(`deleted_at`)이고 공유 코드도 함께 지웁니다.
+- 분류와 금칙어는 관리자 API가 생기기 전까지 DB에 직접 넣습니다. 서버는 1분 캐시합니다.
+
+```sql
+INSERT INTO pack_categories (id, name, sort_order) VALUES (UUID_TO_BIN(UUID()), '수능', 1);
+INSERT INTO forbidden_words (id, word, type) VALUES (UUID_TO_BIN(UUID()), '금칙어', 'FORBIDDEN');
+INSERT INTO forbidden_words (id, word, type) VALUES (UUID_TO_BIN(UUID()), 'class', 'ALLOWED');
+```
+
+- 금칙어는 대소문자·전각·공백·기호를 무시한 부분 일치이고, 허용 단어(`ALLOWED`) 안에 든 경우는 통과합니다. 팩 이름·설명은 항상, 단어는 공유할 때 검사합니다.
+
 ## 학급·교사 담당 반
 
 - 학급은 마이그레이션으로 1~3학년 1~4반을 미리 만들고, 그 밖의 반은 학생이 로그인할 때 DataGSM 학년·반으로 자동 생성됩니다.
