@@ -18,6 +18,8 @@ export default defineConfig({
           name: 'e2e',
           include: ['test/**/*.test.ts'],
           globalSetup: ['test/support/global-setup.ts'],
+          // 같은 DB를 쓰므로 파일끼리 데이터가 섞이지 않게 순서대로 실행
+          fileParallelism: false,
           hookTimeout: 120_000,
           testTimeout: 30_000,
         },

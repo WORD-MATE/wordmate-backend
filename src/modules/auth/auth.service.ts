@@ -12,6 +12,7 @@ import type { Env } from '../../config/env.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import { type User, users } from '../../infra/db/schema/index.js';
 import { type Me, toMe } from '../users/me.schema.js';
+import { NextStepService } from '../users/next-step.service.js';
 import { DataGsmClient, type DataGsmProfile } from './datagsm/datagsm.client.js';
 import { SessionService } from './session.service.js';
 
@@ -34,6 +35,7 @@ export class AuthService {
     private readonly datagsm: DataGsmClient,
     private readonly sessions: SessionService,
     private readonly accessTokens: AccessTokenService,
+    private readonly nextStep: NextStepService,
   ) {}
 
   async loginWithDataGsm(
@@ -59,7 +61,7 @@ export class AuthService {
       accessToken,
       refreshToken: session.refreshToken,
       expiresIn: ACCESS_TOKEN_TTL_SECONDS,
-      nextStep: this.nextStep(user),
+      nextStep: await this.nextStep.resolve(user.id),
       user: toMe(user),
     };
   }
@@ -140,11 +142,6 @@ export class AuthService {
       isAdmin: user.isAdmin,
       deviceId,
     });
-  }
-
-  // 약관 동의·교사 담당 반 기능이 들어오면 TERMS_AGREEMENT, TEACHER_CLASS_SELECT를 판정한다
-  private nextStep(_user: User): NextStep {
-    return 'HOME';
   }
 }
 

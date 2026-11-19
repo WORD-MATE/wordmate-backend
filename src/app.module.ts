@@ -3,8 +3,11 @@ import { ConfigModule } from '@nestjs/config';
 import { CommonModule } from './common/common.module.js';
 import { validateEnv } from './config/env.js';
 import { InfraModule } from './infra/infra.module.js';
+import { AppStatusModule } from './modules/app-status/app-status.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { PoliciesModule } from './modules/policies/policies.module.js';
+import { UsersModule } from './modules/users/users.module.js';
 
 @Module({
   imports: [
@@ -17,7 +20,10 @@ import { HealthModule } from './modules/health/health.module.js';
     InfraModule,
     CommonModule,
     HealthModule,
+    AppStatusModule,
     AuthModule,
+    PoliciesModule,
+    UsersModule,
   ],
 })
 export class AppModule {}
