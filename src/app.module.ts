@@ -11,6 +11,7 @@ import { HealthModule } from './modules/health/health.module.js';
 import { PacksModule } from './modules/packs/packs.module.js';
 import { PoliciesModule } from './modules/policies/policies.module.js';
 import { UsersModule } from './modules/users/users.module.js';
+import { WordsModule } from './modules/words/words.module.js';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { UsersModule } from './modules/users/users.module.js';
     DevicesModule,
     ClassesModule,
     PacksModule,
+    WordsModule,
     PoliciesModule,
     UsersModule,
   ],
