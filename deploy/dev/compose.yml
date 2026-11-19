@@ -13,8 +13,8 @@ x-app: &app
     NODE_ENV: production
     DATABASE_URL: mysql://wordmate:${MYSQL_PASSWORD:?}@mysql:3306/wordmate
     VALKEY_URL: redis://valkey:6379
-    # 학교 플랫폼 프록시는 172.10.104.1에서 들어온다 (사설망 대역이 아님)
-    TRUST_PROXY: 172.10.104.1
+    # 학교 플랫폼 프록시 2단계: 10.0.0.117 → 172.10.104.1 → 앱
+    TRUST_PROXY: 172.10.104.1,10.0.0.117
   networks: [internal]
   logging: *logging
 
