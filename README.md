@@ -189,7 +189,10 @@ docker compose ps
 docker compose logs -f app
 docker compose exec valkey valkey-cli         # 점검 모드 설정 등
 docker compose exec mysql mysql -uroot -p wordmate
+docker compose up -d --force-recreate app     # .env 수정 후 적용
 ```
+
+배포 때 받은 이미지에 `develop` 태그도 붙여 두므로, 서버에서 직접 `docker compose`를 실행해도 마지막 배포 이미지를 씁니다 (GHCR 로그인 불필요).
 
 ## 인증
 
