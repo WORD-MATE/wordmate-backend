@@ -7,6 +7,7 @@ import {
   int,
   mysqlEnum,
   mysqlTable,
+  primaryKey,
   uniqueIndex,
   varchar,
 } from 'drizzle-orm/mysql-core';
@@ -65,6 +66,24 @@ export const forbiddenWords = mysqlTable(
     createdAt: timestamps.createdAt,
   },
   (t) => [uniqueIndex('forbidden_words_word_type_uq').on(t.word, t.type)],
+);
+
+// 같은 공유 팩은 사용자당 한 번만 복사 (복사본을 지우면 copied_pack_id를 새 복사본으로 바꿔 다시 허용)
+export const packCopies = mysqlTable(
+  'pack_copies',
+  {
+    userId: binaryUuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    sourcePackId: binaryUuid('source_pack_id')
+      .notNull()
+      .references(() => packs.id, { onDelete: 'cascade' }),
+    copiedPackId: binaryUuid('copied_pack_id')
+      .notNull()
+      .references(() => packs.id, { onDelete: 'cascade' }),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.sourcePackId] })],
 );
 
 export type Pack = typeof packs.$inferSelect;

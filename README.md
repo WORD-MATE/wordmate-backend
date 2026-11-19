@@ -123,6 +123,7 @@ create(@ZodBody(CreatePack) body: z.infer<typeof CreatePack>) { ... }
 | `DATAGSM_RESOURCE_URL`  | `https://oauth.resource.datagsm.kr`      | DataGSM 사용자 정보 서버                                            |
 | `TRUST_PROXY`           | (없음)                                   | 신뢰할 리버스 프록시 IP·CIDR, 쉼표로 구분 (실제 클라이언트 IP 판별) |
 | `SWAGGER_ENABLED`       | `production`이 아니면 켜짐               | `true` / `false`로 Swagger 문서 강제 설정                           |
+| `SHARE_LINK_BASE`       | `wordmate://`                            | 공유 링크 앞부분. 웹 도메인이 생기면 `https://도메인`으로 바꿈      |
 
 값이 없거나 형식이 틀리면 서버가 시작되지 않습니다.
 
@@ -258,6 +259,14 @@ INSERT INTO forbidden_words (id, word, type) VALUES (UUID_TO_BIN(UUID()), 'class
   - 형식은 확장자가 아니라 내용으로 판단합니다 (`PK\x03\x04`면 XLSX, 아니면 UTF-8 CSV). EUC-KR CSV는 `WORD_FILE_ENCODING_INVALID`.
   - XLSX는 ZIP 중앙 디렉터리에서 필요한 파일만 풀고, 푼 크기를 `zlib`의 `maxOutputLength`로 제한합니다 (압축 폭탄 방어). 행이 한도를 넘으면 끝까지 읽지 않고 멈춥니다.
 - 삭제는 소프트 삭제입니다 (오답노트·학습 기록이 단어를 참조).
+
+### 공유·복사
+
+- 내 단어팩만 공유할 수 있습니다. `POST /packs/{id}/share`는 이미 공유 중이면 같은 코드를 돌려주고, 단어가 없으면 `PACK_EMPTY`입니다.
+- 공유를 켤 때 이름·설명·모든 단어를 금칙어로 다시 검사합니다. 걸리면 `detail.wordId`로 어떤 단어인지 알려줍니다. 공유 중에 추가·수정하는 단어도 검사합니다.
+- 공유 코드는 헷갈리는 글자를 뺀 12자 무작위 문자열이고, 링크는 `{SHARE_LINK_BASE}/packs/shared/{코드}`입니다. 공유를 중지했다가 다시 켜면 새 코드가 생겨 예전 링크는 계속 무효입니다.
+- 미리보기는 단어 20개까지, `memoryStatus`는 null입니다.
+- 복사는 단어까지 통째로 복사한 독립된 내 팩을 만듭니다. 이름이 겹치면 ` (2)`, ` (3)`을 붙입니다. 같은 공유 팩은 한 번만 복사할 수 있고(`pack_copies`), 복사본을 지우면 다시 복사할 수 있습니다. 내가 공유한 팩은 복사할 수 없습니다 (`PACK_COPY_OWN`).
 
 ## 학급·교사 담당 반
 

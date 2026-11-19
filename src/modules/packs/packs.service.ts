@@ -1,10 +1,12 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { and, asc, count, desc, eq, gt, isNull, like, lt, or, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { AppException, CommonErrors } from '../../common/errors/app-exception.js';
 import { type CursorPage, decodeCursor, toCursorPage } from '../../common/pagination.js';
-import { type Database, DB } from '../../infra/db/db.module.js';
+import type { Env } from '../../config/env.js';
+import { type Database, DB, type Transaction } from '../../infra/db/db.module.js';
 import { isDuplicateKeyError } from '../../infra/db/errors.js';
 import { type Pack, packCategories, packs, users } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
@@ -63,7 +65,23 @@ export class PacksService {
   constructor(
     @Inject(DB) private readonly db: Database,
     private readonly forbiddenWords: ForbiddenWordsService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
+
+  shareInfo(shareCode: string) {
+    const base = this.config.get('SHARE_LINK_BASE', { infer: true }).replace(/\/$/, '');
+    return { shareCode, url: `${base}/packs/shared/${shareCode}` };
+  }
+
+  /** 사용자 행을 잠가 동시에 만들어도 내 단어팩 한도를 넘지 않게 한다 (트랜잭션 안에서 호출) */
+  async assertMinePackSlot(tx: Transaction, userId: string): Promise<void> {
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update');
+    const [row] = await tx
+      .select({ total: count() })
+      .from(packs)
+      .where(and(eq(packs.ownerUserId, userId), eq(packs.type, 'MINE'), isNull(packs.deletedAt)));
+    if ((row?.total ?? 0) >= MAX_PACKS_PER_USER) throw PackErrors.limitExceeded();
+  }
 
   categories() {
     return this.db
@@ -148,7 +166,7 @@ export class PacksService {
       ...toPackSummary(pack),
       editable: canEdit(user, pack),
       memoryStatusCount: { NEW: pack.wordCount, LEARNING: 0, MEMORIZED: 0 },
-      share: null,
+      share: pack.shareCode ? this.shareInfo(pack.shareCode) : null,
     };
   }
 
@@ -161,25 +179,7 @@ export class PacksService {
     const id = newId();
     try {
       await this.db.transaction(async (tx) => {
-        if (body.type === 'MINE') {
-          // 사용자 행을 잠가 동시에 만들어도 한도를 넘지 않게 한다
-          await tx
-            .select({ id: users.id })
-            .from(users)
-            .where(eq(users.id, user.userId))
-            .for('update');
-          const [row] = await tx
-            .select({ total: count() })
-            .from(packs)
-            .where(
-              and(
-                eq(packs.ownerUserId, user.userId),
-                eq(packs.type, 'MINE'),
-                isNull(packs.deletedAt),
-              ),
-            );
-          if ((row?.total ?? 0) >= MAX_PACKS_PER_USER) throw PackErrors.limitExceeded();
-        }
+        if (body.type === 'MINE') await this.assertMinePackSlot(tx, user.userId);
         await tx.insert(packs).values({
           id,
           type: body.type,
@@ -234,7 +234,7 @@ export class PacksService {
     return pack;
   }
 
-  private async findById(packId: string): Promise<Pack> {
+  async findById(packId: string): Promise<Pack> {
     const [pack] = await this.db
       .select()
       .from(packs)
