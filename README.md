@@ -150,6 +150,16 @@ docker run -p 3000:3000 -e DATABASE_URL=... -e VALKEY_URL=... wordmate-backend
 
 웹은 토큰을 응답 본문 대신 HttpOnly 쿠키로 받습니다.
 
+### 기기
+
+로그인 1회 = 기기 1개(세션)입니다. 액세스 토큰의 `sid`가 기기 ID입니다.
+
+- `POST /devices`: 로그인 직후, 푸시 권한 허용 직후, 푸시 토큰이 바뀔 때 기기 이름과 푸시 정보를 등록. 푸시를 끄면 `pushType: null`
+- 플랫폼별 푸시: iOS는 APNS·FCM, Android는 FCM, 웹은 WEBPUSH만 허용
+- 같은 푸시 토큰이 다른 기기에 등록돼 있으면 그쪽 등록은 해제됩니다 (공용 기기 대비)
+- `DELETE /devices/{deviceId}`: 다른 기기 원격 로그아웃. 그 기기는 액세스 토큰이 만료되는 최대 30분 뒤 로그아웃됨. 현재 기기는 `POST /auth/logout` 사용
+- 로그아웃·원격 로그아웃·리프레시 토큰 재사용 감지 시 푸시 등록도 함께 해제됩니다
+
 ## 약관
 
 관리자 API가 생기기 전까지는 `policies` 테이블에 직접 넣습니다.

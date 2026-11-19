@@ -9,6 +9,14 @@ import { newId } from '../../infra/db/uuid.js';
 
 export const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+export const CLEARED_PUSH = {
+  pushType: null,
+  pushToken: null,
+  webPushEndpoint: null,
+  webPushP256dh: null,
+  webPushAuth: null,
+} as const;
+
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 
 export interface Session {
@@ -45,7 +53,10 @@ export class SessionService {
 
       if (!row || row.device.revokedAt) return { kind: 'expired' } as const;
       if (row.token.usedAt) {
-        await tx.update(devices).set({ revokedAt: now }).where(eq(devices.id, row.device.id));
+        await tx
+          .update(devices)
+          .set({ revokedAt: now, ...CLEARED_PUSH })
+          .where(eq(devices.id, row.device.id));
         return { kind: 'reused' } as const;
       }
       if (row.token.expiresAt <= now) return { kind: 'expired' } as const;
@@ -75,7 +86,7 @@ export class SessionService {
   async revoke(deviceId: string): Promise<void> {
     await this.db
       .update(devices)
-      .set({ revokedAt: new Date() })
+      .set({ revokedAt: new Date(), ...CLEARED_PUSH })
       .where(and(eq(devices.id, deviceId), isNull(devices.revokedAt)));
   }
 

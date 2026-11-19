@@ -5,6 +5,7 @@ import { validateEnv } from './config/env.js';
 import { InfraModule } from './infra/infra.module.js';
 import { AppStatusModule } from './modules/app-status/app-status.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { DevicesModule } from './modules/devices/devices.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { PoliciesModule } from './modules/policies/policies.module.js';
 import { UsersModule } from './modules/users/users.module.js';
@@ -22,6 +23,7 @@ import { UsersModule } from './modules/users/users.module.js';
     HealthModule,
     AppStatusModule,
     AuthModule,
+    DevicesModule,
     PoliciesModule,
     UsersModule,
   ],

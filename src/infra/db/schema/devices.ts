@@ -1,5 +1,5 @@
 import { char, datetime, index, mysqlEnum, mysqlTable, varchar } from 'drizzle-orm/mysql-core';
-import { PLATFORM } from '../../../common/enums.js';
+import { PLATFORM, PUSH_TYPE } from '../../../common/enums.js';
 import { id, timestamps } from '../columns.js';
 import { binaryUuid } from '../uuid.js';
 import { users } from './users.js';
@@ -13,11 +13,16 @@ export const devices = mysqlTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     platform: mysqlEnum('platform', PLATFORM).notNull(),
     name: varchar('name', { length: 100 }),
+    pushType: mysqlEnum('push_type', PUSH_TYPE),
+    pushToken: varchar('push_token', { length: 512 }).unique(),
+    webPushEndpoint: varchar('webpush_endpoint', { length: 700 }).unique(),
+    webPushP256dh: varchar('webpush_p256dh', { length: 255 }),
+    webPushAuth: varchar('webpush_auth', { length: 64 }),
     lastUsedAt: datetime('last_used_at', { mode: 'date', fsp: 3 }).notNull(),
     revokedAt: datetime('revoked_at', { mode: 'date', fsp: 3 }),
     ...timestamps,
   },
-  (t) => [index('devices_user_idx').on(t.userId)],
+  (t) => [index('devices_user_revoked_idx').on(t.userId, t.revokedAt)],
 );
 
 export const refreshTokens = mysqlTable(
