@@ -22,16 +22,19 @@ export const englishKey = (english: string): string => normalizeEnglish(english)
 
 const SEPARATOR = /[/,\t]/;
 
-/** 처음 나오는 `/`, `,`, 탭 앞은 영어, 뒤는 뜻. 뜻은 쉼표로 나누고 빈 값·중복은 버린다 */
+/** 처음 나오는 `/`, `,`, 탭 앞은 영어, 뒤는 뜻 */
 export function parseLine(line: string): ParsedLine {
   const at = line.search(SEPARATOR);
   if (at < 0) return { english: null, meanings: [], error: 'NO_SEPARATOR' };
+  return parseCells(line.slice(0, at), line.slice(at + 1));
+}
 
-  const english = normalizeEnglish(line.slice(0, at)) || null;
+/** 영어 칸과 뜻 칸을 검사한다. 뜻은 쉼표로 나누고 빈 값·중복은 버린다 (텍스트 분석·파일 가져오기 공통) */
+export function parseCells(englishCell: string, meaningsCell: string): ParsedLine {
+  const english = normalizeEnglish(englishCell) || null;
   const meanings = [
     ...new Set(
-      line
-        .slice(at + 1)
+      meaningsCell
         .split(',')
         .map((meaning) => meaning.normalize('NFKC').trim().replace(/\s+/g, ' '))
         .filter(Boolean),
