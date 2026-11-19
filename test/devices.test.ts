@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ACCESS_TOKEN_COOKIE } from '../src/common/auth/authentication.guard.js';
 import type { Platform } from '../src/common/enums.js';
 import { type Database, DB } from '../src/infra/db/db.module.js';
 import { devices } from '../src/infra/db/schema/index.js';
@@ -43,7 +44,12 @@ describe('기기 등록·목록·원격 로그아웃', () => {
       headers: { 'x-client-platform': platform },
       payload: { code: 'c', codeVerifier: 'v'.repeat(43), redirectUri: TEST_REDIRECT_URI },
     });
-    return { ...res.json(), platform };
+    const cookie = (name: string) => res.cookies.find((c) => c.name === name)?.value;
+    return {
+      accessToken: res.json().accessToken ?? cookie(ACCESS_TOKEN_COOKIE),
+      refreshToken: res.json().refreshToken ?? cookie('__Secure-rt'),
+      platform,
+    };
   };
 
   const call = (
