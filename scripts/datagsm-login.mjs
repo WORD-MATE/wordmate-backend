@@ -80,7 +80,7 @@ const waitForCode = () =>
 const openBrowser = (url) => {
   const [cmd, args] =
     process.platform === 'win32'
-      ? ['cmd', ['/c', 'start', '', url]]
+      ? ['rundll32', ['url.dll,FileProtocolHandler', url]]
       : [process.platform === 'darwin' ? 'open' : 'xdg-open', [url]];
   spawn(cmd, args, { stdio: 'ignore', detached: true }).on('error', () => {});
 };
