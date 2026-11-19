@@ -31,7 +31,7 @@ export class AuthController {
   })
   @Post('datagsm')
   @HttpCode(200)
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
   @ZodResponse(LoginResponse)
   async login(
     @ZodBody(DataGsmLoginRequest) body: z.infer<typeof DataGsmLoginRequest>,

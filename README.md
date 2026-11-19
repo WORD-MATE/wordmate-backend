@@ -74,7 +74,8 @@ drizzle/     마이그레이션
 - **목록**: 커서 페이지네이션 `?cursor=&size=` (기본 20, 최대 50) → `{ items, nextCursor }`
 - **권한**: 엔드포인트마다 `@Auth('ALL' | 'USER' | 'STUDENT' | 'TEACHER' | 'ADMIN')`, 생략하면 `USER`
 - **재전송**: `@Idempotent()`가 붙은 API는 `Idempotency-Key`(UUID)를 같게 보내면 처음 응답을 돌려줌
-- **요청 제한**: 엔드포인트별 1분 120회 (`@Throttle`로 조정), 초과 시 429 + `Retry-After`
+- **요청 제한**: 로그인 사용자는 사용자별 1분 120회, 비로그인은 IP별 1분 600회(로그인 API는 120회). `@Throttle`로 조정, 초과 시 429 + `Retry-After`
+  - 학생들이 학교 공인 IP를 함께 쓰고 학교 프록시도 실제 IP를 넘기지 않아서, 비로그인 IP 제한은 사실상 서버 전체 상한입니다.
 
 ### 데코레이터
 
