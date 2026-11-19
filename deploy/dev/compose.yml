@@ -1,0 +1,127 @@
+name: wordmate
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+x-app: &app
+  image: ghcr.io/word-mate/wordmate-backend:${IMAGE_TAG:-develop}
+  env_file: .env
+  environment:
+    NODE_ENV: production
+    DATABASE_URL: mysql://wordmate:${MYSQL_PASSWORD:?}@mysql:3306/wordmate
+    VALKEY_URL: redis://valkey:6379
+    TRUST_PROXY: 172.30.0.0/24
+  networks: [internal]
+  logging: *logging
+
+services:
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [app]
+    networks: [internal]
+    logging: *logging
+
+  migrate:
+    <<: *app
+    command: ["dist/migrate.js"]
+    restart: "no"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  app:
+    <<: *app
+    restart: unless-stopped
+    mem_limit: 768m
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - /nodejs/bin/node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      MYSQL_DATABASE: wordmate
+      MYSQL_USER: wordmate
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?}
+      TZ: UTC
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+00:00
+      - --ngram-token-size=2
+      - --innodb-buffer-pool-size=384M
+      - --performance-schema=OFF
+      - --max-connections=100
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", 'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" --silent']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    networks: [internal]
+    logging: *logging
+
+  valkey:
+    image: valkey/valkey:9
+    restart: unless-stopped
+    mem_limit: 320m
+    command:
+      - valkey-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+    logging: *logging
+
+networks:
+  internal:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  caddy-data:
+  caddy-config:
+  mysql-data:
+  valkey-data:
