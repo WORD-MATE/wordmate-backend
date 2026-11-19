@@ -253,6 +253,10 @@ INSERT INTO forbidden_words (id, word, type) VALUES (UUID_TO_BIN(UUID()), 'class
 - `POST /packs/{id}/words`는 여러 개를 한 번에 받습니다. 이미 있는 단어는 `duplicatePolicy`(SKIP·OVERWRITE)를 따르고, 요청 안에서 겹치면 처음 것만 씁니다. 한도를 넘는 단어는 에러 없이 `excluded`로 알려줍니다. `Idempotency-Key`를 지원합니다.
 - `example`·`derivatives`는 기본 단어팩에만 저장하고, 내 단어팩에 보내면 버립니다.
 - `POST /packs/{id}/words/parse`는 저장하지 않고 분석만 합니다. 줄마다 처음 나오는 `/`, `,`, 탭 앞이 영어, 뒤가 뜻(쉼표로 여러 개)이고 빈 줄은 건너뜁니다. 1000줄까지 받습니다.
+- `POST /packs/{id}/words/import`(multipart `file`)는 CSV·XLSX를 분석만 하고 응답 형식은 parse와 같습니다. 클라이언트가 확인한 행을 `POST /packs/{id}/words`로 저장합니다.
+  - 5MB·1000행까지, 1열 영어·2열 뜻. 첫 행이 머리글(`영어`, `단어`, `english` 등)이면 건너뜁니다.
+  - 형식은 확장자가 아니라 내용으로 판단합니다 (`PK\x03\x04`면 XLSX, 아니면 UTF-8 CSV). EUC-KR CSV는 `WORD_FILE_ENCODING_INVALID`.
+  - XLSX는 ZIP 중앙 디렉터리에서 필요한 파일만 풀고, 푼 크기를 `zlib`의 `maxOutputLength`로 제한합니다 (압축 폭탄 방어). 행이 한도를 넘으면 끝까지 읽지 않고 멈춥니다.
 - 삭제는 소프트 삭제입니다 (오답노트·학습 기록이 단어를 참조).
 
 ## 학급·교사 담당 반
