@@ -170,7 +170,7 @@ SWAGGER_ENABLED=true
 ```
 
 4. 배포용 SSH 키를 만들어 공개키를 서버의 `~/.ssh/authorized_keys`에 추가합니다.
-5. GitHub 저장소 Settings → Environments → `development`에 등록합니다.
+5. GitHub 저장소 Settings에 등록합니다. 시크릿은 Environments → `development`, 변수는 Secrets and variables → Actions → Variables(저장소 변수)에 넣습니다. `DEV_DOMAIN`이 없으면 배포 단계를 건너뜁니다.
 
 | 종류     | 이름                  | 값                                       |
 | -------- | --------------------- | ---------------------------------------- |
