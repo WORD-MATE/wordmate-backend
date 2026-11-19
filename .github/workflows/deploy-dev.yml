@@ -79,7 +79,7 @@ jobs:
           EOF
 
       - name: 배포 파일 복사
-        run: scp deploy/dev/compose.yml deploy/dev/Caddyfile dev:wordmate/
+        run: scp deploy/dev/compose.yml dev:wordmate/
 
       - name: 이미지 교체
         env:
@@ -91,7 +91,6 @@ jobs:
           ssh dev "cd wordmate \
             && IMAGE_TAG=$TAG docker compose pull app migrate; status=\$?; docker logout ghcr.io; [ \$status -eq 0 ] \
             && IMAGE_TAG=$TAG docker compose up -d --remove-orphans --wait app \
-            && IMAGE_TAG=$TAG docker compose up -d caddy \
             && docker image prune -f"
 
       - name: 헬스 체크

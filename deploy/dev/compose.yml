@@ -13,28 +13,12 @@ x-app: &app
     NODE_ENV: production
     DATABASE_URL: mysql://wordmate:${MYSQL_PASSWORD:?}@mysql:3306/wordmate
     VALKEY_URL: redis://valkey:6379
-    TRUST_PROXY: 172.30.0.0/24
+    # 학교 플랫폼의 리버스 프록시가 내부망에서 들어온다
+    TRUST_PROXY: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
   networks: [internal]
   logging: *logging
 
 services:
-  caddy:
-    image: caddy:2.10
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    environment:
-      DOMAIN: ${DOMAIN:?}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-    depends_on: [app]
-    networks: [internal]
-    logging: *logging
-
   migrate:
     <<: *app
     command: ["dist/migrate.js"]
@@ -47,6 +31,8 @@ services:
     <<: *app
     restart: unless-stopped
     mem_limit: 768m
+    ports:
+      - "3000:3000"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -121,7 +107,5 @@ networks:
         - subnet: 172.30.0.0/24
 
 volumes:
-  caddy-data:
-  caddy-config:
   mysql-data:
   valkey-data:
