@@ -148,18 +148,17 @@ docker run -p 3000:3000 -e DATABASE_URL=... -e VALKEY_URL=... wordmate-backend
 
 `develop`에 머지되면 GitHub Actions(`deploy-dev.yml`)가 이미지를 GHCR(`ghcr.io/word-mate/wordmate-backend`)에 올리고, 서버에 SSH로 접속해 `deploy/dev/compose.yml`로 교체합니다.
 
-- 구성: Caddy(HTTPS 자동 발급) → 앱 ← MySQL 8.4 · Valkey 9, 모두 컨테이너
+- 구성: 학교 플랫폼 도메인(`wordmate-dev.https.gsmsv.site`, HTTPS 처리) → 서버 3000 포트(앱) ← MySQL 8.4 · Valkey 9, 모두 컨테이너
 - 앱이 뜨기 전에 `migrate` 컨테이너가 마이그레이션을 실행합니다.
-- 서버 파일: `~/wordmate/` (`compose.yml`·`Caddyfile`은 배포 때마다 덮어씀, `.env`만 서버에서 관리)
+- 서버 파일: `~/wordmate/` (`compose.yml`은 배포 때마다 덮어씀, `.env`만 서버에서 관리)
 
 ### 서버 최초 설정
 
-1. 서브도메인 A 레코드를 서버 IP로 연결하고, 80·443 포트를 엽니다.
+1. 학교 서버 관리 페이지에서 도메인을 추가합니다 (서브도메인 `wordmate-dev`, 내부 포트 `3000`).
 2. 서버에서 `deploy/dev/setup-server.sh`를 실행합니다 (Docker 설치, swap 2GB, `~/wordmate` 생성). 끝나면 다시 로그인합니다.
 3. `~/wordmate/.env`를 만듭니다.
 
 ```bash
-DOMAIN=dev-api.example.com
 MYSQL_PASSWORD=          # openssl rand -hex 24
 MYSQL_ROOT_PASSWORD=     # openssl rand -hex 24
 JWT_PRIVATE_KEY=         # openssl genpkey -algorithm ed25519 | awk '{printf "%s\\n", $0}'
@@ -179,7 +178,7 @@ SWAGGER_ENABLED=true
 | Secret   | `DEV_SSH_PORT`        | SSH 포트 (22면 생략)                     |
 | Secret   | `DEV_SSH_KEY`         | 배포용 개인키                            |
 | Secret   | `DEV_SSH_KNOWN_HOSTS` | `ssh-keyscan -p {포트} {서버 주소}` 결과 |
-| Variable | `DEV_DOMAIN`          | `.env`의 `DOMAIN`과 같은 값              |
+| Variable | `DEV_DOMAIN`          | `wordmate-dev.https.gsmsv.site`          |
 
 ### 운영 명령
 
