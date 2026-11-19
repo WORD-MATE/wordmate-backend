@@ -19,6 +19,8 @@ export const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   CORS_ORIGINS: commaList(z.url()),
+  TRUST_PROXY: commaList(z.union([z.cidrv4(), z.ipv4()])),
+  SWAGGER_ENABLED: z.stringbool().optional(),
   DATABASE_URL: z.url({ protocol: /^mysql$/ }),
   VALKEY_URL: z.url({ protocol: /^rediss?$/ }),
   JWT_PRIVATE_KEY: z

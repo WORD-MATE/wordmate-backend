@@ -105,21 +105,23 @@ create(@ZodBody(CreatePack) body: z.infer<typeof CreatePack>) { ... }
 
 ## 환경 변수
 
-| 이름                    | 기본값                                   | 설명                                                               |
-| ----------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
-| `NODE_ENV`              | `development`                            | `development` / `test` / `production`                              |
-| `HOST`                  | `0.0.0.0`                                | 서버 바인딩 주소                                                   |
-| `PORT`                  | `3000`                                   | 서버 포트                                                          |
-| `LOG_LEVEL`             | `info`                                   | `fatal` / `error` / `warn` / `info` / `debug` / `trace` / `silent` |
-| `CORS_ORIGINS`          | (없음)                                   | 허용할 웹 Origin, 쉼표로 구분                                      |
-| `DATABASE_URL`          | (필수)                                   | `mysql://user:pass@host:3306/db`                                   |
-| `VALKEY_URL`            | (필수)                                   | `redis://host:6379`                                                |
-| `JWT_PRIVATE_KEY`       | (필수)                                   | Ed25519 개인키 PEM (`pnpm jwt:keygen`으로 생성)                    |
-| `JWT_KEY_ID`            | `k1`                                     | 토큰 헤더의 kid (키 교체 시 변경)                                  |
-| `DATAGSM_CLIENT_ID`     | (필수)                                   | DataGSM OAuth 클라이언트 ID                                        |
-| `DATAGSM_REDIRECT_URIS` | (필수)                                   | 허용할 redirectUri, 쉼표로 구분 (DataGSM에 등록한 값과 같아야 함)  |
-| `DATAGSM_AUTH_URL`      | `https://oauth.authorization.datagsm.kr` | DataGSM 인증 서버                                                  |
-| `DATAGSM_RESOURCE_URL`  | `https://oauth.resource.datagsm.kr`      | DataGSM 사용자 정보 서버                                           |
+| 이름                    | 기본값                                   | 설명                                                                |
+| ----------------------- | ---------------------------------------- | ------------------------------------------------------------------- |
+| `NODE_ENV`              | `development`                            | `development` / `test` / `production`                               |
+| `HOST`                  | `0.0.0.0`                                | 서버 바인딩 주소                                                    |
+| `PORT`                  | `3000`                                   | 서버 포트                                                           |
+| `LOG_LEVEL`             | `info`                                   | `fatal` / `error` / `warn` / `info` / `debug` / `trace` / `silent`  |
+| `CORS_ORIGINS`          | (없음)                                   | 허용할 웹 Origin, 쉼표로 구분                                       |
+| `DATABASE_URL`          | (필수)                                   | `mysql://user:pass@host:3306/db`                                    |
+| `VALKEY_URL`            | (필수)                                   | `redis://host:6379`                                                 |
+| `JWT_PRIVATE_KEY`       | (필수)                                   | Ed25519 개인키 PEM (`pnpm jwt:keygen`으로 생성)                     |
+| `JWT_KEY_ID`            | `k1`                                     | 토큰 헤더의 kid (키 교체 시 변경)                                   |
+| `DATAGSM_CLIENT_ID`     | (필수)                                   | DataGSM OAuth 클라이언트 ID                                         |
+| `DATAGSM_REDIRECT_URIS` | (필수)                                   | 허용할 redirectUri, 쉼표로 구분 (DataGSM에 등록한 값과 같아야 함)   |
+| `DATAGSM_AUTH_URL`      | `https://oauth.authorization.datagsm.kr` | DataGSM 인증 서버                                                   |
+| `DATAGSM_RESOURCE_URL`  | `https://oauth.resource.datagsm.kr`      | DataGSM 사용자 정보 서버                                            |
+| `TRUST_PROXY`           | (없음)                                   | 신뢰할 리버스 프록시 IP·CIDR, 쉼표로 구분 (실제 클라이언트 IP 판별) |
+| `SWAGGER_ENABLED`       | `production`이 아니면 켜짐               | `true` / `false`로 Swagger 문서 강제 설정                           |
 
 값이 없거나 형식이 틀리면 서버가 시작되지 않습니다.
 
@@ -140,6 +142,53 @@ valkey-cli SET app:config '{"maintenance":{"enabled":true,"message":"정기 점�
 ```bash
 docker build -t wordmate-backend .
 docker run -p 3000:3000 -e DATABASE_URL=... -e VALKEY_URL=... wordmate-backend
+```
+
+## 배포 (개발 서버)
+
+`develop`에 머지되면 GitHub Actions(`deploy-dev.yml`)가 이미지를 GHCR(`ghcr.io/word-mate/wordmate-backend`)에 올리고, 서버에 SSH로 접속해 `deploy/dev/compose.yml`로 교체합니다.
+
+- 구성: Caddy(HTTPS 자동 발급) → 앱 ← MySQL 8.4 · Valkey 9, 모두 컨테이너
+- 앱이 뜨기 전에 `migrate` 컨테이너가 마이그레이션을 실행합니다.
+- 서버 파일: `~/wordmate/` (`compose.yml`·`Caddyfile`은 배포 때마다 덮어씀, `.env`만 서버에서 관리)
+
+### 서버 최초 설정
+
+1. 서브도메인 A 레코드를 서버 IP로 연결하고, 80·443 포트를 엽니다.
+2. 서버에서 `deploy/dev/setup-server.sh`를 실행합니다 (Docker 설치, swap 2GB, `~/wordmate` 생성). 끝나면 다시 로그인합니다.
+3. `~/wordmate/.env`를 만듭니다.
+
+```bash
+DOMAIN=dev-api.example.com
+MYSQL_PASSWORD=          # openssl rand -hex 24
+MYSQL_ROOT_PASSWORD=     # openssl rand -hex 24
+JWT_PRIVATE_KEY=         # openssl genpkey -algorithm ed25519 | awk '{printf "%s\\n", $0}'
+DATAGSM_CLIENT_ID=
+DATAGSM_REDIRECT_URIS=
+CORS_ORIGINS=
+SWAGGER_ENABLED=true
+```
+
+4. 배포용 SSH 키를 만들어 공개키를 서버의 `~/.ssh/authorized_keys`에 추가합니다.
+5. GitHub 저장소 Settings에 등록합니다. 시크릿은 Environments → `development`, 변수는 Secrets and variables → Actions → Variables(저장소 변수)에 넣습니다. `DEV_DOMAIN`이 없으면 배포 단계를 건너뜁니다.
+
+| 종류     | 이름                  | 값                                       |
+| -------- | --------------------- | ---------------------------------------- |
+| Secret   | `DEV_SSH_HOST`        | 서버 주소                                |
+| Secret   | `DEV_SSH_USER`        | `ubuntu`                                 |
+| Secret   | `DEV_SSH_PORT`        | SSH 포트 (22면 생략)                     |
+| Secret   | `DEV_SSH_KEY`         | 배포용 개인키                            |
+| Secret   | `DEV_SSH_KNOWN_HOSTS` | `ssh-keyscan -p {포트} {서버 주소}` 결과 |
+| Variable | `DEV_DOMAIN`          | `.env`의 `DOMAIN`과 같은 값              |
+
+### 운영 명령
+
+```bash
+cd ~/wordmate
+docker compose ps
+docker compose logs -f app
+docker compose exec valkey valkey-cli         # 점검 모드 설정 등
+docker compose exec mysql mysql -uroot -p wordmate
 ```
 
 ## 인증
