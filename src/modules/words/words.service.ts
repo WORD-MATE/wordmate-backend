@@ -10,7 +10,8 @@ import { type Pack, packs, type Word, words } from '../../infra/db/schema/index.
 import { newId } from '../../infra/db/uuid.js';
 import { ForbiddenWordsService } from '../forbidden-words/forbidden-words.service.js';
 import { PackErrors, PacksService } from '../packs/packs.service.js';
-import { englishKey, parseText } from './word-text.js';
+import { readWordFile } from './import/word-file.js';
+import { englishKey, type ParsedLine, parseCells, parseText } from './word-text.js';
 import {
   type AddWords,
   type AddWordsResult,
@@ -180,7 +181,27 @@ export class WordsService {
     const pack = await this.packs.findEditable(user, packId);
     const rows = parseText(text);
     if (rows.length > MAX_WORDS_PER_PACK) throw WordErrors.tooManyLines();
+    return this.markDuplicates(pack, rows);
+  }
 
+  /** 파일을 읽기 전에 권한부터 확인한다 (남의 팩에 큰 파일을 올려도 분석하지 않음) */
+  async importFile(
+    user: AuthUser,
+    packId: string,
+    readFile: () => Promise<Buffer>,
+  ): Promise<ParseResult> {
+    const pack = await this.packs.findEditable(user, packId);
+    const rows = readWordFile(await readFile());
+    return this.markDuplicates(
+      pack,
+      rows.map(({ line, cells }) => ({ line, ...parseCells(cells[0], cells[1]) })),
+    );
+  }
+
+  private async markDuplicates(
+    pack: Pack,
+    rows: (ParsedLine & { line: number })[],
+  ): Promise<ParseResult> {
     const keys = [
       ...new Set(rows.flatMap((row) => (row.english ? [englishKey(row.english)] : []))),
     ];
