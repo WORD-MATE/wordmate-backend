@@ -100,6 +100,8 @@ describe('약관 동의·nextStep·내 정보', () => {
     expect(blocked.statusCode).toBe(403);
     expect(blocked.json().code).toBe('TERMS_AGREEMENT_REQUIRED');
 
+    expect((await authed('/policies/TERMS')).statusCode).toBe(200);
+
     const me = await authed('/users/me');
     expect(me.statusCode).toBe(200);
     expect(me.json()).toMatchObject({ name: '약관학생', role: 'STUDENT', grade: 1 });

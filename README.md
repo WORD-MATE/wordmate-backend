@@ -86,6 +86,8 @@ drizzle/     마이그레이션
 | `@AllowDuringMaintenance()`                       | 점검 중에도 허용                    |
 | `@SkipClientCheck()`                              | 헤더·버전·점검 검사 생략 (인프라용) |
 | `@Throttle()` `@SkipThrottle()`                   | 요청 제한 조정                      |
+| `@SkipTermsCheck()`                               | 약관 동의·담당 반 선택 전에도 허용  |
+| `@SkipTeacherClassCheck()`                        | 교사 담당 반 선택 전에도 허용       |
 
 ### 엔드포인트 작성 예시
 
@@ -172,3 +174,11 @@ VALUES (UUID_TO_BIN(UUID()), 'TERMS', '1.0', '서비스 이용약관', '# 이용
 - 필수(`required`) 약관에 동의하지 않은 사용자는 로그인 `nextStep`이 `TERMS_AGREEMENT`이고, 동의 전까지 대부분의 API가 403 `TERMS_AGREEMENT_REQUIRED`
 - 새 버전을 넣을 때 `require_reagreement = true`면 기존 사용자도 다시 동의해야 함
 - 서버는 약관 목록을 1분 캐시합니다.
+- 공개 API(`@Auth('ALL')`)는 로그인 상태여도 약관 검사를 하지 않습니다.
+
+## 학급·교사 담당 반
+
+- 학급은 마이그레이션으로 1~3학년 1~4반을 미리 만들고, 그 밖의 반은 학생이 로그인할 때 DataGSM 학년·반으로 자동 생성됩니다.
+- 담당 반이 없는 교사는 로그인 `nextStep`이 `TEACHER_CLASS_SELECT`이고, 반을 고르기 전까지 대부분의 API가 403 `TEACHER_CLASS_REQUIRED` (관리자 겸 교사는 제외)
+- 반 선택 화면: `GET /classes`로 목록을 받아 `PUT /teachers/me/classes { classIds }`로 저장(전체 교체). 응답의 `nextStep`으로 다음 화면 이동
+- 담당 반 변경은 감사 로그(`audit_logs`, `TEACHER_CLASS_CHANGE`)에 남습니다.

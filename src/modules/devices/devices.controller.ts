@@ -4,7 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
-import { SkipTermsCheck } from '../../common/auth/terms.decorator.js';
+import { SkipTermsCheck } from '../../common/auth/onboarding.decorator.js';
 import type { ClientInfo } from '../../common/client/client.guard.js';
 import { ZodBody, ZodParam, ZodResponse } from '../../common/zod/decorators.js';
 import { DeviceList, RegisterDevice, RegisterDeviceResponse } from './devices.schemas.js';

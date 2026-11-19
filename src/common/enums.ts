@@ -15,6 +15,9 @@ export type PushType = Values<typeof PUSH_TYPE>;
 export const NEXT_STEP = ['TERMS_AGREEMENT', 'TEACHER_CLASS_SELECT', 'HOME'] as const;
 export type NextStep = Values<typeof NEXT_STEP>;
 
+export const AUDIT_ACTION = ['TEACHER_CLASS_CHANGE'] as const;
+export type AuditAction = Values<typeof AUDIT_ACTION>;
+
 export const UPDATE_STATUS = ['NONE', 'RECOMMENDED', 'REQUIRED'] as const;
 export type UpdateStatus = Values<typeof UPDATE_STATUS>;
 
