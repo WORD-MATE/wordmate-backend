@@ -9,5 +9,6 @@ import { SessionService } from './session.service.js';
   imports: [UsersModule],
   controllers: [AuthController],
   providers: [AuthService, SessionService, DataGsmClient],
+  exports: [SessionService],
 })
 export class AuthModule {}
