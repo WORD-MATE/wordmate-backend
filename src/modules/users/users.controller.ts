@@ -4,7 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
-import { SkipTermsCheck } from '../../common/auth/terms.decorator.js';
+import { SkipTermsCheck } from '../../common/auth/onboarding.decorator.js';
 import { ZodBody, ZodResponse } from '../../common/zod/decorators.js';
 import { AgreementService } from './agreement.service.js';
 import { Me } from './me.schema.js';
@@ -52,8 +52,8 @@ export class UsersController {
     @ZodBody(SubmitAgreements) body: z.infer<typeof SubmitAgreements>,
     @Req() request: FastifyRequest,
   ) {
-    const { userId } = currentUser(request);
-    await this.agreements.submit(userId, body.items);
-    return { nextStep: await this.nextStep.resolve(userId) };
+    const user = currentUser(request);
+    await this.agreements.submit(user.userId, body.items);
+    return { nextStep: await this.nextStep.resolve(user) };
   }
 }

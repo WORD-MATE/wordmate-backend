@@ -3,7 +3,8 @@ import { APP_GUARD } from '@nestjs/core';
 import { PoliciesModule } from '../policies/policies.module.js';
 import { AgreementService } from './agreement.service.js';
 import { NextStepService } from './next-step.service.js';
-import { TermsGuard } from './terms.guard.js';
+import { OnboardingGuard } from './onboarding.guard.js';
+import { TeacherClassService } from './teacher-class.service.js';
 import { UsersController } from './users.controller.js';
 import { UsersService } from './users.service.js';
 
@@ -13,9 +14,10 @@ import { UsersService } from './users.service.js';
   providers: [
     AgreementService,
     NextStepService,
+    TeacherClassService,
     UsersService,
-    { provide: APP_GUARD, useClass: TermsGuard },
+    { provide: APP_GUARD, useClass: OnboardingGuard },
   ],
-  exports: [NextStepService],
+  exports: [NextStepService, TeacherClassService],
 })
 export class UsersModule {}

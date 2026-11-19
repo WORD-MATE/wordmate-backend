@@ -13,6 +13,7 @@ import { type Database, DB } from '../../infra/db/db.module.js';
 import { type User, users } from '../../infra/db/schema/index.js';
 import { type Me, toMe } from '../users/me.schema.js';
 import { NextStepService } from '../users/next-step.service.js';
+import { TeacherClassService } from '../users/teacher-class.service.js';
 import { DataGsmClient, type DataGsmProfile } from './datagsm/datagsm.client.js';
 import { SessionService } from './session.service.js';
 
@@ -36,6 +37,7 @@ export class AuthService {
     private readonly sessions: SessionService,
     private readonly accessTokens: AccessTokenService,
     private readonly nextStep: NextStepService,
+    private readonly teacherClasses: TeacherClassService,
   ) {}
 
   async loginWithDataGsm(
@@ -61,8 +63,12 @@ export class AuthService {
       accessToken,
       refreshToken: session.refreshToken,
       expiresIn: ACCESS_TOKEN_TTL_SECONDS,
-      nextStep: await this.nextStep.resolve(user.id),
-      user: toMe(user),
+      nextStep: await this.nextStep.resolve({
+        userId: user.id,
+        role: user.role,
+        isAdmin: user.isAdmin,
+      }),
+      user: toMe(user, user.role === 'TEACHER' ? await this.teacherClasses.list(user.id) : []),
     };
   }
 
