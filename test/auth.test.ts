@@ -4,9 +4,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessTokenService } from '../src/common/auth/access-token.service.js';
 import { Auth } from '../src/common/auth/auth.decorator.js';
 import type { AuthUser } from '../src/common/auth/auth-user.js';
+import { SkipTeacherClassCheck } from '../src/common/auth/onboarding.decorator.js';
 import { newId } from '../src/infra/db/uuid.js';
 import { createTestApp, inject } from './support/create-test-app.js';
 
+// 역할 판정만 검사하므로 담당 반 선택 여부는 보지 않는다
+@SkipTeacherClassCheck()
 @Controller('test-auth')
 class AuthTestController {
   @Get('default')
