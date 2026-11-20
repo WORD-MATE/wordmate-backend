@@ -285,6 +285,14 @@ describe('학습 종료', () => {
     expect(
       (await db.select().from(userStreaks).where(eq(userStreaks.userId, other.userId))).length,
     ).toBe(0);
+    // 기록은 남지만 그날 학습한 것으로 세지 않는다
+    expect(
+      (await db.select().from(studyRecords).where(eq(studyRecords.userId, other.userId))).length,
+    ).toBe(1);
+    expect(
+      (await db.select().from(dailyStudyStats).where(eq(dailyStudyStats.userId, other.userId)))
+        .length,
+    ).toBe(0);
   });
 
   it('하루 XP 상한 500을 넘으면 잘라서 주고 DAILY_CAP', async () => {
