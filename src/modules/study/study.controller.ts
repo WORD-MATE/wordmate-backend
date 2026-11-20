@@ -1,5 +1,6 @@
 import { Controller, Delete, Get, HttpCode, Post, Req } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
@@ -64,6 +65,8 @@ export class StudyController {
   })
   @Post(':sessionId/answers')
   @HttpCode(200)
+  // 오프라인 동안 쌓인 답안을 한꺼번에 다시 보내거나 플래시카드를 빠르게 넘겨도 막히지 않게 기본(분당 120)보다 넉넉히
+  @Throttle({ default: { limit: 600, ttl: 60_000 } })
   @Idempotent()
   @ZodResponse(AnswerResult)
   submit(
