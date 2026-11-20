@@ -1,6 +1,6 @@
 import { getQueueToken } from '@nestjs/bullmq';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import type { Queue } from 'bullmq';
+import type { Job, Queue } from 'bullmq';
 import { eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessTokenService } from '../src/common/auth/access-token.service.js';
@@ -25,11 +25,9 @@ import { newId } from '../src/infra/db/uuid.js';
 import {
   MAINTENANCE_QUEUE,
   MaintenanceJob,
+  MaintenanceProcessor,
 } from '../src/modules/maintenance/maintenance.processor.js';
-import {
-  MaintenanceService,
-  RECORDS_PER_USER,
-} from '../src/modules/maintenance/maintenance.service.js';
+import { MaintenanceService } from '../src/modules/maintenance/maintenance.service.js';
 import { createTestApp, inject } from './support/create-test-app.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -172,13 +170,12 @@ describe('정리 작업', () => {
     expect((await call(user, 'GET', `/records/${recordId}`)).json().items).toHaveLength(1);
   });
 
-  it(`사용자별 최근 ${RECORDS_PER_USER}개만 남긴다`, async () => {
-    const many = await makeUser();
-    const few = await makeUser();
-    const base = Date.now() - 100 * DAY_MS;
-    const record = (userId: string, i: number) => ({
+  it('매일 정리를 돌려도 학습 기록은 지우지 않는다', async () => {
+    const user = await makeUser();
+    const base = Date.now() - 400 * DAY_MS;
+    const rows = Array.from({ length: 60 }, (_, i) => ({
       id: newId(),
-      userId,
+      userId: user.userId,
       source: 'PACK' as const,
       mode: 'CHOICE' as const,
       direction: 'EN_TO_KO' as const,
@@ -187,40 +184,35 @@ describe('정리 작업', () => {
       wrongCount: 0,
       xpEarned: 1,
       packCompleteBonus: false,
-      completedAt: new Date(base + i * 60_000),
-      completedDate: '2026-01-01',
-    });
-    const manyRows = Array.from({ length: RECORDS_PER_USER + 3 }, (_, i) => record(many.userId, i));
-    await db
-      .insert(studyRecords)
-      .values([...manyRows, record(few.userId, 0), record(few.userId, 1)]);
-    const oldest = manyRows[0]?.id as string;
+      completedAt: new Date(base + i * DAY_MS),
+      completedDate: '2025-01-01',
+    }));
+    await db.insert(studyRecords).values(rows);
     await db.insert(studyRecordItems).values({
-      recordId: oldest,
+      recordId: rows[0]?.id as string,
       idx: 0,
       wordId: newId(),
-      english: 'gone',
-      meanings: ['사라짐'],
+      english: 'old',
+      meanings: ['오래됨'],
       correct: true,
     });
 
-    expect(await maintenance.trimStudyRecords()).toBeGreaterThanOrEqual(3);
-    const kept = await db
-      .select({ id: studyRecords.id })
-      .from(studyRecords)
-      .where(eq(studyRecords.userId, many.userId));
-    expect(kept.map((r) => r.id).sort()).toEqual(
-      manyRows
-        .slice(3)
-        .map((r) => r.id)
-        .sort(),
-    );
+    const processor = app.get(MaintenanceProcessor);
+    const result = await processor.process({ name: MaintenanceJob.dailyCleanup } as Job);
+    expect(Object.keys(result).sort()).toEqual([
+      'expiredSessions',
+      'purgedFavorites',
+      'purgedSessions',
+    ]);
     expect(
-      await db.select().from(studyRecordItems).where(eq(studyRecordItems.recordId, oldest)),
-    ).toEqual([]);
+      await db.select().from(studyRecords).where(eq(studyRecords.userId, user.userId)),
+    ).toHaveLength(60);
     expect(
-      await db.select().from(studyRecords).where(eq(studyRecords.userId, few.userId)),
-    ).toHaveLength(2);
+      await db
+        .select()
+        .from(studyRecordItems)
+        .where(eq(studyRecordItems.recordId, rows[0]?.id as string)),
+    ).toHaveLength(1);
   });
 
   it('삭제된 단어의 즐겨찾기를 지운다', async () => {
