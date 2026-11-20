@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { englishKey, normalizeEnglish, parseLine, parseText } from './word-text.js';
+import {
+  containsPattern,
+  englishKey,
+  fulltextQuery,
+  normalizeEnglish,
+  parseLine,
+  parseText,
+} from './word-text.js';
 
 describe('parseLine', () => {
   it('처음 나오는 구분자에서 영어와 뜻을 나누고, 뜻은 쉼표로 나눈다', () => {
@@ -49,5 +56,20 @@ describe('englishKey', () => {
     expect(englishKey('  Look   UP ')).toBe('look up');
     expect(englishKey('ＡＢＣ')).toBe('abc');
     expect(normalizeEnglish('Café')).toBe('Café');
+  });
+});
+
+describe('검색어', () => {
+  it('FULLTEXT는 2글자 이상인 낱말마다 구문 검색을 걸고, 없으면 null', () => {
+    expect(fulltextQuery('give up')).toBe('+"give" +"up"');
+    expect(fulltextQuery('사과')).toBe('+"사과"');
+    expect(fulltextQuery('a b')).toBeNull();
+    expect(fulltextQuery('a book')).toBe('+"book"');
+    expect(fulltextQuery('"ab"c')).toBe('+"abc"');
+  });
+
+  it('LIKE 패턴은 와일드카드 문자를 글자 그대로 찾는다', () => {
+    expect(containsPattern('app')).toBe('%app%');
+    expect(containsPattern('50%_\\')).toBe('%50\\%\\_\\\\%');
   });
 });
