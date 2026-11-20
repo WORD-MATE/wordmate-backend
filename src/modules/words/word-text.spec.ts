@@ -65,7 +65,10 @@ describe('검색어', () => {
     expect(fulltextQuery('사과')).toBe('+"사과"');
     expect(fulltextQuery('a b')).toBeNull();
     expect(fulltextQuery('a book')).toBe('+"book"');
-    expect(fulltextQuery('"ab"c')).toBe('+"abc"');
+    expect(fulltextQuery('"ab"c')).toBe('+"ab"');
+    expect(fulltextQuery('x-ray')).toBe('+"ray"');
+    expect(fulltextQuery('x-r')).toBeNull();
+    expect(fulltextQuery("don't give-up")).toBe('+"don" +"give" +"up"');
   });
 
   it('LIKE 패턴은 와일드카드 문자를 글자 그대로 찾는다', () => {

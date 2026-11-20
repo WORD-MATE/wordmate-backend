@@ -26,13 +26,13 @@ export const meaningsText = (meanings: string[]): string => meanings.join(' ');
 const NGRAM_TOKEN_SIZE = 2;
 
 /**
- * FULLTEXT로 후보를 좁히는 BOOLEAN MODE 검색어. 공백으로 나눈 낱말마다 구문 검색(+"…")을 건다.
- * ngram 토큰보다 짧은 낱말은 FULLTEXT로 잡히지 않아 빼고, 남는 낱말이 없으면 null (LIKE만 쓴다)
+ * FULLTEXT로 후보를 좁히는 BOOLEAN MODE 검색어. 글자·숫자가 이어진 조각마다 구문 검색(+"…")을 건다.
+ * ngram 파서는 공백·기호에서 토큰을 끊으므로 기호가 든 낱말을 그대로 넣으면 토큰이 없어 아무것도 못 찾을 수 있다.
+ * 토큰보다 짧은 조각은 빼고, 남는 조각이 없으면 null (LIKE만 쓴다)
  */
 export function fulltextQuery(query: string): string | null {
   const terms = query
-    .split(/\s+/)
-    .map((term) => term.replaceAll('"', ''))
+    .split(/[^\p{L}\p{M}\p{N}_]+/u)
     .filter((term) => [...term].length >= NGRAM_TOKEN_SIZE);
   return terms.length > 0 ? terms.map((term) => `+"${term}"`).join(' ') : null;
 }
