@@ -12,6 +12,7 @@ import {
   studySessions,
   wordFavorites,
   words,
+  wrongNotes,
 } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
 import { PacksService } from '../packs/packs.service.js';
@@ -233,8 +234,26 @@ export class StudySessionsService {
             ),
           )
           .orderBy(asc(wordFavorites.createdAt), asc(words.id));
+      case 'WRONG_NOTE': {
+        // 한 단어에 문제 유형별 오답이 여러 개일 수 있어 최근에 틀린 순으로 한 번씩만 낸다.
+        // 팩이 삭제돼도 단어가 남아 있으면 복습할 수 있다
+        const rows = await this.db
+          .select(quizWordColumns)
+          .from(wrongNotes)
+          .innerJoin(words, eq(words.id, wrongNotes.wordId))
+          .where(
+            and(
+              eq(wrongNotes.userId, user.userId),
+              eq(wrongNotes.status, 'ACTIVE'),
+              isNull(words.deletedAt),
+              body.wordIds ? inArray(words.id, body.wordIds) : undefined,
+            ),
+          )
+          .orderBy(desc(wrongNotes.lastWrongAt), asc(words.id));
+        return [...new Map(rows.map((row) => [row.id, row])).values()];
+      }
       default:
-        // WRONG_NOTE·RECORD_WRONG·REVIEW는 오답노트·기록·복습 작업에서 연결한다
+        // RECORD_WRONG·REVIEW는 기록·복습 작업에서 연결한다
         throw StudyErrors.sourceNotSupported();
     }
   }
