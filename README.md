@@ -305,7 +305,16 @@ INSERT INTO forbidden_words (id, word, type) VALUES (UUID_TO_BIN(UUID()), 'class
   - 학습: 정답당 4지선다 +1, 직접 입력 +2, 오답노트 복습 +1입니다. 너무 빠른 답과 플래시카드는 0입니다.
   - 완주 +10: 팩의 모든 단어를 4지선다·직접 입력으로 `FINISHED`까지 풀면 받습니다(오답이 있어도 됨). 같은 팩은 하루 1회입니다(`ref_key = pack:{packId}:{date}`).
   - `blockedReason`은 사유가 여러 개면 `DAILY_CAP` → `REPEAT_LIMIT`(완주 보너스를 오늘 이미 받음) → `TOO_FAST` → `NOT_COMPLETED`(그만두기) 순으로 하나만 알려줍니다.
-- 지금은 `PACK`·`FAVORITE` 소스만 지원하고, `WRONG_NOTE`·`RECORD_WRONG`·`REVIEW`는 오답노트·기록·복습 작업에서 연결합니다.
+- 지금은 `PACK`·`FAVORITE`·`WRONG_NOTE` 소스를 지원하고, `RECORD_WRONG`·`REVIEW`는 기록·복습 작업에서 연결합니다.
+
+### 오답노트
+
+- `GET /wrong-notes`는 기본으로 `ACTIVE`를 최근에 틀린 순(`last_wrong_at`)으로 보여줍니다. `sort=MOST_WRONG`이면 틀린 횟수 순입니다. 커서는 정렬 키마다 따로 인코딩합니다.
+  - 필터: `status`·`questionType`·`packId`·`source`, `from`·`to`(KST 날짜, 마지막으로 틀린 날 기준), `recordId`.
+  - `recordId` 필터는 그 기록의 문항별 결과에서 같은 단어·같은 문제 유형으로 틀린 오답을 찾습니다. 남의 기록이면 아무것도 나오지 않습니다.
+  - 삭제된 단어의 오답은 다시 풀 수 없어 목록에서 뺍니다. 팩만 삭제됐으면 `pack=null`로 보여줍니다.
+- `POST /wrong-notes/delete`(영구 삭제)와 `POST /wrong-notes/graduate`(수동 졸업)는 한 번에 500개까지 받고, 남의 id는 조용히 무시합니다.
+- 오답노트로 다시 풀기(`source=WRONG_NOTE`)는 `ACTIVE` 오답이 있는 단어를 최근에 틀린 순으로 한 번씩만 냅니다. 팩이 삭제돼도 단어가 남아 있으면 낼 수 있습니다. 정답 XP는 방식과 상관없이 +1입니다.
 
 ## 학급·교사 담당 반
 
