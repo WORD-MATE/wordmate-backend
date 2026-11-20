@@ -165,10 +165,15 @@ export const userWordProgress = mysqlTable(
     totalCorrect: int('total_correct').notNull().default(0),
     totalWrong: int('total_wrong').notNull().default(0),
     lastStudiedAt: datetime('last_studied_at', { mode: 'date', fsp: 3 }).notNull(),
+    // 간격 반복: 통과한 복습 횟수와 다음 복습일(KST). 모든 간격을 통과하면 next_review_on은 NULL
+    reviewStage: tinyint('review_stage').notNull().default(0),
+    nextReviewOn: date('next_review_on', { mode: 'string' }),
+    lastReviewedOn: date('last_reviewed_on', { mode: 'string' }),
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.wordId] }),
     index('user_word_progress_pack_idx').on(t.userId, t.packId, t.memoryStatus),
+    index('user_word_progress_review_idx').on(t.userId, t.nextReviewOn),
   ],
 );
 
