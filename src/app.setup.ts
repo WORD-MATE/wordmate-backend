@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
+import multipart from '@fastify/multipart';
 import { Reflector } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { FastifyServerOptions } from 'fastify';
@@ -9,12 +10,15 @@ import { PinoNestLogger } from './common/logging/pino-nest-logger.js';
 import { setupSwagger } from './common/swagger.js';
 import { ZodResponseInterceptor } from './common/zod/zod-response.interceptor.js';
 import type { Env } from './config/env.js';
+import { WORD_FILE_MAX_BYTES } from './modules/words/import/word-file.js';
 
 const BODY_LIMIT_BYTES = 1024 * 1024;
 
 export const CLIENT_HEADERS = ['X-Client-Platform', 'X-Client-Version', 'Idempotency-Key'];
 
-export function createFastifyAdapter(env: Pick<Env, 'NODE_ENV' | 'LOG_LEVEL'>): FastifyAdapter {
+export function createFastifyAdapter(
+  env: Pick<Env, 'NODE_ENV' | 'LOG_LEVEL'> & Partial<Pick<Env, 'TRUST_PROXY'>>,
+): FastifyAdapter {
   const logger: FastifyServerOptions['logger'] = {
     level: env.LOG_LEVEL,
     redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
@@ -24,6 +28,7 @@ export function createFastifyAdapter(env: Pick<Env, 'NODE_ENV' | 'LOG_LEVEL'>): 
     genReqId: () => randomUUID(),
     requestIdLogLabel: 'traceId',
     bodyLimit: BODY_LIMIT_BYTES,
+    trustProxy: env.TRUST_PROXY?.length ? env.TRUST_PROXY : false,
     logger,
   });
 }
@@ -35,6 +40,9 @@ export async function setupApp(
   app.useLogger(new PinoNestLogger(app.getHttpAdapter().getInstance().log));
   await app.register(cookie);
   await app.register(helmet, { contentSecurityPolicy: false });
+  await app.register(multipart, {
+    limits: { fileSize: WORD_FILE_MAX_BYTES, files: 1, fields: 5, parts: 6 },
+  });
   app.enableCors({
     origin: options.corsOrigins.length > 0 ? options.corsOrigins : false,
     credentials: true,

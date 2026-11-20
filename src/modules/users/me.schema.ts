@@ -45,7 +45,9 @@ const levelOf = (totalXp: number): z.infer<typeof LevelInfo> => ({
   nextLevelXp: null,
 });
 
-export function toMe(user: User): Me {
+export type ClassSummary = z.infer<typeof ClassSummary>;
+
+export function toMe(user: User, teacherClasses: ClassSummary[] = []): Me {
   return {
     userId: user.id,
     name: user.name,
@@ -60,6 +62,6 @@ export function toMe(user: User): Me {
     rankingPublic: user.rankingPublic,
     rankingOnboarded: user.rankingOnboarded,
     level: levelOf(user.totalXp),
-    teacherClasses: [],
+    teacherClasses,
   };
 }

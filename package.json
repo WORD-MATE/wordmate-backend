@@ -20,11 +20,13 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "jwt:keygen": "node scripts/generate-jwt-key.mjs"
+    "jwt:keygen": "node scripts/generate-jwt-key.mjs",
+    "datagsm:login": "node scripts/datagsm-login.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.5",
     "@fastify/helmet": "13.2.0",
+    "@fastify/multipart": "10.1.7",
     "@fastify/static": "10.1.11",
     "@nestjs/bullmq": "12.0.2",
     "@nestjs/common": "12.5.0",
@@ -34,6 +36,7 @@
     "@nestjs/swagger": "12.1.2",
     "@nestjs/throttler": "6.7.1",
     "bullmq": "6.7.6",
+    "csv-parse": "7.0.3",
     "drizzle-orm": "1.0.0-rc.5",
     "fastify": "5.12.8",
     "ioredis": "6.0.0",
@@ -42,6 +45,7 @@
     "pino": "10.4.0",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
+    "saxes": "6.0.0",
     "uuid": "14.0.3",
     "zod": "4.6.7"
   },

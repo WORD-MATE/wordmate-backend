@@ -8,6 +8,7 @@ export const DB = Symbol('DB');
 export const DB_POOL = Symbol('DB_POOL');
 
 export type Database = MySql2Database;
+export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 @Global()
 @Module({

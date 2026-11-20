@@ -21,6 +21,7 @@ describe('AppConfigService (Valkey)', () => {
     expect(await service.get()).toEqual({
       maintenance: { enabled: false, message: '', endsAt: null },
       minVersion: { ANDROID: '3.1.0' },
+      latestVersion: {},
       storeUrl: {},
     });
   });

@@ -19,6 +19,8 @@ export const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   CORS_ORIGINS: commaList(z.url()),
+  TRUST_PROXY: commaList(z.union([z.cidrv4(), z.ipv4()])),
+  SWAGGER_ENABLED: z.stringbool().optional(),
   DATABASE_URL: z.url({ protocol: /^mysql$/ }),
   VALKEY_URL: z.url({ protocol: /^rediss?$/ }),
   JWT_PRIVATE_KEY: z
@@ -33,6 +35,8 @@ export const envSchema = z.object({
   ),
   DATAGSM_AUTH_URL: z.url().default('https://oauth.authorization.datagsm.kr'),
   DATAGSM_RESOURCE_URL: z.url().default('https://oauth.resource.datagsm.kr'),
+  // 웹 도메인이 생기기 전까지는 앱 스킴으로 공유 링크를 만든다
+  SHARE_LINK_BASE: z.url().default('wordmate://'),
 });
 
 export type Env = z.infer<typeof envSchema>;

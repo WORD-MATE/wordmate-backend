@@ -10,8 +10,10 @@ import type { NextStep, Platform } from '../../common/enums.js';
 import { CommonErrors } from '../../common/errors/app-exception.js';
 import type { Env } from '../../config/env.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
-import { type User, users } from '../../infra/db/schema/index.js';
+import { classes, type User, users } from '../../infra/db/schema/index.js';
 import { type Me, toMe } from '../users/me.schema.js';
+import { NextStepService } from '../users/next-step.service.js';
+import { TeacherClassService } from '../users/teacher-class.service.js';
 import { DataGsmClient, type DataGsmProfile } from './datagsm/datagsm.client.js';
 import { SessionService } from './session.service.js';
 
@@ -34,6 +36,8 @@ export class AuthService {
     private readonly datagsm: DataGsmClient,
     private readonly sessions: SessionService,
     private readonly accessTokens: AccessTokenService,
+    private readonly nextStep: NextStepService,
+    private readonly teacherClasses: TeacherClassService,
   ) {}
 
   async loginWithDataGsm(
@@ -59,8 +63,12 @@ export class AuthService {
       accessToken,
       refreshToken: session.refreshToken,
       expiresIn: ACCESS_TOKEN_TTL_SECONDS,
-      nextStep: this.nextStep(user),
-      user: toMe(user),
+      nextStep: await this.nextStep.resolve({
+        userId: user.id,
+        role: user.role,
+        isAdmin: user.isAdmin,
+      }),
+      user: toMe(user, user.role === 'TEACHER' ? await this.teacherClasses.list(user.id) : []),
     };
   }
 
@@ -116,6 +124,12 @@ export class AuthService {
           .set({ ...fields, status: nextStatus(existing, profile, now) })
           .where(eq(users.id, existing.id));
       }
+      if (profile.role === 'STUDENT' && profile.grade && profile.classNo) {
+        await tx
+          .insert(classes)
+          .values({ grade: profile.grade, classNo: profile.classNo })
+          .onDuplicateKeyUpdate({ set: { grade: profile.grade } });
+      }
       const [saved] = await tx.select().from(users).where(eq(users.datagsmId, profile.datagsmId));
       return saved ?? null;
     });
@@ -140,11 +154,6 @@ export class AuthService {
       isAdmin: user.isAdmin,
       deviceId,
     });
-  }
-
-  // 약관 동의·교사 담당 반 기능이 들어오면 TERMS_AGREEMENT, TEACHER_CLASS_SELECT를 판정한다
-  private nextStep(_user: User): NextStep {
-    return 'HOME';
   }
 }
 
