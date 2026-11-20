@@ -6,12 +6,13 @@ import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { Idempotent } from '../../common/idempotency/idempotent.decorator.js';
 import { ZodBody, ZodParam, ZodResponse } from '../../common/zod/decorators.js';
-import { MIN_COUNTED_ELAPSED_MS } from './grading.js';
+import { DAILY_REVIEW_LIMIT, MIN_COUNTED_ELAPSED_MS } from './grading.js';
 import {
   AnswerResult,
   CompleteResult,
   CompleteStudy,
   CurrentStudy,
+  ReviewSummary,
   StartStudy,
   StudySession,
   SubmitAnswer,
@@ -35,7 +36,7 @@ export class StudyController {
   @ApiOperation({
     summary: '학습 시작',
     description:
-      '서버가 문항·보기를 만들어 고정 저장. 4지선다 보기 = 정답 + 그 단어팩의 다른 단어 3개 (보이는 글자가 겹치는 단어는 뺌). TYPING은 정답을 내려주지 않음. 같은 팩(팩이 없으면 같은 소스)에 이어할 학습이 있으면 409 STUDY_SESSION_EXISTS (detail.sessionId), force=true면 그 학습을 버리고 새로 시작. 지금은 PACK·FAVORITE만',
+      '서버가 문항·보기를 만들어 고정 저장. 4지선다 보기 = 정답 + 그 단어팩의 다른 단어 3개 (보이는 글자가 겹치는 단어는 뺌). TYPING은 정답을 내려주지 않음. 같은 팩(팩이 없으면 같은 소스)에 이어할 학습이 있으면 409 STUDY_SESSION_EXISTS (detail.sessionId), force=true면 그 학습을 버리고 새로 시작. 소스: PACK(packId), FAVORITE·WRONG_NOTE(wordIds로 일부만), RECORD_WRONG(recordId, 그 기록에서 틀린 단어), REVIEW(오늘 복습할 단어 최대 30개)',
   })
   @Post()
   @ZodResponse(StudySession, { status: 201 })
@@ -106,5 +107,21 @@ export class StudyController {
   @HttpCode(204)
   async remove(@SessionIdParam() sessionId: string, @Req() request: FastifyRequest): Promise<void> {
     await this.sessions.remove(currentUser(request), sessionId);
+  }
+}
+
+@ApiTags('study')
+@Controller('study')
+export class StudyReviewController {
+  constructor(private readonly sessions: StudySessionsService) {}
+
+  @ApiOperation({
+    summary: '오늘의 복습',
+    description: `간격 반복(1·3·7·14·30일). 처음 답한 다음 날부터 복습할 단어가 되고, 복습에서 맞힐 때마다 다음 간격으로, 틀리면 다음 날부터 다시. 하루 최대 ${DAILY_REVIEW_LIMIT}개. 복습 시작: POST /study/sessions (source=REVIEW)`,
+  })
+  @Get('review')
+  @ZodResponse(ReviewSummary)
+  review(@Req() request: FastifyRequest) {
+    return this.sessions.reviewSummary(currentUser(request));
   }
 }

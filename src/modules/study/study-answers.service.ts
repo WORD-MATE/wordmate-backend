@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { CommonErrors } from '../../common/errors/app-exception.js';
+import { kstDate } from '../../common/time/kst.js';
 import { type Database, DB, type Transaction } from '../../infra/db/db.module.js';
 import {
   type StudyQuestionRow,
@@ -14,7 +15,13 @@ import {
   wrongNotes,
 } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
-import { GRADUATE_STREAK, gradeTyping, MIN_COUNTED_ELAPSED_MS, nextProgress } from './grading.js';
+import {
+  GRADUATE_STREAK,
+  gradeTyping,
+  MIN_COUNTED_ELAPSED_MS,
+  nextProgress,
+  nextReview,
+} from './grading.js';
 import type { AnswerResult, SubmitAnswer } from './study.schemas.js';
 import { isLive, StudyErrors, sessionExpiry } from './study-sessions.service.js';
 
@@ -214,9 +221,22 @@ export class StudyAnswersService {
       .values({ userId, wordId, packId, ...nextProgress(null, null), lastStudiedAt: now });
     const [current] = await tx.select().from(userWordProgress).where(target).for('update');
     const next = nextProgress(current ?? null, { ...answer, sessionId: session.id });
+    const review = nextReview(
+      current ?? null,
+      { ...answer, isReview: session.source === 'REVIEW' },
+      kstDate(now),
+    );
     await tx
       .update(userWordProgress)
-      .set({ ...next, lastStudiedAt: now })
+      .set({
+        memoryStatus: next.memoryStatus,
+        correctStreak: next.correctStreak,
+        lastCorrectSessionId: next.lastCorrectSessionId,
+        totalCorrect: next.totalCorrect,
+        totalWrong: next.totalWrong,
+        ...review,
+        lastStudiedAt: now,
+      })
       .where(target);
   }
 }

@@ -305,8 +305,16 @@ INSERT INTO forbidden_words (id, word, type) VALUES (UUID_TO_BIN(UUID()), 'class
   - 학습: 정답당 4지선다 +1, 직접 입력 +2, 오답노트 복습 +1입니다. 너무 빠른 답과 플래시카드는 0입니다.
   - 완주 +10: 팩의 모든 단어를 4지선다·직접 입력으로 `FINISHED`까지 풀면 받습니다(오답이 있어도 됨). 같은 팩은 하루 1회입니다(`ref_key = pack:{packId}:{date}`).
   - `blockedReason`은 사유가 여러 개면 `DAILY_CAP` → `REPEAT_LIMIT`(완주 보너스를 오늘 이미 받음) → `TOO_FAST` → `NOT_COMPLETED`(그만두기) 순으로 하나만 알려줍니다.
-- 지금은 `PACK`·`FAVORITE`·`WRONG_NOTE`·`RECORD_WRONG` 소스를 지원하고, `REVIEW`는 복습 작업(#49)에서 연결합니다.
+- 소스는 `PACK`·`FAVORITE`·`WRONG_NOTE`·`RECORD_WRONG`·`REVIEW` 다섯 가지입니다.
   - `RECORD_WRONG`은 그 기록에서 틀린 단어(4지선다·직접 입력)나 "몰라요"(플래시카드)를 출제 순서대로 냅니다. 남의 기록이면 403, 없으면 `RECORD_NOT_FOUND`입니다.
+
+### 간격 반복 복습
+
+- `user_word_progress`의 `review_stage`·`next_review_on`(KST)으로 일정을 관리합니다. 간격은 1·3·7·14·30일입니다.
+  - 처음 답한 단어는 다음 날 복습할 단어가 됩니다.
+  - 복습 학습(`source=REVIEW`)에서 복습일이 된 단어를 맞히면 다음 간격으로 넘어가고, 30일 간격까지 통과하면 일정에서 빠집니다(`next_review_on = NULL`).
+  - 어디서든 틀리면 다음 날부터 다시 시작합니다. 일반 학습에서 맞힌 것과 너무 빠른 정답은 일정을 바꾸지 않습니다.
+- `GET /study/review`는 오늘 복습할 단어 수(최대 30)와 오늘 복습 학습에서 답한 단어 수(`last_reviewed_on`)를 돌려줍니다. `source=REVIEW`는 복습일이 이른 순으로 30개까지 냅니다. 내가 지운 팩·단어는 복습하지 않습니다.
 
 ### 기록·통계
 

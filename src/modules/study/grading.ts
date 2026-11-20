@@ -51,14 +51,22 @@ export function nextProgress(
     totalCorrect: 0,
     totalWrong: 0,
   };
-  // answer가 없으면 아직 아무 답도 반영하지 않은 처음 상태
-  if (!answer) return base;
+  // answer가 없으면 아직 아무 답도 반영하지 않은 처음 상태. base는 DB 행일 수 있어 필드를 골라 돌려준다
+  if (!answer) {
+    return {
+      memoryStatus: base.memoryStatus,
+      correctStreak: base.correctStreak,
+      lastCorrectSessionId: base.lastCorrectSessionId,
+      totalCorrect: base.totalCorrect,
+      totalWrong: base.totalWrong,
+    };
+  }
   if (!answer.correct) {
     return {
-      ...base,
       memoryStatus: 'LEARNING',
       correctStreak: 0,
       lastCorrectSessionId: null,
+      totalCorrect: base.totalCorrect,
       totalWrong: base.totalWrong + 1,
     };
   }
@@ -73,5 +81,55 @@ export function nextProgress(
     lastCorrectSessionId: advances ? answer.sessionId : base.lastCorrectSessionId,
     totalCorrect: base.totalCorrect + 1,
     totalWrong: base.totalWrong,
+  };
+}
+
+/** 복습 간격(일). 복습에서 맞힐 때마다 다음 간격으로, 다 통과하면 일정에서 빠진다 */
+export const REVIEW_INTERVALS = [1, 3, 7, 14, 30] as const;
+/** 하루에 내는 복습 단어 수 */
+export const DAILY_REVIEW_LIMIT = 30;
+
+export type ReviewState = {
+  reviewStage: number;
+  nextReviewOn: string | null;
+  lastReviewedOn: string | null;
+};
+
+const addDays = (date: string, days: number) =>
+  Temporal.PlainDate.from(date).add({ days }).toString();
+
+/**
+ * 답 하나를 반영한 복습 일정 (today는 KST 날짜).
+ * - 처음 답하면 다음 날 복습
+ * - 틀리면 어디서 틀렸든 첫 간격(다음 날)부터 다시
+ * - 복습 학습에서 오늘 복습할 단어를 맞히면 다음 간격으로. 너무 빨리 낸 정답은 넘어가지 않는다
+ * - 일반 학습에서 맞힌 것은 일정을 바꾸지 않는다
+ */
+export function nextReview(
+  previous: ReviewState | null,
+  answer: { correct: boolean; counted: boolean; isReview: boolean },
+  today: string,
+): ReviewState {
+  const base: ReviewState = previous ?? {
+    reviewStage: 0,
+    nextReviewOn: null,
+    lastReviewedOn: null,
+  };
+  const lastReviewedOn = answer.isReview ? today : base.lastReviewedOn;
+  const fresh = base.reviewStage === 0 && base.nextReviewOn === null;
+  if (!answer.correct || fresh) {
+    return { reviewStage: 0, nextReviewOn: addDays(today, REVIEW_INTERVALS[0]), lastReviewedOn };
+  }
+  const due = base.nextReviewOn !== null && base.nextReviewOn <= today;
+  // base는 DB 행 전체일 수 있으므로 펼치지 않고 일정 필드만 돌려준다 (다른 컬럼을 옛값으로 덮어쓰지 않게)
+  if (!answer.isReview || !answer.counted || !due) {
+    return { reviewStage: base.reviewStage, nextReviewOn: base.nextReviewOn, lastReviewedOn };
+  }
+  const reviewStage = base.reviewStage + 1;
+  const interval = REVIEW_INTERVALS[reviewStage];
+  return {
+    reviewStage,
+    nextReviewOn: interval === undefined ? null : addDays(today, interval),
+    lastReviewedOn,
   };
 }
