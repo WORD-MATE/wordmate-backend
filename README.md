@@ -285,7 +285,7 @@ INSERT INTO forbidden_words (id, word, type) VALUES (UUID_TO_BIN(UUID()), 'class
   - 4지선다 보기는 정답 + 그 단어의 단어팩에 있는 다른 단어 3개입니다. 보이는 글자(EN_TO_KO는 대표 뜻, KO_TO_EN은 영어)가 정답이나 다른 보기와 같은 단어는 뺍니다. 팩에서 모자라면 이번 학습의 다른 단어로 채우고, 그래도 모자라면 `STUDY_TOO_FEW_WORDS`입니다.
   - TYPING 정답(`accepted_answers`)은 서버에만 두고 내려주지 않습니다.
 - 이어할 학습은 팩마다 하나(팩이 없는 즐겨찾기 등은 소스마다 하나)이고, `active_key` 생성 컬럼의 유니크 인덱스로 막습니다. 이미 있으면 `409 STUDY_SESSION_EXISTS`(`detail.sessionId`)이고, `force=true`면 기존 학습을 `ABANDONED`로 바꾸고 새로 만듭니다.
-- 저장분은 `expires_at`(시작 후 7일)이 지나면 조회·이어하기에서 빠지고, 같은 팩을 새로 시작할 때 `ABANDONED`로 바뀝니다. 만료된 행 정리는 배치 작업(#50)에서 합니다.
+- 저장분은 `expires_at`(마지막으로 답한 뒤 7일)이 지나면 조회·이어하기에서 빠집니다. 같은 팩을 새로 시작하거나 정리 작업이 돌면 `ABANDONED`로 바뀝니다.
 - `DELETE /study/sessions/{id}`는 행을 지우지 않고 `ABANDONED`로 바꿉니다.
 - `POST /study/sessions/{id}/answers`는 문항마다 채점하고 답안·오답노트·암기 진행을 한 트랜잭션에 반영합니다. 세션 행을 잠가 같은 학습의 답안을 차례로 처리하고, 답을 낼 때마다 만료 시각을 7일 뒤로 늘립니다. `Idempotency-Key`를 지원합니다.
   - TYPING은 앞뒤 공백·대소문자·연속 공백을 무시하고, EN_TO_KO는 띄어쓰기도 무시하고 뜻 중 하나와 같으면 정답입니다.
@@ -328,6 +328,19 @@ INSERT INTO forbidden_words (id, word, type) VALUES (UUID_TO_BIN(UUID()), 'class
   - 삭제된 단어의 오답은 다시 풀 수 없어 목록에서 뺍니다. 팩만 삭제됐으면 `pack=null`로 보여줍니다.
 - `POST /wrong-notes/delete`(영구 삭제)와 `POST /wrong-notes/graduate`(수동 졸업)는 한 번에 500개까지 받고, 남의 id는 조용히 무시합니다.
 - 오답노트로 다시 풀기(`source=WRONG_NOTE`)는 `ACTIVE` 오답이 있는 단어를 최근에 틀린 순으로 한 번씩만 냅니다. 팩이 삭제돼도 단어가 남아 있으면 낼 수 있습니다. 정답 XP는 방식과 상관없이 +1입니다.
+
+## 정리 작업
+
+BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.
+
+| 작업                    | 주기 (KST) | 내용                                                                                                                                       |
+| ----------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `expire-study-sessions` | 매시 5분   | 만료된 `IN_PROGRESS` 학습을 `ABANDONED`로 바꿈                                                                                             |
+| `daily-cleanup`         | 매일 03:00 | 위 작업에 더해, 끝났거나 버린 지 7일 지난 세션(문항·답안 포함) 삭제, 사용자별 최근 50개를 넘는 학습 기록 삭제, 삭제된 단어의 즐겨찾기 삭제 |
+
+- 학습 기록을 지워도 달력·통계는 `daily_study_stats`에 남습니다. 세션을 지워도 기록은 남고 `study_records.session_id`만 NULL이 됩니다.
+- 지울 행은 1000개씩 나눠 지워서 테이블을 오래 잠그지 않습니다.
+- 스케줄 등록은 앱 시작을 기다리게 하지 않습니다. Valkey가 내려가 있으면 BullMQ 명령은 연결될 때까지 대기하므로, 기다리면 앱 시작이 멈춥니다.
 
 ## 학급·교사 담당 반
 
