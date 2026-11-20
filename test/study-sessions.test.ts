@@ -216,6 +216,20 @@ describe('학습 세션', () => {
     expect(none.json()).toBeNull();
   });
 
+  it('동시에 두 번 시작해도 하나만 만들어지고 나머지는 409', async () => {
+    const user = await makeUser();
+    const { packId } = await createPack(user, 4);
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () => start(user, { source: 'PACK', packId })),
+    );
+    const codes = results.map((res) => res.statusCode).sort();
+    expect(codes).toEqual([201, 409, 409, 409]);
+    const created = results.find((res) => res.statusCode === 201)?.json().sessionId;
+    for (const res of results.filter((r) => r.statusCode === 409)) {
+      expect(res.json().detail.sessionId).toBe(created);
+    }
+  });
+
   it('7일이 지난 학습은 만료로 보고, 같은 팩을 새로 시작할 수 있다', async () => {
     const user = await makeUser();
     const { packId } = await createPack(user, 4);
