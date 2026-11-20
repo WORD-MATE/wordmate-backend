@@ -93,6 +93,7 @@ export class StudySessionsService {
           mode: body.mode,
           direction: body.direction,
           shuffle: body.shuffle,
+          coversPack: body.source === 'PACK' && selected.length === candidates.length,
           total: questions.length,
           expiresAt: sessionExpiry(),
         });

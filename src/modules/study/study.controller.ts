@@ -9,12 +9,15 @@ import { ZodBody, ZodParam, ZodResponse } from '../../common/zod/decorators.js';
 import { MIN_COUNTED_ELAPSED_MS } from './grading.js';
 import {
   AnswerResult,
+  CompleteResult,
+  CompleteStudy,
   CurrentStudy,
   StartStudy,
   StudySession,
   SubmitAnswer,
 } from './study.schemas.js';
 import { StudyAnswersService } from './study-answers.service.js';
+import { StudyCompleteService } from './study-complete.service.js';
 import { SESSION_TTL_DAYS, StudySessionsService } from './study-sessions.service.js';
 
 const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
@@ -26,6 +29,7 @@ export class StudyController {
   constructor(
     private readonly sessions: StudySessionsService,
     private readonly answers: StudyAnswersService,
+    private readonly completion: StudyCompleteService,
   ) {}
 
   @ApiOperation({
@@ -75,6 +79,23 @@ export class StudyController {
     @Req() request: FastifyRequest,
   ) {
     return this.answers.submit(currentUser(request), sessionId, body);
+  }
+
+  @ApiOperation({
+    summary: '학습 종료',
+    description:
+      '결과·기록·XP·스트릭. 같은 Idempotency-Key로 다시 보내면 같은 결과, 이미 끝난 학습은 409 STUDY_SESSION_CLOSED. XP: 정답당 4지선다 +1, 직접 입력 +2, 오답노트 복습 +1(너무 빠른 답 제외), 팩 전체를 4지선다·직접 입력으로 끝까지 풀면 완주 +10(같은 팩 하루 1회), 하루 최대 500. 스트릭은 답을 1개 이상 낸 학습을 끝내면 인정',
+  })
+  @Post(':sessionId/complete')
+  @HttpCode(200)
+  @Idempotent()
+  @ZodResponse(CompleteResult)
+  complete(
+    @SessionIdParam() sessionId: string,
+    @ZodBody(CompleteStudy) body: z.infer<typeof CompleteStudy>,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.completion.complete(currentUser(request), sessionId, body);
   }
 
   @ApiOperation({

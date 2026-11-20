@@ -2,8 +2,10 @@ import { z } from 'zod';
 import {
   QUIZ_DIRECTION,
   QUIZ_MODE,
+  STUDY_END_REASON,
   STUDY_SESSION_STATUS,
   STUDY_SOURCE,
+  XP_BLOCK_REASON,
 } from '../../common/enums.js';
 import { MAX_WORDS_PER_PACK } from '../words/words.schemas.js';
 
@@ -122,3 +124,34 @@ export const AnswerResult = z
   })
   .meta({ id: 'AnswerResult' });
 export type AnswerResult = z.infer<typeof AnswerResult>;
+
+export const CompleteStudy = z
+  .object({ reason: z.enum(STUDY_END_REASON).describe('FINISHED 끝까지 풂 / QUIT 그만하기') })
+  .meta({ id: 'CompleteStudy' });
+export type CompleteStudy = z.infer<typeof CompleteStudy>;
+
+export const XpResult = z
+  .object({
+    earned: z.number().int(),
+    blockedReason: z.enum(XP_BLOCK_REASON).nullable(),
+    todayTotal: z.number().int().describe('오늘(KST) 모든 출처 합계, 최대 500'),
+  })
+  .meta({ id: 'XpResult' });
+
+export const CompleteResult = z
+  .object({
+    recordId: z.string(),
+    correctCount: z.number().int(),
+    wrongCount: z.number().int(),
+    accuracy: z.number().nullable().describe('0~100, 소수 첫째 자리. FLASHCARD는 null'),
+    knownCount: z.number().int().nullable().describe('FLASHCARD만'),
+    unknownCount: z.number().int().nullable().describe('FLASHCARD만'),
+    xp: XpResult,
+    packCompleteBonus: z.boolean(),
+    streak: z
+      .object({ current: z.number().int(), increased: z.boolean() })
+      .nullable()
+      .describe('답을 하나도 내지 않았으면 null'),
+  })
+  .meta({ id: 'CompleteResult' });
+export type CompleteResult = z.infer<typeof CompleteResult>;
