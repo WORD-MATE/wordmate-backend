@@ -296,6 +296,15 @@ INSERT INTO forbidden_words (id, word, type) VALUES (UUID_TO_BIN(UUID()), 'class
   - 처음 답하면 LEARNING이 됩니다. 서로 다른 학습에서 3번 연속 맞히면 MEMORIZED입니다(한 학습 안에서는 한 번만 셉니다).
   - 틀리면 연속 정답이 0이 되고, MEMORIZED였으면 LEARNING으로 내려갑니다. 플래시카드의 "알아요"는 정답으로 봅니다.
   - 단어 목록·검색·즐겨찾기의 `memoryStatus`, 단어 목록의 `memoryStatus` 필터, 단어팩의 `progress`·`lastStudiedAt`·`memoryStatusCount`가 이 표를 씁니다.
+- `POST /study/sessions/{id}/complete`(`FINISHED`·`QUIT`)는 세션을 한 번만 `COMPLETED`로 바꾸고, 같은 트랜잭션에서 다음을 처리합니다. `Idempotency-Key`를 지원합니다.
+  - 기록(`study_records`)과 답한 문항별 결과(`study_record_items`)를 남깁니다. 문항별 결과에는 영어·뜻을 스냅샷으로 저장합니다.
+  - 일별 통계(`daily_study_stats`, `daily_studied_words`)를 KST 날짜 기준으로 쌓습니다.
+  - 스트릭과 XP를 갱신합니다.
+- 스트릭(`user_streaks`, `kind=STUDY`)은 답을 1개 이상 낸 학습을 끝내면 그날(KST)을 인정합니다. 어제 이어서 하면 +1, 하루 이상 비면 1부터 다시 셉니다.
+- XP는 `xp_ledger` 원장 하나에 모든 출처를 기록합니다. `(사용자, 출처, ref_key)` 유니크로 중복 지급을 막고, `XpService.grant`가 사용자 행을 잠가 하루(KST) 500 상한을 지킵니다. 상한에 걸려 0이 된 지급도 원장에 남깁니다.
+  - 학습: 정답당 4지선다 +1, 직접 입력 +2, 오답노트 복습 +1입니다. 너무 빠른 답과 플래시카드는 0입니다.
+  - 완주 +10: 팩의 모든 단어를 4지선다·직접 입력으로 `FINISHED`까지 풀면 받습니다(오답이 있어도 됨). 같은 팩은 하루 1회입니다(`ref_key = pack:{packId}:{date}`).
+  - `blockedReason`은 사유가 여러 개면 `DAILY_CAP` → `REPEAT_LIMIT`(완주 보너스를 오늘 이미 받음) → `TOO_FAST` → `NOT_COMPLETED`(그만두기) 순으로 하나만 알려줍니다.
 - 지금은 `PACK`·`FAVORITE` 소스만 지원하고, `WRONG_NOTE`·`RECORD_WRONG`·`REVIEW`는 오답노트·기록·복습 작업에서 연결합니다.
 
 ## 학급·교사 담당 반
