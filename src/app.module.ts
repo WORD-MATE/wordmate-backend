@@ -10,6 +10,7 @@ import { DevicesModule } from './modules/devices/devices.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { PacksModule } from './modules/packs/packs.module.js';
 import { PoliciesModule } from './modules/policies/policies.module.js';
+import { StudyModule } from './modules/study/study.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { WordsModule } from './modules/words/words.module.js';
 
@@ -30,6 +31,7 @@ import { WordsModule } from './modules/words/words.module.js';
     ClassesModule,
     PacksModule,
     WordsModule,
+    StudyModule,
     PoliciesModule,
     UsersModule,
   ],
