@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "mysql",
-  "id": "4147d2d9-1848-4f96-bacf-3e5750a99b0b",
+  "id": "924ad2e4-699d-47b6-841d-60b808480c4f",
   "prevIds": [
     "57beeadc-1e64-4f76-a0c8-1f55b06ffc55"
   ],
@@ -1462,7 +1462,7 @@
     {
       "table": "study_sessions",
       "name": "active_key",
-      "type": "varchar(64)",
+      "type": "varchar(80)",
       "notNull": false,
       "autoIncrement": false,
       "default": null,

@@ -44,7 +44,7 @@ export const studySessions = mysqlTable(
     expiresAt: datetime('expires_at', { mode: 'date', fsp: 3 }).notNull(),
     completedAt: datetime('completed_at', { mode: 'date', fsp: 3 }),
     // 이어할 학습은 팩마다(팩이 없는 소스는 소스마다) 하나만
-    activeKey: varchar('active_key', { length: 64 }).generatedAlwaysAs(
+    activeKey: varchar('active_key', { length: 80 }).generatedAlwaysAs(
       sql`IF(status = 'IN_PROGRESS', CONCAT(HEX(user_id), ':', IFNULL(HEX(pack_id), source)), NULL)`,
       { mode: 'stored' },
     ),

@@ -25,7 +25,7 @@ CREATE TABLE `study_sessions` (
 	`answered_count` int NOT NULL DEFAULT 0,
 	`expires_at` datetime(3) NOT NULL,
 	`completed_at` datetime(3),
-	`active_key` varchar(64) GENERATED ALWAYS AS (IF(status = 'IN_PROGRESS', CONCAT(HEX(user_id), ':', IFNULL(HEX(pack_id), source)), NULL)) STORED,
+	`active_key` varchar(80) GENERATED ALWAYS AS (IF(status = 'IN_PROGRESS', CONCAT(HEX(user_id), ':', IFNULL(HEX(pack_id), source)), NULL)) STORED,
 	`created_at` datetime(3) NOT NULL DEFAULT (CURRENT_TIMESTAMP(3)),
 	`updated_at` datetime(3) NOT NULL DEFAULT (CURRENT_TIMESTAMP(3)),
 	CONSTRAINT `study_sessions_active_uq` UNIQUE INDEX(`active_key`)
