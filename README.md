@@ -278,6 +278,17 @@ INSERT INTO forbidden_words (id, word, type) VALUES (UUID_TO_BIN(UUID()), 'class
 - 즐겨찾기(`PUT`·`DELETE /words/{id}/favorite`)는 둘 다 멱등 204입니다. 기본 팩이나 내 팩의 단어만 즐겨찾기할 수 있고, 볼 수 없게 된 단어(삭제·남의 팩)는 목록에서 빠집니다.
 - 단어 목록·검색 응답의 `favorite`은 보는 사람 기준입니다.
 
+## 학습
+
+- `POST /study/sessions`에서 서버가 문항과 보기를 만들어 `study_session_questions`에 고정 저장합니다. 이어하기(`GET /study/sessions/{id}`)는 저장된 순서를 그대로 돌려줍니다.
+  - 문제 수는 10·20·30·전체이고, 단어 수보다 많으면 전체로 맞춥니다. `shuffle=false`면 단어팩 순서(즐겨찾기는 즐겨찾기한 순서)대로 앞에서부터 냅니다.
+  - 4지선다 보기는 정답 + 그 단어의 단어팩에 있는 다른 단어 3개입니다. 보이는 글자(EN_TO_KO는 대표 뜻, KO_TO_EN은 영어)가 정답이나 다른 보기와 같은 단어는 뺍니다. 팩에서 모자라면 이번 학습의 다른 단어로 채우고, 그래도 모자라면 `STUDY_TOO_FEW_WORDS`입니다.
+  - TYPING 정답(`accepted_answers`)은 서버에만 두고 내려주지 않습니다.
+- 이어할 학습은 팩마다 하나(팩이 없는 즐겨찾기 등은 소스마다 하나)이고, `active_key` 생성 컬럼의 유니크 인덱스로 막습니다. 이미 있으면 `409 STUDY_SESSION_EXISTS`(`detail.sessionId`)이고, `force=true`면 기존 학습을 `ABANDONED`로 바꾸고 새로 만듭니다.
+- 저장분은 `expires_at`(시작 후 7일)이 지나면 조회·이어하기에서 빠지고, 같은 팩을 새로 시작할 때 `ABANDONED`로 바뀝니다. 만료된 행 정리는 배치 작업(#50)에서 합니다.
+- `DELETE /study/sessions/{id}`는 행을 지우지 않고 `ABANDONED`로 바꿉니다.
+- 지금은 `PACK`·`FAVORITE` 소스만 지원하고, `WRONG_NOTE`·`RECORD_WRONG`·`REVIEW`는 오답노트·기록·복습 작업에서 연결합니다.
+
 ## 학급·교사 담당 반
 
 - 학급은 마이그레이션으로 1~3학년 1~4반을 미리 만들고, 그 밖의 반은 학생이 로그인할 때 DataGSM 학년·반으로 자동 생성됩니다.
