@@ -118,8 +118,12 @@ export class StudyCompleteService {
         await tx.insert(studyRecordItems).values(items.slice(i, i + INSERT_CHUNK));
       }
 
-      await this.addDailyStats(tx, user.userId, today, session, answered, xp.earned);
-      const streak = answered.length > 0 ? await this.updateStreak(tx, user.userId, today) : null;
+      // 답을 하나도 내지 않은 학습은 그날 학습한 것으로 치지 않는다 (달력·스트릭이 같은 기준)
+      let streak: CompleteResult['streak'] = null;
+      if (answered.length > 0) {
+        await this.addDailyStats(tx, user.userId, today, session, answered, xp.earned);
+        streak = await this.updateStreak(tx, user.userId, today);
+      }
 
       return {
         recordId,

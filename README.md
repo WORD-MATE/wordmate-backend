@@ -298,7 +298,7 @@ INSERT INTO forbidden_words (id, word, type) VALUES (UUID_TO_BIN(UUID()), 'class
   - 단어 목록·검색·즐겨찾기의 `memoryStatus`, 단어 목록의 `memoryStatus` 필터, 단어팩의 `progress`·`lastStudiedAt`·`memoryStatusCount`가 이 표를 씁니다.
 - `POST /study/sessions/{id}/complete`(`FINISHED`·`QUIT`)는 세션을 한 번만 `COMPLETED`로 바꾸고, 같은 트랜잭션에서 다음을 처리합니다. `Idempotency-Key`를 지원합니다.
   - 기록(`study_records`)과 답한 문항별 결과(`study_record_items`)를 남깁니다. 문항별 결과에는 영어·뜻을 스냅샷으로 저장합니다.
-  - 일별 통계(`daily_study_stats`, `daily_studied_words`)를 KST 날짜 기준으로 쌓습니다.
+  - 일별 통계(`daily_study_stats`, `daily_studied_words`)를 KST 날짜 기준으로 쌓습니다. 답을 하나도 내지 않은 학습은 통계와 스트릭에서 뺍니다.
   - 스트릭과 XP를 갱신합니다.
 - 스트릭(`user_streaks`, `kind=STUDY`)은 답을 1개 이상 낸 학습을 끝내면 그날(KST)을 인정합니다. 어제 이어서 하면 +1, 하루 이상 비면 1부터 다시 셉니다.
 - XP는 `xp_ledger` 원장 하나에 모든 출처를 기록합니다. `(사용자, 출처, ref_key)` 유니크로 중복 지급을 막고, `XpService.grant`가 사용자 행을 잠가 하루(KST) 500 상한을 지킵니다. 상한에 걸려 0이 된 지급도 원장에 남깁니다.
