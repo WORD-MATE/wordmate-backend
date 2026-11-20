@@ -42,7 +42,7 @@ export type ProgressState = {
  */
 export function nextProgress(
   previous: ProgressState | null,
-  answer: { correct: boolean; counted: boolean; sessionId: string },
+  answer: { correct: boolean; counted: boolean; sessionId: string } | null,
 ): ProgressState {
   const base: ProgressState = previous ?? {
     memoryStatus: 'LEARNING',
@@ -51,6 +51,8 @@ export function nextProgress(
     totalCorrect: 0,
     totalWrong: 0,
   };
+  // answer가 없으면 아직 아무 답도 반영하지 않은 처음 상태
+  if (!answer) return base;
   if (!answer.correct) {
     return {
       ...base,

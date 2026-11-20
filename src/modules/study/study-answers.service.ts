@@ -205,20 +205,18 @@ export class StudyAnswersService {
     packId: string,
     answer: { correct: boolean; counted: boolean },
   ): Promise<void> {
-    const [current] = await tx
-      .select()
-      .from(userWordProgress)
-      .where(and(eq(userWordProgress.userId, userId), eq(userWordProgress.wordId, wordId)))
-      .for('update');
+    const target = and(eq(userWordProgress.userId, userId), eq(userWordProgress.wordId, wordId));
+    const now = new Date();
+    // 없는 행을 잠금 읽기하면 갭 락끼리 교착될 수 있어, 처음 상태 행을 먼저 만들고 그 행을 잠근다
+    await tx
+      .insert(userWordProgress)
+      .ignore()
+      .values({ userId, wordId, packId, ...nextProgress(null, null), lastStudiedAt: now });
+    const [current] = await tx.select().from(userWordProgress).where(target).for('update');
     const next = nextProgress(current ?? null, { ...answer, sessionId: session.id });
-    const values = { ...next, lastStudiedAt: new Date() };
-    if (current) {
-      await tx
-        .update(userWordProgress)
-        .set(values)
-        .where(and(eq(userWordProgress.userId, userId), eq(userWordProgress.wordId, wordId)));
-    } else {
-      await tx.insert(userWordProgress).values({ userId, wordId, packId, ...values });
-    }
+    await tx
+      .update(userWordProgress)
+      .set({ ...next, lastStudiedAt: now })
+      .where(target);
   }
 }
