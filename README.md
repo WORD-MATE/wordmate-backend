@@ -39,20 +39,21 @@ pnpm dev
 
 ## 명령어
 
-| 명령               | 설명                                                       |
-| ------------------ | ---------------------------------------------------------- |
-| `pnpm dev`         | 개발 서버 (변경 감지)                                      |
-| `pnpm build`       | 빌드 (`dist/`)                                             |
-| `pnpm start`       | 빌드 결과 실행                                             |
-| `pnpm test`        | 단위 테스트                                                |
-| `pnpm test:e2e`    | 통합 테스트 (Docker 필요, MySQL·Valkey 컨테이너 자동 실행) |
-| `pnpm typecheck`   | 타입 검사                                                  |
-| `pnpm lint`        | 린트·포맷 검사                                             |
-| `pnpm format`      | 린트·포맷 자동 수정                                        |
-| `pnpm db:generate` | 스키마 변경으로 마이그레이션 생성 (`drizzle/`)             |
-| `pnpm db:migrate`  | 마이그레이션 적용                                          |
-| `pnpm db:studio`   | Drizzle Studio (DB 브라우저)                               |
-| `pnpm jwt:keygen`  | JWT 서명용 Ed25519 키 생성                                 |
+| 명령                  | 설명                                                       |
+| --------------------- | ---------------------------------------------------------- |
+| `pnpm dev`            | 개발 서버 (변경 감지)                                      |
+| `pnpm build`          | 빌드 (`dist/`)                                             |
+| `pnpm start`          | 빌드 결과 실행                                             |
+| `pnpm test`           | 단위 테스트                                                |
+| `pnpm test:e2e`       | 통합 테스트 (Docker 필요, MySQL·Valkey 컨테이너 자동 실행) |
+| `pnpm typecheck`      | 타입 검사                                                  |
+| `pnpm lint`           | 린트·포맷 검사                                             |
+| `pnpm format`         | 린트·포맷 자동 수정                                        |
+| `pnpm db:generate`    | 스키마 변경으로 마이그레이션 생성 (`drizzle/`)             |
+| `pnpm db:migrate`     | 마이그레이션 적용                                          |
+| `pnpm db:seed <파일>` | 기본 단어팩 시드 반영 (아래 "기본 단어팩 시드" 참고)       |
+| `pnpm db:studio`      | Drizzle Studio (DB 브라우저)                               |
+| `pnpm jwt:keygen`     | JWT 서명용 Ed25519 키 생성                                 |
 
 ## 프로젝트 구조
 
@@ -237,7 +238,7 @@ VALUES (UUID_TO_BIN(UUID()), 'TERMS', '1.0', '서비스 이용약관', '# 이용
 - 내 단어팩은 사용자당 50개, 이름은 1~30자이고 삭제되지 않은 내 팩끼리 겹칠 수 없습니다 (대소문자 무시).
 - 기본 단어팩(`type=DEFAULT`)은 관리자만 만들고 고칩니다. 추천순은 기본 팩이면 `sort_order`, 내 팩이면 최근 수정순입니다.
 - 삭제는 소프트 삭제(`deleted_at`)이고 공유 코드도 함께 지웁니다.
-- 분류와 금칙어는 관리자 API가 생기기 전까지 DB에 직접 넣습니다. 서버는 1분 캐시합니다.
+- 분류와 기본 단어팩은 시드 파일로 넣습니다(아래 "기본 단어팩 시드"). 금칙어는 관리자 API가 생기기 전까지 DB에 직접 넣고, 서버는 1분 캐시합니다.
 
 ```sql
 INSERT INTO pack_categories (id, name, sort_order) VALUES (UUID_TO_BIN(UUID()), '수능', 1);
@@ -246,6 +247,24 @@ INSERT INTO forbidden_words (id, word, type) VALUES (UUID_TO_BIN(UUID()), 'class
 ```
 
 - 금칙어는 대소문자·전각·공백·기호를 무시한 부분 일치이고, 허용 단어(`ALLOWED`) 안에 든 경우는 통과합니다. 팩 이름·설명은 항상, 단어는 공유할 때 검사합니다.
+
+### 기본 단어팩 시드
+
+- 형식은 [seeds/default-packs.example.json](seeds/default-packs.example.json)을 따릅니다. `categories`(이름, 정렬 순서)와 `packs`(이름, 분류 이름, 설명, 정렬 순서, 단어)로 구성됩니다. 단어 규칙은 앱과 같습니다(영어 50자, 뜻 1~5개, 팩당 1000개, `example`·`derivatives`는 선택).
+- 분류·팩은 이름으로, 단어는 팩 안에서 영어(대소문자 무시)로 찾습니다. 그래서 같은 파일을 여러 번 넣어도 결과가 같고, 파일을 고치면 바뀐 것만 반영됩니다.
+- 파일에 없는 단어는 기본으로 남깁니다(관리자가 API로 추가한 단어 보호). `--prune`을 주면 파일에 없는 단어를 지웁니다(소프트 삭제).
+- 파일에서 팩 이름을 바꾸면 새 팩이 만들어지고 예전 이름의 팩은 그대로 남습니다(학습 기록·오답이 그 팩을 가리킴). 이름을 바꾸려면 먼저 앱의 단어팩 수정 API로 바꾼 뒤 파일을 맞춥니다.
+- 관리자가 API로 추가한 단어와 합쳐 팩당 1000개를 넘으면 그 팩은 반영하지 않고 실패합니다(팩마다 트랜잭션이라 다른 팩은 반영됨).
+- 넣기 전에 `--dry-run`으로 형식만 검사할 수 있습니다. 잘못된 곳이 있으면 위치와 이유를 출력하고 아무것도 넣지 않습니다.
+
+```bash
+# 로컬
+pnpm db:seed seeds/default-packs.json --dry-run
+pnpm db:seed seeds/default-packs.json
+
+# 서버 (seeds 폴더는 이미지에 들어 있음)
+docker compose run --rm migrate dist/seed.js seeds/default-packs.json
+```
 
 ### 단어
 
