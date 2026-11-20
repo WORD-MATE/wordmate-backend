@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessTokenService } from '../src/common/auth/access-token.service.js';
 import type { AuthUser } from '../src/common/auth/auth-user.js';
@@ -126,8 +126,11 @@ describe('단어 검색·즐겨찾기', () => {
       [`${tag}x`, ['꿻']],
       [`${tag}50%off`, ['할인']],
       [`${tag}500ff`, ['다른 것']],
+      [`${tag}x-ray`, ['엑스선']],
     ]);
     expect(englishOf(await search(me, '꿻'))).toEqual([`${tag}x`]);
+    expect(englishOf(await search(me, `${tag}x-r`))).toEqual([`${tag}x-ray`]);
+    expect(englishOf(await search(me, 'x-ra'))).toContain(`${tag}x-ray`);
     expect(englishOf(await search(me, `${tag}50%`))).toEqual([`${tag}50%off`]);
     expect(englishOf(await search(me, `${tag}5_0`))).toEqual([]);
 
@@ -190,6 +193,18 @@ describe('단어 검색·즐겨찾기', () => {
     expect(secret.statusCode).toBe(404);
     expect(secret.json().code).toBe('WORD_NOT_FOUND');
     expect((await call(me, 'PUT', `/words/${newId()}/favorite`)).statusCode).toBe(404);
+
+    // 같은 밀리초에 들어가면 순서가 흔들리므로 시각을 고정한다
+    const favoritedAt = [one, basicId, two].map((wordId, i) => ({
+      wordId: wordId as string,
+      at: new Date(Date.UTC(2026, 0, 1, 0, 0, i)),
+    }));
+    for (const { wordId, at } of favoritedAt) {
+      await db
+        .update(wordFavorites)
+        .set({ createdAt: at })
+        .where(and(eq(wordFavorites.userId, me.userId), eq(wordFavorites.wordId, wordId)));
+    }
 
     const list = (await call(me, 'GET', '/words/favorites?size=2')).json();
     expect(list.items.map((item: Hit) => item.word.english)).toEqual([
