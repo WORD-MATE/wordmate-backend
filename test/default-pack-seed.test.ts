@@ -139,4 +139,40 @@ describe('기본 단어팩 시드', () => {
     ]);
     expect(await packRow()).toMatchObject({ id: pack?.id, wordCount: 2 });
   });
+
+  it('관리자가 넣은 단어와 합쳐 팩 한도를 넘으면 그 팩은 넣지 않는다 (prune이면 지울 단어는 빼고 셈)', async () => {
+    const pack = await packRow();
+    const packId = pack?.id as string;
+    const before = (await activeWords(packId)).length;
+    const extra = Array.from({ length: 1000 - before }, (_, i) => ({
+      id: newId(),
+      packId,
+      english: `admin${i}`,
+      englishNorm: `admin${i}`,
+      meanings: ['관리자'],
+      meaningsText: '관리자',
+    }));
+    for (let i = 0; i < extra.length; i += 500) {
+      await db.insert(words).values(extra.slice(i, i + 500));
+    }
+
+    const over = seed([
+      { english: 'abandon', meanings: ['버리다', '내버리다'] },
+      { english: 'brand new', meanings: ['새것의'] },
+    ]);
+    await expect(applyDefaultPackSeed(db, over)).rejects.toThrow('팩 한도');
+    // 이 팩의 변경은 모두 되돌아간다
+    expect((await activeWords(packId)).find((w) => w.english === 'abandon')?.meanings).toEqual([
+      '버리다',
+    ]);
+    expect((await activeWords(packId)).some((w) => w.english === 'brand new')).toBe(false);
+
+    const pruned = await applyDefaultPackSeed(db, over, { prune: true });
+    expect(pruned.words).toMatchObject({ created: 1, updated: 1 });
+    expect((await activeWords(packId)).map((w) => w.english).sort()).toEqual([
+      'abandon',
+      'brand new',
+    ]);
+    expect((await packRow())?.wordCount).toBe(2);
+  });
 });
