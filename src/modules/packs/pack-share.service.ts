@@ -9,7 +9,7 @@ import { type Pack, packCopies, packs, users, words } from '../../infra/db/schem
 import { newId } from '../../infra/db/uuid.js';
 import { ForbiddenWordsService } from '../forbidden-words/forbidden-words.service.js';
 import { toUserSummary } from '../users/user-summary.js';
-import { toWordItem } from '../words/words.service.js';
+import { toWordItem } from '../words/word-common.js';
 import type { PackSummary, SharedPackPreview } from './packs.schemas.js';
 import { PackErrors, PacksService, toPackSummary } from './packs.service.js';
 
@@ -177,6 +177,7 @@ export class PackShareService {
           english: word.english,
           englishNorm: word.englishNorm,
           meanings: word.meanings,
+          meaningsText: word.meaningsText,
           example: word.example,
           derivatives: word.derivatives,
         }));

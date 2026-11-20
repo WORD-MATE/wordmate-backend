@@ -20,6 +20,26 @@ export const normalizeEnglish = (value: string): string =>
 /** 같은 단어 판정 키: 대소문자 무시 */
 export const englishKey = (english: string): string => normalizeEnglish(english).toLowerCase();
 
+/** words.meanings_text (FULLTEXT 검색용) */
+export const meaningsText = (meanings: string[]): string => meanings.join(' ');
+
+const NGRAM_TOKEN_SIZE = 2;
+
+/**
+ * FULLTEXT로 후보를 좁히는 BOOLEAN MODE 검색어. 글자·숫자가 이어진 조각마다 구문 검색(+"…")을 건다.
+ * ngram 파서는 공백·기호에서 토큰을 끊으므로 기호가 든 낱말을 그대로 넣으면 토큰이 없어 아무것도 못 찾을 수 있다.
+ * 토큰보다 짧은 조각은 빼고, 남는 조각이 없으면 null (LIKE만 쓴다)
+ */
+export function fulltextQuery(query: string): string | null {
+  const terms = query
+    .split(/[^\p{L}\p{M}\p{N}_]+/u)
+    .filter((term) => [...term].length >= NGRAM_TOKEN_SIZE);
+  return terms.length > 0 ? terms.map((term) => `+"${term}"`).join(' ') : null;
+}
+
+/** LIKE '%…%' 패턴 (와일드카드 문자는 글자 그대로) */
+export const containsPattern = (query: string): string => `%${query.replace(/[\\%_]/g, '\\$&')}%`;
+
 const SEPARATOR = /[/,\t]/;
 
 /** 처음 나오는 `/`, `,`, 탭 앞은 영어, 뒤는 뜻 */
