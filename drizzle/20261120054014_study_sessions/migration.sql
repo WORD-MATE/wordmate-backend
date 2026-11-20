@@ -35,5 +35,5 @@ CREATE INDEX `study_sessions_user_status_idx` ON `study_sessions` (`user_id`,`st
 CREATE INDEX `study_sessions_expiry_idx` ON `study_sessions` (`status`,`expires_at`);--> statement-breakpoint
 ALTER TABLE `study_session_questions` ADD CONSTRAINT `study_session_questions_session_id_study_sessions_id_fkey` FOREIGN KEY (`session_id`) REFERENCES `study_sessions`(`id`) ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE `study_session_questions` ADD CONSTRAINT `study_session_questions_word_id_words_id_fkey` FOREIGN KEY (`word_id`) REFERENCES `words`(`id`);--> statement-breakpoint
-ALTER TABLE `study_sessions` ADD CONSTRAINT `study_sessions_user_id_users_id_fkey` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE `study_sessions` ADD CONSTRAINT `study_sessions_user_id_users_id_fkey` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`);--> statement-breakpoint
 ALTER TABLE `study_sessions` ADD CONSTRAINT `study_sessions_pack_id_packs_id_fkey` FOREIGN KEY (`pack_id`) REFERENCES `packs`(`id`);

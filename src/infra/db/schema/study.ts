@@ -29,11 +29,11 @@ export const studySessions = mysqlTable(
   'study_sessions',
   {
     id: id(),
+    // user_id·pack_id는 active_key의 기반 컬럼이라 CASCADE 불가 (사용자는 익명화, 팩은 소프트 삭제)
     userId: binaryUuid('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => users.id),
     source: mysqlEnum('source', STUDY_SOURCE).notNull(),
-    // active_key의 기반 컬럼이라 CASCADE 불가 (팩은 소프트 삭제)
     packId: binaryUuid('pack_id').references(() => packs.id),
     mode: mysqlEnum('mode', QUIZ_MODE).notNull(),
     direction: mysqlEnum('direction', QUIZ_DIRECTION).notNull(),
