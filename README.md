@@ -268,6 +268,16 @@ INSERT INTO forbidden_words (id, word, type) VALUES (UUID_TO_BIN(UUID()), 'class
 - 미리보기는 단어 20개까지, `memoryStatus`는 null입니다.
 - 복사는 단어까지 통째로 복사한 독립된 내 팩을 만듭니다. 이름이 겹치면 ` (2)`, ` (3)`을 붙입니다. 같은 공유 팩은 한 번만 복사할 수 있고(`pack_copies`), 복사본을 지우면 다시 복사할 수 있습니다. 내가 공유한 팩은 복사할 수 없습니다 (`PACK_COPY_OWN`).
 
+### 검색·즐겨찾기
+
+- `GET /words/search?q=`는 기본 팩 + 내 팩에서 영어나 뜻에 검색어가 들어 있는 단어를 영어 알파벳순으로 돌려줍니다 (대소문자 무시, 부분 일치).
+- 뜻은 JSON이라 검색용으로 이어 붙인 `meanings_text`를 따로 저장합니다. 단어를 저장·수정·복사하는 곳에서 함께 채워야 합니다.
+- `FULLTEXT(english, meanings_text) WITH PARSER ngram`으로 후보를 좁히고 `LIKE`로 정확히 거릅니다. 2글자보다 짧은 낱말은 ngram 토큰(`ngram_token_size=2`)으로 잡히지 않아 `LIKE`만 씁니다.
+  - FULLTEXT 인덱스는 Drizzle이 지원하지 않아 마이그레이션 SQL에만 있습니다. 스키마를 고쳐도 drizzle-kit이 이 인덱스를 알지 못합니다.
+  - ngram 파서는 불용어(`a`, `on`, `is` …)가 들어간 토큰을 모두 버리기 때문에 불용어를 끈 채로 인덱스를 만듭니다. 인덱스를 다시 만들 때도 `SET SESSION innodb_ft_enable_stopword = OFF`를 먼저 실행해야 합니다.
+- 즐겨찾기(`PUT`·`DELETE /words/{id}/favorite`)는 둘 다 멱등 204입니다. 기본 팩이나 내 팩의 단어만 즐겨찾기할 수 있고, 볼 수 없게 된 단어(삭제·남의 팩)는 목록에서 빠집니다.
+- 단어 목록·검색 응답의 `favorite`은 보는 사람 기준입니다.
+
 ## 학급·교사 담당 반
 
 - 학급은 마이그레이션으로 1~3학년 1~4반을 미리 만들고, 그 밖의 반은 학생이 로그인할 때 DataGSM 학년·반으로 자동 생성됩니다.
