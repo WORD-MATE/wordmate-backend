@@ -155,3 +155,11 @@ export const CompleteResult = z
   })
   .meta({ id: 'CompleteResult' });
 export type CompleteResult = z.infer<typeof CompleteResult>;
+
+export const ReviewSummary = z
+  .object({
+    dueCount: z.number().int().describe('오늘 복습할 단어 수, 최대 30'),
+    completedToday: z.number().int().describe('오늘 복습 학습에서 답한 단어 수'),
+  })
+  .meta({ id: 'ReviewSummary' });
+export type ReviewSummary = z.infer<typeof ReviewSummary>;

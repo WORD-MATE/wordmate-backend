@@ -1,7 +1,8 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { AppException, CommonErrors } from '../../common/errors/app-exception.js';
+import { kstDate } from '../../common/time/kst.js';
 import { type Database, DB, type Transaction } from '../../infra/db/db.module.js';
 import { isDuplicateKeyError } from '../../infra/db/errors.js';
 import {
@@ -12,6 +13,7 @@ import {
   studyRecords,
   studySessionQuestions,
   studySessions,
+  userWordProgress,
   wordFavorites,
   words,
   wrongNotes,
@@ -20,8 +22,9 @@ import { newId } from '../../infra/db/uuid.js';
 import { PacksService } from '../packs/packs.service.js';
 import { RecordErrors } from '../records/records.service.js';
 import { visibleWords } from '../words/word-common.js';
+import { DAILY_REVIEW_LIMIT } from './grading.js';
 import { type BuiltQuestion, buildQuestion, type QuizWord, shuffled } from './question-builder.js';
-import type { CurrentStudy, StartStudy, StudySession } from './study.schemas.js';
+import type { CurrentStudy, ReviewSummary, StartStudy, StudySession } from './study.schemas.js';
 
 export const SESSION_TTL_DAYS = 7;
 export const sessionExpiry = (from = new Date()) =>
@@ -51,8 +54,6 @@ export const StudyErrors = {
     ),
   closed: () =>
     new AppException('STUDY_SESSION_CLOSED', '이미 끝난 학습입니다.', HttpStatus.CONFLICT),
-  sourceNotSupported: () =>
-    CommonErrors.invalidRequest({ field: 'source' }, '아직 지원하지 않는 학습 방식입니다.'),
 };
 
 const quizWordColumns = {
@@ -277,10 +278,48 @@ export class StudySessionsService {
           .orderBy(asc(studyRecordItems.idx));
         return [...new Map(rows.map((row) => [row.id, row])).values()];
       }
-      default:
-        // REVIEW는 복습 작업에서 연결한다
-        throw StudyErrors.sourceNotSupported();
+      case 'REVIEW':
+        return this.db
+          .select(quizWordColumns)
+          .from(userWordProgress)
+          .innerJoin(words, eq(words.id, userWordProgress.wordId))
+          .innerJoin(packs, eq(packs.id, words.packId))
+          .where(this.dueForReview(user.userId))
+          .orderBy(asc(userWordProgress.nextReviewOn), asc(words.id))
+          .limit(DAILY_REVIEW_LIMIT);
     }
+  }
+
+  /** 오늘 복습할 단어 수(최대 DAILY_REVIEW_LIMIT)와 오늘 복습한 단어 수 */
+  async reviewSummary(user: AuthUser): Promise<ReviewSummary> {
+    const [due] = await this.db
+      .select({ total: count() })
+      .from(userWordProgress)
+      .innerJoin(words, eq(words.id, userWordProgress.wordId))
+      .innerJoin(packs, eq(packs.id, words.packId))
+      .where(this.dueForReview(user.userId));
+    const [done] = await this.db
+      .select({ total: count() })
+      .from(userWordProgress)
+      .where(
+        and(
+          eq(userWordProgress.userId, user.userId),
+          eq(userWordProgress.lastReviewedOn, kstDate()),
+        ),
+      );
+    return {
+      dueCount: Math.min(due?.total ?? 0, DAILY_REVIEW_LIMIT),
+      completedToday: done?.total ?? 0,
+    };
+  }
+
+  /** 복습일이 오늘(KST) 이전인 단어. 내가 지운 팩·단어는 복습하지 않는다 */
+  private dueForReview(userId: string) {
+    return and(
+      eq(userWordProgress.userId, userId),
+      lte(userWordProgress.nextReviewOn, kstDate()),
+      visibleWords(userId),
+    );
   }
 
   /**
