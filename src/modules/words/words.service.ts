@@ -1,18 +1,24 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { type CursorPage, decodeCursor, toCursorPage } from '../../common/pagination.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import { isDuplicateKeyError } from '../../infra/db/errors.js';
-import { type Pack, packs, type Word, words } from '../../infra/db/schema/index.js';
+import {
+  type Pack,
+  packs,
+  userWordProgress,
+  type Word,
+  words,
+} from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
 import { ForbiddenWordsService } from '../forbidden-words/forbidden-words.service.js';
 import { PackErrors, PacksService } from '../packs/packs.service.js';
 import { readWordFile } from './import/word-file.js';
-import { toWordItem, WordErrors } from './word-common.js';
-import { WordFavoritesService } from './word-favorites.service.js';
+import { WordErrors } from './word-common.js';
 import { englishKey, meaningsText, type ParsedLine, parseCells, parseText } from './word-text.js';
+import { WordViewerService } from './word-viewer.service.js';
 import {
   type AddWords,
   type AddWordsResult,
@@ -37,28 +43,43 @@ export class WordsService {
     @Inject(DB) private readonly db: Database,
     private readonly packs: PacksService,
     private readonly forbiddenWords: ForbiddenWordsService,
-    private readonly favorites: WordFavoritesService,
+    private readonly viewer: WordViewerService,
   ) {}
 
   async list(user: AuthUser, packId: string, query: WordListQuery): Promise<CursorPage<WordItem>> {
     const pack = await this.packs.findVisible(user, packId);
-    if (query.memoryStatus && query.memoryStatus !== 'NEW') return { items: [], nextCursor: null };
-
     const cursor = query.cursor && decodeCursor(query.cursor, IdCursor);
+    // 진행 기록이 없으면 NEW
+    let statusCondition: SQL | undefined;
+    if (query.memoryStatus === 'NEW') statusCondition = isNull(userWordProgress.wordId);
+    else if (query.memoryStatus) {
+      statusCondition = eq(userWordProgress.memoryStatus, query.memoryStatus);
+    }
     const rows = await this.db
-      .select()
+      .select({ word: words })
       .from(words)
+      .leftJoin(
+        userWordProgress,
+        and(eq(userWordProgress.wordId, words.id), eq(userWordProgress.userId, user.userId)),
+      )
       .where(
         and(
           eq(words.packId, pack.id),
           isNull(words.deletedAt),
+          statusCondition,
           cursor ? gt(words.id, cursor.id) : undefined,
         ),
       )
       .orderBy(asc(words.id))
       .limit(query.size + 1);
-    const page = toCursorPage(rows, query.size, (last) => ({ id: last.id }));
-    return { items: await this.withFavorites(user, page.items), nextCursor: page.nextCursor };
+    const page = toCursorPage(rows, query.size, (last) => ({ id: last.word.id }));
+    return {
+      items: await this.viewer.items(
+        user.userId,
+        page.items.map((row) => row.word),
+      ),
+      nextCursor: page.nextCursor,
+    };
   }
 
   async add(user: AuthUser, packId: string, body: AddWords): Promise<AddWordsResult> {
@@ -154,7 +175,7 @@ export class WordsService {
           words: saved,
         };
       });
-      return { ...result, words: await this.withFavorites(user, result.words) };
+      return { ...result, words: await this.viewer.items(user.userId, result.words) };
     } catch (error) {
       if (isDuplicateKeyError(error, ACTIVE_ENGLISH_INDEX)) throw WordErrors.duplicate();
       throw error;
@@ -236,7 +257,7 @@ export class WordsService {
         throw error;
       }
     }
-    const [item] = await this.withFavorites(user, [await this.findInPack(pack.id, word.id)]);
+    const [item] = await this.viewer.items(user.userId, [await this.findInPack(pack.id, word.id)]);
     return item as WordItem;
   }
 
@@ -253,14 +274,6 @@ export class WordsService {
         .set({ wordCount: sql`GREATEST(${packs.wordCount} - 1, 0)` })
         .where(eq(packs.id, pack.id));
     });
-  }
-
-  private async withFavorites(user: AuthUser, rows: Word[]): Promise<WordItem[]> {
-    const favoriteIds = await this.favorites.favoriteIds(
-      user.userId,
-      rows.map((row) => row.id),
-    );
-    return rows.map((row) => toWordItem(row, favoriteIds.has(row.id)));
   }
 
   private async findInPack(packId: string, wordId: string): Promise<Word> {

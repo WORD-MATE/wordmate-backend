@@ -1,5 +1,6 @@
 import { HttpStatus } from '@nestjs/common';
 import { and, eq, isNull, or } from 'drizzle-orm';
+import type { MemoryStatus } from '../../common/enums.js';
 import { AppException, CommonErrors } from '../../common/errors/app-exception.js';
 import { packs, type Word, words } from '../../infra/db/schema/index.js';
 import { MAX_WORDS_PER_PACK, type WordItem } from './words.schemas.js';
@@ -16,15 +17,18 @@ export const WordErrors = {
     ),
 };
 
-export function toWordItem(word: Word, favorite = false): WordItem {
+export function toWordItem(
+  word: Word,
+  favorite = false,
+  memoryStatus: MemoryStatus = 'NEW',
+): WordItem {
   return {
     wordId: word.id,
     english: word.english,
     meanings: word.meanings,
     example: word.example,
     derivatives: word.derivatives,
-    // 학습 기록(3단계)이 생기기 전까지 모든 단어는 NEW
-    memoryStatus: 'NEW',
+    memoryStatus,
     favorite,
   };
 }

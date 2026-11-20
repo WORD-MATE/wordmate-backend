@@ -5,10 +5,10 @@ import type { AuthUser } from '../../common/auth/auth-user.js';
 import { type CursorPage, decodeCursor, toCursorPage } from '../../common/pagination.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import { packs, words } from '../../infra/db/schema/index.js';
-import { toWordItem, visibleWords } from './word-common.js';
-import { WordFavoritesService } from './word-favorites.service.js';
+import { visibleWords } from './word-common.js';
 import { containsPattern, fulltextQuery } from './word-text.js';
-import type { WordSearchQuery, WordWithPack } from './words.schemas.js';
+import { WordViewerService } from './word-viewer.service.js';
+import type { WordItem, WordSearchQuery, WordWithPack } from './words.schemas.js';
 
 const SearchCursor = z.object({ english: z.string(), id: z.uuid() });
 
@@ -16,7 +16,7 @@ const SearchCursor = z.object({ english: z.string(), id: z.uuid() });
 export class WordSearchService {
   constructor(
     @Inject(DB) private readonly db: Database,
-    private readonly favorites: WordFavoritesService,
+    private readonly viewer: WordViewerService,
   ) {}
 
   /**
@@ -52,15 +52,12 @@ export class WordSearchService {
       english: last.word.english,
       id: last.word.id,
     }));
-    const favoriteIds = await this.favorites.favoriteIds(
+    const items = await this.viewer.items(
       user.userId,
-      page.items.map((row) => row.word.id),
+      page.items.map((row) => row.word),
     );
     return {
-      items: page.items.map((row) => ({
-        word: toWordItem(row.word, favoriteIds.has(row.word.id)),
-        pack: row.pack,
-      })),
+      items: page.items.map((row, i) => ({ word: items[i] as WordItem, pack: row.pack })),
       nextCursor: page.nextCursor,
     };
   }
