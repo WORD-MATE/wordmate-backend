@@ -51,14 +51,22 @@ export function nextProgress(
     totalCorrect: 0,
     totalWrong: 0,
   };
-  // answer가 없으면 아직 아무 답도 반영하지 않은 처음 상태
-  if (!answer) return base;
+  // answer가 없으면 아직 아무 답도 반영하지 않은 처음 상태. base는 DB 행일 수 있어 필드를 골라 돌려준다
+  if (!answer) {
+    return {
+      memoryStatus: base.memoryStatus,
+      correctStreak: base.correctStreak,
+      lastCorrectSessionId: base.lastCorrectSessionId,
+      totalCorrect: base.totalCorrect,
+      totalWrong: base.totalWrong,
+    };
+  }
   if (!answer.correct) {
     return {
-      ...base,
       memoryStatus: 'LEARNING',
       correctStreak: 0,
       lastCorrectSessionId: null,
+      totalCorrect: base.totalCorrect,
       totalWrong: base.totalWrong + 1,
     };
   }
@@ -113,7 +121,10 @@ export function nextReview(
     return { reviewStage: 0, nextReviewOn: addDays(today, REVIEW_INTERVALS[0]), lastReviewedOn };
   }
   const due = base.nextReviewOn !== null && base.nextReviewOn <= today;
-  if (!answer.isReview || !answer.counted || !due) return { ...base, lastReviewedOn };
+  // base는 DB 행 전체일 수 있으므로 펼치지 않고 일정 필드만 돌려준다 (다른 컬럼을 옛값으로 덮어쓰지 않게)
+  if (!answer.isReview || !answer.counted || !due) {
+    return { reviewStage: base.reviewStage, nextReviewOn: base.nextReviewOn, lastReviewedOn };
+  }
   const reviewStage = base.reviewStage + 1;
   const interval = REVIEW_INTERVALS[reviewStage];
   return {

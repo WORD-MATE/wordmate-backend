@@ -99,6 +99,23 @@ describe('nextReview', () => {
     });
   });
 
+  it('일정 필드만 돌려준다 (DB 행을 넘겨도 다른 컬럼이 섞이지 않음)', () => {
+    const row = {
+      memoryStatus: 'LEARNING',
+      correctStreak: 2,
+      reviewStage: 1,
+      nextReviewOn: '2026-11-23',
+      lastReviewedOn: null,
+    };
+    for (const answer of [study(true), study(false), review(true)]) {
+      expect(Object.keys(nextReview(row, answer, day)).sort()).toEqual([
+        'lastReviewedOn',
+        'nextReviewOn',
+        'reviewStage',
+      ]);
+    }
+  });
+
   it('일반 학습 정답, 아직 날이 안 된 복습, 너무 빠른 정답은 일정을 바꾸지 않는다', () => {
     const waiting = { reviewStage: 1, nextReviewOn: '2026-11-23', lastReviewedOn: null };
     expect(nextReview(waiting, study(true), day)).toEqual(waiting);
