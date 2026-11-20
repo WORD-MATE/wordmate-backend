@@ -305,7 +305,20 @@ INSERT INTO forbidden_words (id, word, type) VALUES (UUID_TO_BIN(UUID()), 'class
   - 학습: 정답당 4지선다 +1, 직접 입력 +2, 오답노트 복습 +1입니다. 너무 빠른 답과 플래시카드는 0입니다.
   - 완주 +10: 팩의 모든 단어를 4지선다·직접 입력으로 `FINISHED`까지 풀면 받습니다(오답이 있어도 됨). 같은 팩은 하루 1회입니다(`ref_key = pack:{packId}:{date}`).
   - `blockedReason`은 사유가 여러 개면 `DAILY_CAP` → `REPEAT_LIMIT`(완주 보너스를 오늘 이미 받음) → `TOO_FAST` → `NOT_COMPLETED`(그만두기) 순으로 하나만 알려줍니다.
-- 지금은 `PACK`·`FAVORITE`·`WRONG_NOTE` 소스를 지원하고, `RECORD_WRONG`·`REVIEW`는 기록·복습 작업에서 연결합니다.
+- 지금은 `PACK`·`FAVORITE`·`WRONG_NOTE`·`RECORD_WRONG` 소스를 지원하고, `REVIEW`는 복습 작업(#49)에서 연결합니다.
+  - `RECORD_WRONG`은 그 기록에서 틀린 단어(4지선다·직접 입력)나 "몰라요"(플래시카드)를 출제 순서대로 냅니다. 남의 기록이면 403, 없으면 `RECORD_NOT_FOUND`입니다.
+
+### 기록·통계
+
+- `GET /records`는 최신순이고 `date`(KST)로 그날 기록만 볼 수 있습니다. 팩이 삭제됐거나 팩 학습이 아니면 `pack`의 두 값이 모두 null입니다.
+- `GET /records/{id}`는 답한 문항만 돌려줍니다. 영어·뜻은 학습을 끝낸 시점의 스냅샷입니다.
+- `GET /stats/streak`의 `current`는 오늘이나 어제까지 이어졌을 때만 저장된 값이고, 끊겼으면 0입니다.
+- `GET /stats/calendar?month=YYYY-MM`은 `daily_study_stats`에서 학습한 날만 돌려줍니다. 미래의 달은 400입니다.
+- `GET /stats/summary?period=`의 기간은 다음과 같습니다(KST, 오늘까지).
+  - `TODAY`: 오늘
+  - `WEEK`: 이번 주 월요일부터
+  - `MONTH`: 이번 달 1일부터
+  - 정답률은 4지선다·직접 입력만으로 계산합니다. `studiedWordCount`는 기간 안의 서로 다른 단어 수입니다(`daily_studied_words`). 그래프(`series`)는 기간 첫날부터 오늘까지 하루씩 채웁니다.
 
 ### 오답노트
 

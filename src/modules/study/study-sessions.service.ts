@@ -1,5 +1,5 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { AppException, CommonErrors } from '../../common/errors/app-exception.js';
 import { type Database, DB, type Transaction } from '../../infra/db/db.module.js';
@@ -8,6 +8,8 @@ import {
   packs,
   type StudySessionRow,
   studyAnswers,
+  studyRecordItems,
+  studyRecords,
   studySessionQuestions,
   studySessions,
   wordFavorites,
@@ -16,6 +18,7 @@ import {
 } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
 import { PacksService } from '../packs/packs.service.js';
+import { RecordErrors } from '../records/records.service.js';
 import { visibleWords } from '../words/word-common.js';
 import { type BuiltQuestion, buildQuestion, type QuizWord, shuffled } from './question-builder.js';
 import type { CurrentStudy, StartStudy, StudySession } from './study.schemas.js';
@@ -252,8 +255,30 @@ export class StudySessionsService {
           .orderBy(desc(wrongNotes.lastWrongAt), asc(words.id));
         return [...new Map(rows.map((row) => [row.id, row])).values()];
       }
+      case 'RECORD_WRONG': {
+        const [record] = await this.db
+          .select({ userId: studyRecords.userId })
+          .from(studyRecords)
+          .where(eq(studyRecords.id, body.recordId as string));
+        if (!record) throw RecordErrors.notFound();
+        if (record.userId !== user.userId) throw CommonErrors.forbidden();
+        // 4지선다·직접 입력은 틀린 것, 플래시카드는 "몰라요"
+        const rows = await this.db
+          .select(quizWordColumns)
+          .from(studyRecordItems)
+          .innerJoin(words, eq(words.id, studyRecordItems.wordId))
+          .where(
+            and(
+              eq(studyRecordItems.recordId, body.recordId as string),
+              or(eq(studyRecordItems.correct, false), eq(studyRecordItems.known, false)),
+              isNull(words.deletedAt),
+            ),
+          )
+          .orderBy(asc(studyRecordItems.idx));
+        return [...new Map(rows.map((row) => [row.id, row])).values()];
+      }
       default:
-        // RECORD_WRONG·REVIEW는 기록·복습 작업에서 연결한다
+        // REVIEW는 복습 작업에서 연결한다
         throw StudyErrors.sourceNotSupported();
     }
   }
