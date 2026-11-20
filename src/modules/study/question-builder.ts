@@ -43,7 +43,9 @@ const choiceText = (word: QuizWord, direction: QuizDirection) =>
   direction === 'EN_TO_KO' ? (word.meanings[0] as string) : word.english;
 
 /**
- * 오답 보기 3개. 보이는 글자가 정답이나 다른 보기와 같으면(대소문자 무시) 정답이 둘로 보이므로 뺀다.
+ * 오답 보기 3개. 정답이 둘로 보이지 않도록 다음 단어는 뺀다 (대소문자 무시)
+ * - 정답 단어와 뜻이 하나라도 겹치거나 영어가 같은 단어 (big·large처럼 둘 다 정답이 됨)
+ * - 보이는 글자가 이미 고른 보기와 같은 단어
  * pools를 앞에서부터 쓰고 모자라면 다음 pool에서 채운다. 끝까지 모자라면 null
  */
 export function pickDistractors(
@@ -52,10 +54,15 @@ export function pickDistractors(
   pools: readonly (readonly QuizWord[])[],
   random: Random = randomInt,
 ): string[] | null {
+  const answerEnglish = word.english.toLowerCase();
+  const answerMeanings = new Set(word.meanings.map((meaning) => meaning.toLowerCase()));
   const seen = new Set([choiceText(word, direction).toLowerCase()]);
   const picked: string[] = [];
   const tryPick = (candidate: QuizWord) => {
-    if (candidate.id === word.id) return false;
+    if (candidate.id === word.id || candidate.english.toLowerCase() === answerEnglish) return false;
+    if (candidate.meanings.some((meaning) => answerMeanings.has(meaning.toLowerCase()))) {
+      return false;
+    }
     const text = choiceText(candidate, direction);
     if (seen.has(text.toLowerCase())) return false;
     seen.add(text.toLowerCase());

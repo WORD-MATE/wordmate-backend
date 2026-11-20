@@ -65,6 +65,21 @@ describe('pickDistractors', () => {
       expect(new Set(picked.map((text) => text.toLowerCase())).size).toBe(3);
       expect(picked.map((text) => text.toLowerCase())).not.toContain('apple');
     }
+    // 뜻이 하나라도 겹치면 둘 다 정답이 되므로 뺀다 (보이는 글자가 달라도)
+    const synonyms = [
+      ...pack,
+      word('9', 'large', ['큰', '능금']),
+      word('10', 'huge', ['거대한', '사과']),
+    ];
+    for (const direction of ['EN_TO_KO', 'KO_TO_EN'] as const) {
+      for (let i = 0; i < 20; i++) {
+        const picked = pickDistractors(apple, direction, [synonyms]) ?? [];
+        expect(picked).not.toContain('large');
+        expect(picked).not.toContain('huge');
+        expect(picked).not.toContain('큰');
+        expect(picked).not.toContain('거대한');
+      }
+    }
     // 같은 뜻만 있으면 만들 수 없다
     const sameMeaning = [apple, ...['2', '3', '4'].map((id) => word(id, `w${id}`, ['사과']))];
     expect(pickDistractors(apple, 'EN_TO_KO', [sameMeaning], first)).toBeNull();
