@@ -57,7 +57,6 @@ export class MaintenanceProcessor extends WorkerHost implements OnApplicationBoo
         : {
             expiredSessions: await this.maintenance.expireStudySessions(),
             purgedSessions: await this.maintenance.purgeEndedSessions(),
-            trimmedRecords: await this.maintenance.trimStudyRecords(),
             purgedFavorites: await this.maintenance.purgeDeletedWordFavorites(),
           };
     this.logger.log(`${job.name} ${JSON.stringify(result)}`);
