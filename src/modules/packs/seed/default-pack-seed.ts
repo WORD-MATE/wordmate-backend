@@ -25,7 +25,12 @@ export const DefaultPackSeed = z
         z.object({
           name: name(30),
           category: name(30).nullish().describe('categories의 name'),
-          description: z.string().trim().max(200).nullish(),
+          description: z
+            .string()
+            .trim()
+            .max(200)
+            .nullish()
+            .transform((value) => value || null),
           sortOrder: z.number().int().default(0),
           words: z.array(WordInput).max(MAX_WORDS_PER_PACK),
         }),
@@ -159,6 +164,16 @@ export async function applyDefaultPackSeed(
           await tx.update(words).set(values).where(eq(words.id, word.id));
           summary.words.updated++;
         }
+      }
+      // 관리자가 API로 추가한 단어와 합쳐 팩 한도를 넘으면 이 팩은 넣지 않는다 (prune이면 지울 단어는 빼고 센다)
+      const inFile = new Set(keys);
+      const kept = options.prune
+        ? current.filter((word) => inFile.has(word.englishNorm)).length
+        : current.length;
+      if (kept + toInsert.length > MAX_WORDS_PER_PACK) {
+        throw new Error(
+          `${pack.name}: 남는 단어 ${kept}개 + 새 단어 ${toInsert.length}개가 팩 한도(${MAX_WORDS_PER_PACK}개)를 넘습니다.`,
+        );
       }
       for (let i = 0; i < toInsert.length; i += 500) {
         await tx.insert(words).values(toInsert.slice(i, i + 500));

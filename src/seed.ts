@@ -14,7 +14,16 @@ if (!file) {
   process.exit(1);
 }
 
-const parsed = DefaultPackSeed.safeParse(JSON.parse(await readFile(file, 'utf8')));
+let json: unknown;
+try {
+  json = JSON.parse(await readFile(file, 'utf8'));
+} catch (error) {
+  console.error(
+    `시드 파일을 읽을 수 없습니다: ${error instanceof Error ? error.message : String(error)}`,
+  );
+  process.exit(1);
+}
+const parsed = DefaultPackSeed.safeParse(json);
 if (!parsed.success) {
   console.error('시드 파일이 올바르지 않습니다.');
   console.error(z.prettifyError(parsed.error));

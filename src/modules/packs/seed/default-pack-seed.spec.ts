@@ -20,6 +20,9 @@ describe('DefaultPackSeed', () => {
       words: [{ english: 'Look up', meanings: ['찾아보다'] }],
     });
     expect(seed.categories).toEqual([]);
+    expect(seed.packs[0]?.description).toBeNull();
+    const blank = DefaultPackSeed.parse({ packs: [{ name: 'B', description: '  ', words: [] }] });
+    expect(blank.packs[0]?.description).toBeNull();
   });
 
   it('겹치는 이름·없는 분류·팩 안의 같은 단어(대소문자 무시)를 거절한다', () => {
