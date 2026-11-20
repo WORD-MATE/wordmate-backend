@@ -13,6 +13,7 @@ import { PoliciesModule } from './modules/policies/policies.module.js';
 import { StudyModule } from './modules/study/study.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { WordsModule } from './modules/words/words.module.js';
+import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { WordsModule } from './modules/words/words.module.js';
     PacksModule,
     WordsModule,
     StudyModule,
+    WrongNotesModule,
     PoliciesModule,
     UsersModule,
   ],
