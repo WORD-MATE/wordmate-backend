@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DUPLICATE_POLICY, MEMORY_STATUS } from '../../common/enums.js';
+import { DUPLICATE_POLICY, MEMORY_STATUS, PACK_TYPE } from '../../common/enums.js';
 import { CursorQuery, cursorPage } from '../../common/pagination.js';
 import {
   MAX_ENGLISH_LENGTH,
@@ -117,3 +117,22 @@ export const ParseResult = z
   })
   .meta({ id: 'ParseResult' });
 export type ParseResult = z.infer<typeof ParseResult>;
+
+export const WordSearchQuery = CursorQuery.extend({
+  q: z
+    .string()
+    .transform((value) => value.normalize('NFKC').trim().replace(/\s+/g, ' '))
+    .pipe(z.string().min(1, '검색어를 입력해 주세요.').max(MAX_MEANING_LENGTH))
+    .describe('영어 또는 뜻, 대소문자 무시·부분 일치'),
+});
+export type WordSearchQuery = z.infer<typeof WordSearchQuery>;
+
+export const WordWithPack = z
+  .object({
+    word: WordItem,
+    pack: z.object({ packId: z.string(), name: z.string(), type: z.enum(PACK_TYPE) }),
+  })
+  .meta({ id: 'WordWithPack' });
+export type WordWithPack = z.infer<typeof WordWithPack>;
+
+export const WordWithPackPage = cursorPage(WordWithPack).meta({ id: 'WordWithPackPage' });

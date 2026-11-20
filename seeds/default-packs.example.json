@@ -1,0 +1,35 @@
+{
+  "categories": [{ "name": "수능", "sortOrder": 1 }, { "name": "토익", "sortOrder": 2 }],
+  "packs": [
+    {
+      "name": "수능 필수 영단어 1",
+      "category": "수능",
+      "description": "형식 예시입니다. 실제 데이터로 바꿔 주세요.",
+      "sortOrder": 1,
+      "words": [
+        {
+          "english": "abandon",
+          "meanings": ["버리다", "포기하다"],
+          "example": "They had to abandon the plan.",
+          "derivatives": ["abandonment"]
+        },
+        {
+          "english": "look up",
+          "meanings": ["찾아보다", "올려다보다"]
+        }
+      ]
+    },
+    {
+      "name": "토익 빈출 영단어 1",
+      "category": "토익",
+      "sortOrder": 1,
+      "words": [
+        {
+          "english": "invoice",
+          "meanings": ["송장", "청구서"],
+          "example": "Please send the invoice by Friday."
+        }
+      ]
+    }
+  ]
+}

@@ -3,5 +3,7 @@ export * from './classes.js';
 export * from './devices.js';
 export * from './packs.js';
 export * from './policies.js';
+export * from './study.js';
 export * from './users.js';
 export * from './words.js';
+export * from './xp.js';

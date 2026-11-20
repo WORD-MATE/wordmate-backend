@@ -56,6 +56,12 @@ export type StudySource = Values<typeof STUDY_SOURCE>;
 export const STUDY_SESSION_STATUS = ['IN_PROGRESS', 'COMPLETED', 'ABANDONED'] as const;
 export type StudySessionStatus = Values<typeof STUDY_SESSION_STATUS>;
 
+export const STUDY_END_REASON = ['FINISHED', 'QUIT'] as const;
+export type StudyEndReason = Values<typeof STUDY_END_REASON>;
+
+export const STREAK_KIND = ['STUDY', 'MORNING'] as const;
+export type StreakKind = Values<typeof STREAK_KIND>;
+
 export const WRONG_NOTE_STATUS = ['ACTIVE', 'GRADUATED'] as const;
 export type WrongNoteStatus = Values<typeof WRONG_NOTE_STATUS>;
 
