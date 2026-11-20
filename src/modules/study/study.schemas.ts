@@ -98,3 +98,27 @@ export const CurrentStudy = z
   .nullable()
   .meta({ id: 'CurrentStudy' });
 export type CurrentStudy = z.infer<typeof CurrentStudy>;
+
+export const SubmitAnswer = z
+  .object({
+    index: z.number().int().min(0),
+    choiceIndex: z.number().int().min(0).max(3).optional().describe('CHOICE'),
+    typedAnswer: z.string().max(200).optional().describe('TYPING'),
+    known: z.boolean().optional().describe('FLASHCARD: 알아요 true / 몰라요 false'),
+    elapsedMs: z.number().int().min(0).max(3_600_000).describe('문항 풀이 시간'),
+  })
+  .meta({ id: 'SubmitAnswer' });
+export type SubmitAnswer = z.infer<typeof SubmitAnswer>;
+
+export const AnswerResult = z
+  .object({
+    index: z.number().int(),
+    correct: z.boolean().nullable().describe('FLASHCARD는 null'),
+    correctAnswer: z
+      .object({ english: z.string(), meanings: z.array(z.string()) })
+      .nullable()
+      .describe('TYPING 오답일 때만'),
+    counted: z.boolean().describe('false면 너무 빨리 낸 답이라 점수·XP에서 제외'),
+  })
+  .meta({ id: 'AnswerResult' });
+export type AnswerResult = z.infer<typeof AnswerResult>;

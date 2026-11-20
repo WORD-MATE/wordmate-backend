@@ -1,6 +1,20 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { and, asc, count, desc, eq, gt, isNull, like, lt, or, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  like,
+  lt,
+  max,
+  or,
+  type SQL,
+} from 'drizzle-orm';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { AppException, CommonErrors } from '../../common/errors/app-exception.js';
@@ -8,7 +22,14 @@ import { type CursorPage, decodeCursor, toCursorPage } from '../../common/pagina
 import type { Env } from '../../config/env.js';
 import { type Database, DB, type Transaction } from '../../infra/db/db.module.js';
 import { isDuplicateKeyError } from '../../infra/db/errors.js';
-import { type Pack, packCategories, packs, users } from '../../infra/db/schema/index.js';
+import {
+  type Pack,
+  packCategories,
+  packs,
+  users,
+  userWordProgress,
+  words,
+} from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
 import { ForbiddenWordsService } from '../forbidden-words/forbidden-words.service.js';
 import type { CreatePack, PackListQuery, PackSummary, UpdatePack } from './packs.schemas.js';
@@ -46,7 +67,11 @@ const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
 export const canEdit = (user: AuthUser, pack: Pack): boolean =>
   pack.type === 'MINE' ? pack.ownerUserId === user.userId : user.isAdmin;
 
-export function toPackSummary(pack: Pack): PackSummary {
+/** 이 사용자의 팩별 암기 진행 (삭제된 단어 제외). 진행 기록이 없는 단어는 NEW */
+export type PackProgress = { learning: number; memorized: number; lastStudiedAt: Date | null };
+const NO_PROGRESS: PackProgress = { learning: 0, memorized: 0, lastStudiedAt: null };
+
+export function toPackSummary(pack: Pack, progress: PackProgress = NO_PROGRESS): PackSummary {
   return {
     packId: pack.id,
     type: pack.type,
@@ -54,8 +79,11 @@ export function toPackSummary(pack: Pack): PackSummary {
     description: pack.description,
     categoryId: pack.categoryId,
     wordCount: pack.wordCount,
-    progress: { studied: 0, total: pack.wordCount },
-    lastStudiedAt: null,
+    progress: {
+      studied: Math.min(progress.learning + progress.memorized, pack.wordCount),
+      total: pack.wordCount,
+    },
+    lastStudiedAt: progress.lastStudiedAt?.toISOString() ?? null,
     shared: pack.shareCode !== null,
   };
 }
@@ -157,15 +185,18 @@ export class PacksService {
     }
 
     const page = toCursorPage(rows, query.size, cursorOf);
-    return { items: page.items.map(toPackSummary), nextCursor: page.nextCursor };
+    return { items: await this.summaries(user, page.items), nextCursor: page.nextCursor };
   }
 
   async detail(user: AuthUser, packId: string) {
     const pack = await this.findVisible(user, packId);
+    const progress = (await this.progressOf(user.userId, [pack.id])).get(pack.id) ?? NO_PROGRESS;
+    const LEARNING = Math.min(progress.learning, pack.wordCount);
+    const MEMORIZED = Math.min(progress.memorized, pack.wordCount - LEARNING);
     return {
-      ...toPackSummary(pack),
+      ...toPackSummary(pack, progress),
       editable: canEdit(user, pack),
-      memoryStatusCount: { NEW: pack.wordCount, LEARNING: 0, MEMORIZED: 0 },
+      memoryStatusCount: { NEW: pack.wordCount - LEARNING - MEMORIZED, LEARNING, MEMORIZED },
       share: pack.shareCode ? this.shareInfo(pack.shareCode) : null,
     };
   }
@@ -211,7 +242,51 @@ export class PacksService {
       if (isDuplicateKeyError(error, ACTIVE_NAME_INDEX)) throw PackErrors.nameDuplicate();
       throw error;
     }
-    return toPackSummary(await this.findById(pack.id));
+    const [summary] = await this.summaries(user, [await this.findById(pack.id)]);
+    return summary as PackSummary;
+  }
+
+  async summaries(user: AuthUser, rows: Pack[]): Promise<PackSummary[]> {
+    const progress = await this.progressOf(
+      user.userId,
+      rows.map((row) => row.id),
+    );
+    return rows.map((row) => toPackSummary(row, progress.get(row.id)));
+  }
+
+  async progressOf(userId: string, packIds: string[]): Promise<Map<string, PackProgress>> {
+    const result = new Map<string, PackProgress>();
+    if (packIds.length === 0) return result;
+    const rows = await this.db
+      .select({
+        packId: userWordProgress.packId,
+        memoryStatus: userWordProgress.memoryStatus,
+        total: count(),
+        lastStudiedAt: max(userWordProgress.lastStudiedAt),
+      })
+      .from(userWordProgress)
+      .innerJoin(words, eq(words.id, userWordProgress.wordId))
+      .where(
+        and(
+          eq(userWordProgress.userId, userId),
+          inArray(userWordProgress.packId, packIds),
+          isNull(words.deletedAt),
+        ),
+      )
+      .groupBy(userWordProgress.packId, userWordProgress.memoryStatus);
+    for (const row of rows) {
+      const progress = result.get(row.packId) ?? { ...NO_PROGRESS };
+      if (row.memoryStatus === 'LEARNING') progress.learning += row.total;
+      if (row.memoryStatus === 'MEMORIZED') progress.memorized += row.total;
+      if (
+        row.lastStudiedAt &&
+        (!progress.lastStudiedAt || row.lastStudiedAt > progress.lastStudiedAt)
+      ) {
+        progress.lastStudiedAt = row.lastStudiedAt;
+      }
+      result.set(row.packId, progress);
+    }
+    return result;
   }
 
   async remove(user: AuthUser, packId: string): Promise<void> {

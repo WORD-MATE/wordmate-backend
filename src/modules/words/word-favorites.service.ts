@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, inArray, lt, or } from 'drizzle-orm';
+import { and, desc, eq, lt, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import {
@@ -10,14 +10,18 @@ import {
 } from '../../common/pagination.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import { packs, wordFavorites, words } from '../../infra/db/schema/index.js';
-import { toWordItem, visibleWords, WordErrors } from './word-common.js';
-import type { WordWithPack } from './words.schemas.js';
+import { visibleWords, WordErrors } from './word-common.js';
+import { WordViewerService } from './word-viewer.service.js';
+import type { WordItem, WordWithPack } from './words.schemas.js';
 
 const FavoriteCursor = z.object({ createdAt: z.iso.datetime(), wordId: z.uuid() });
 
 @Injectable()
 export class WordFavoritesService {
-  constructor(@Inject(DB) private readonly db: Database) {}
+  constructor(
+    @Inject(DB) private readonly db: Database,
+    private readonly viewer: WordViewerService,
+  ) {}
 
   /** 볼 수 없게 된 단어(삭제·남의 팩)의 즐겨찾기는 목록에서 뺀다 */
   async list(user: AuthUser, query: CursorQuery): Promise<CursorPage<WordWithPack>> {
@@ -50,8 +54,12 @@ export class WordFavoritesService {
       createdAt: last.createdAt.toISOString(),
       wordId: last.word.id,
     }));
+    const items = await this.viewer.items(
+      user.userId,
+      page.items.map((row) => row.word),
+    );
     return {
-      items: page.items.map((row) => ({ word: toWordItem(row.word, true), pack: row.pack })),
+      items: page.items.map((row, i) => ({ word: items[i] as WordItem, pack: row.pack })),
       nextCursor: page.nextCursor,
     };
   }
@@ -72,14 +80,5 @@ export class WordFavoritesService {
     await this.db
       .delete(wordFavorites)
       .where(and(eq(wordFavorites.userId, user.userId), eq(wordFavorites.wordId, wordId)));
-  }
-
-  async favoriteIds(userId: string, wordIds: string[]): Promise<Set<string>> {
-    if (wordIds.length === 0) return new Set();
-    const rows = await this.db
-      .select({ wordId: wordFavorites.wordId })
-      .from(wordFavorites)
-      .where(and(eq(wordFavorites.userId, userId), inArray(wordFavorites.wordId, wordIds)));
-    return new Set(rows.map((row) => row.wordId));
   }
 }

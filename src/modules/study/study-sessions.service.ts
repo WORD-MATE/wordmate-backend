@@ -7,6 +7,7 @@ import { isDuplicateKeyError } from '../../infra/db/errors.js';
 import {
   packs,
   type StudySessionRow,
+  studyAnswers,
   studySessionQuestions,
   studySessions,
   wordFavorites,
@@ -19,9 +20,10 @@ import { type BuiltQuestion, buildQuestion, type QuizWord, shuffled } from './qu
 import type { CurrentStudy, StartStudy, StudySession } from './study.schemas.js';
 
 export const SESSION_TTL_DAYS = 7;
+export const sessionExpiry = (from = new Date()) =>
+  new Date(from.getTime() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
 const ACTIVE_INDEX = 'study_sessions_active_uq';
 const INSERT_CHUNK = 500;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const StudyErrors = {
   empty: () => new AppException('STUDY_EMPTY', '학습할 단어가 없습니다.', HttpStatus.BAD_REQUEST),
@@ -37,6 +39,12 @@ export const StudyErrors = {
     }),
   notFound: () =>
     new AppException('STUDY_SESSION_NOT_FOUND', '학습을 찾을 수 없습니다.', HttpStatus.NOT_FOUND),
+  alreadySubmitted: () =>
+    new AppException(
+      'STUDY_ANSWER_ALREADY_SUBMITTED',
+      '이미 답을 낸 문항입니다.',
+      HttpStatus.CONFLICT,
+    ),
   closed: () =>
     new AppException('STUDY_SESSION_CLOSED', '이미 끝난 학습입니다.', HttpStatus.CONFLICT),
   sourceNotSupported: () =>
@@ -51,7 +59,7 @@ const quizWordColumns = {
   derivatives: words.derivatives,
 };
 
-const isLive = (session: StudySessionRow, now = new Date()) =>
+export const isLive = (session: StudySessionRow, now = new Date()) =>
   session.status !== 'ABANDONED' && !(session.status === 'IN_PROGRESS' && session.expiresAt <= now);
 
 @Injectable()
@@ -86,7 +94,7 @@ export class StudySessionsService {
           direction: body.direction,
           shuffle: body.shuffle,
           total: questions.length,
-          expiresAt: new Date(Date.now() + SESSION_TTL_DAYS * DAY_MS),
+          expiresAt: sessionExpiry(),
         });
         for (let i = 0; i < questions.length; i += INSERT_CHUNK) {
           await tx
@@ -112,6 +120,11 @@ export class StudySessionsService {
       .from(studySessionQuestions)
       .where(eq(studySessionQuestions.sessionId, session.id))
       .orderBy(asc(studySessionQuestions.idx));
+    const answers = await this.db
+      .select()
+      .from(studyAnswers)
+      .where(eq(studyAnswers.sessionId, session.id))
+      .orderBy(asc(studyAnswers.idx));
     return {
       sessionId: session.id,
       source: session.source,
@@ -129,8 +142,12 @@ export class StudySessionsService {
         answerIndex: q.answerIndex,
         card: q.card,
       })),
-      // 답안 제출(#45)이 생기면 채운다
-      answers: [],
+      answers: answers.map((a) => ({
+        index: a.idx,
+        correct: a.correct,
+        known: a.known,
+        userAnswer: a.typedAnswer,
+      })),
     };
   }
 

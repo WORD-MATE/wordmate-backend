@@ -287,6 +287,15 @@ INSERT INTO forbidden_words (id, word, type) VALUES (UUID_TO_BIN(UUID()), 'class
 - 이어할 학습은 팩마다 하나(팩이 없는 즐겨찾기 등은 소스마다 하나)이고, `active_key` 생성 컬럼의 유니크 인덱스로 막습니다. 이미 있으면 `409 STUDY_SESSION_EXISTS`(`detail.sessionId`)이고, `force=true`면 기존 학습을 `ABANDONED`로 바꾸고 새로 만듭니다.
 - 저장분은 `expires_at`(시작 후 7일)이 지나면 조회·이어하기에서 빠지고, 같은 팩을 새로 시작할 때 `ABANDONED`로 바뀝니다. 만료된 행 정리는 배치 작업(#50)에서 합니다.
 - `DELETE /study/sessions/{id}`는 행을 지우지 않고 `ABANDONED`로 바꿉니다.
+- `POST /study/sessions/{id}/answers`는 문항마다 채점하고 답안·오답노트·암기 진행을 한 트랜잭션에 반영합니다. 세션 행을 잠가 같은 학습의 답안을 차례로 처리하고, 답을 낼 때마다 만료 시각을 7일 뒤로 늘립니다. `Idempotency-Key`를 지원합니다.
+  - TYPING은 앞뒤 공백·대소문자·연속 공백을 무시하고, EN_TO_KO는 띄어쓰기도 무시하고 뜻 중 하나와 같으면 정답입니다.
+  - `elapsedMs`가 500ms 미만이면 `counted=false`이고, 연속 정답(암기·오답 졸업)에 넣지 않습니다.
+  - CHOICE·TYPING은 다시 내면 `409 STUDY_ANSWER_ALREADY_SUBMITTED`, FLASHCARD는 덮어씁니다.
+- 오답노트(`wrong_notes`)는 (단어, 문제 유형)마다 한 행입니다. 틀리면 `wrong_count`를 올리고 연속 정답을 0으로 되돌립니다(졸업했던 항목은 다시 `ACTIVE`). 같은 문제 유형으로 2번 연속 맞히면 자동 졸업합니다. 플래시카드는 문제 유형이 없어 오답노트에 넣지 않습니다.
+- 암기 상태(`user_word_progress`, 행이 없으면 NEW):
+  - 처음 답하면 LEARNING이 됩니다. 서로 다른 학습에서 3번 연속 맞히면 MEMORIZED입니다(한 학습 안에서는 한 번만 셉니다).
+  - 틀리면 연속 정답이 0이 되고, MEMORIZED였으면 LEARNING으로 내려갑니다. 플래시카드의 "알아요"는 정답으로 봅니다.
+  - 단어 목록·검색·즐겨찾기의 `memoryStatus`, 단어 목록의 `memoryStatus` 필터, 단어팩의 `progress`·`lastStudiedAt`·`memoryStatusCount`가 이 표를 씁니다.
 - 지금은 `PACK`·`FAVORITE` 소스만 지원하고, `WRONG_NOTE`·`RECORD_WRONG`·`REVIEW`는 오답노트·기록·복습 작업에서 연결합니다.
 
 ## 학급·교사 담당 반

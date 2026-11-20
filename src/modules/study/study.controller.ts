@@ -1,10 +1,20 @@
 import { Controller, Delete, Get, HttpCode, Post, Req } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { Idempotent } from '../../common/idempotency/idempotent.decorator.js';
 import { ZodBody, ZodParam, ZodResponse } from '../../common/zod/decorators.js';
-import { CurrentStudy, StartStudy, StudySession } from './study.schemas.js';
+import { MIN_COUNTED_ELAPSED_MS } from './grading.js';
+import {
+  AnswerResult,
+  CurrentStudy,
+  StartStudy,
+  StudySession,
+  SubmitAnswer,
+} from './study.schemas.js';
+import { StudyAnswersService } from './study-answers.service.js';
 import { SESSION_TTL_DAYS, StudySessionsService } from './study-sessions.service.js';
 
 const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
@@ -13,7 +23,10 @@ const SessionIdParam = () => ZodParam('sessionId', z.uuid());
 @ApiTags('study')
 @Controller('study/sessions')
 export class StudyController {
-  constructor(private readonly sessions: StudySessionsService) {}
+  constructor(
+    private readonly sessions: StudySessionsService,
+    private readonly answers: StudyAnswersService,
+  ) {}
 
   @ApiOperation({
     summary: '학습 시작',
@@ -44,6 +57,24 @@ export class StudyController {
   @ZodResponse(StudySession)
   get(@SessionIdParam() sessionId: string, @Req() request: FastifyRequest) {
     return this.sessions.get(currentUser(request), sessionId);
+  }
+
+  @ApiOperation({
+    summary: '답안 제출·채점',
+    description: `문항마다 저장. 실패하면 같은 Idempotency-Key로 다시 보냄. CHOICE는 choiceIndex, TYPING은 typedAnswer(공백·대소문자 무시, EN_TO_KO는 띄어쓰기 무시하고 뜻 중 하나와 일치), FLASHCARD는 known. elapsedMs가 ${MIN_COUNTED_ELAPSED_MS}ms 미만이면 counted=false. 틀리면 오답노트에 추가. CHOICE·TYPING은 다시 제출하면 409, FLASHCARD는 덮어씀`,
+  })
+  @Post(':sessionId/answers')
+  @HttpCode(200)
+  // 오프라인 동안 쌓인 답안을 한꺼번에 다시 보내거나 플래시카드를 빠르게 넘겨도 막히지 않게 기본(분당 120)보다 넉넉히
+  @Throttle({ default: { limit: 600, ttl: 60_000 } })
+  @Idempotent()
+  @ZodResponse(AnswerResult)
+  submit(
+    @SessionIdParam() sessionId: string,
+    @ZodBody(SubmitAnswer) body: z.infer<typeof SubmitAnswer>,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.answers.submit(currentUser(request), sessionId, body);
   }
 
   @ApiOperation({

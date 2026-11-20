@@ -13,11 +13,14 @@ import {
   varchar,
 } from 'drizzle-orm/mysql-core';
 import {
+  MEMORY_STATUS,
   QUESTION_TYPE,
   QUIZ_DIRECTION,
   QUIZ_MODE,
   STUDY_SESSION_STATUS,
   STUDY_SOURCE,
+  WRONG_NOTE_STATUS,
+  WRONG_SOURCE,
 } from '../../../common/enums.js';
 import { id, timestamps } from '../columns.js';
 import { binaryUuid } from '../uuid.js';
@@ -85,3 +88,82 @@ export const studySessionQuestions = mysqlTable(
 );
 
 export type StudyQuestionRow = typeof studySessionQuestions.$inferSelect;
+
+export const studyAnswers = mysqlTable(
+  'study_answers',
+  {
+    sessionId: binaryUuid('session_id')
+      .notNull()
+      .references(() => studySessions.id, { onDelete: 'cascade' }),
+    idx: int('idx').notNull(),
+    choiceIndex: tinyint('choice_index'),
+    typedAnswer: varchar('typed_answer', { length: 200 }),
+    known: boolean('known'),
+    correct: boolean('correct'),
+    // 너무 빨리 낸 답은 점수·XP·암기 진행에서 뺀다
+    counted: boolean('counted').notNull(),
+    elapsedMs: int('elapsed_ms').notNull(),
+    submittedAt: datetime('submitted_at', { mode: 'date', fsp: 3 })
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (t) => [primaryKey({ columns: [t.sessionId, t.idx] })],
+);
+
+export type StudyAnswerRow = typeof studyAnswers.$inferSelect;
+
+/** (단어, 문제 유형) 하나가 오답 항목 하나 */
+export const wrongNotes = mysqlTable(
+  'wrong_notes',
+  {
+    id: id(),
+    userId: binaryUuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    wordId: binaryUuid('word_id')
+      .notNull()
+      .references(() => words.id, { onDelete: 'cascade' }),
+    packId: binaryUuid('pack_id').notNull(),
+    questionType: mysqlEnum('question_type', QUESTION_TYPE).notNull(),
+    source: mysqlEnum('source', WRONG_SOURCE).notNull(),
+    status: mysqlEnum('status', WRONG_NOTE_STATUS).notNull().default('ACTIVE'),
+    wrongCount: int('wrong_count').notNull().default(1),
+    consecutiveCorrect: int('consecutive_correct').notNull().default(0),
+    lastSessionId: binaryUuid('last_session_id'),
+    firstWrongAt: datetime('first_wrong_at', { mode: 'date', fsp: 3 }).notNull(),
+    lastWrongAt: datetime('last_wrong_at', { mode: 'date', fsp: 3 }).notNull(),
+    graduatedAt: datetime('graduated_at', { mode: 'date', fsp: 3 }),
+  },
+  (t) => [
+    uniqueIndex('wrong_notes_word_type_uq').on(t.userId, t.wordId, t.questionType),
+    index('wrong_notes_recent_idx').on(t.userId, t.status, t.lastWrongAt, t.id),
+    index('wrong_notes_count_idx').on(t.userId, t.status, t.wrongCount, t.id),
+  ],
+);
+
+/** 사용자별 단어 암기 진행. 행이 없으면 NEW */
+export const userWordProgress = mysqlTable(
+  'user_word_progress',
+  {
+    userId: binaryUuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    wordId: binaryUuid('word_id')
+      .notNull()
+      .references(() => words.id, { onDelete: 'cascade' }),
+    // 단어팩별 집계용 (단어는 팩을 옮기지 않는다)
+    packId: binaryUuid('pack_id').notNull(),
+    memoryStatus: mysqlEnum('memory_status', MEMORY_STATUS).notNull(),
+    correctStreak: int('correct_streak').notNull().default(0),
+    lastCorrectSessionId: binaryUuid('last_correct_session_id'),
+    totalCorrect: int('total_correct').notNull().default(0),
+    totalWrong: int('total_wrong').notNull().default(0),
+    lastStudiedAt: datetime('last_studied_at', { mode: 'date', fsp: 3 }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.wordId] }),
+    index('user_word_progress_pack_idx').on(t.userId, t.packId, t.memoryStatus),
+  ],
+);
+
+export type UserWordProgressRow = typeof userWordProgress.$inferSelect;
