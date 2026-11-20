@@ -188,6 +188,17 @@ describe('학습 답안 제출', () => {
     expect((await answer(user, sessionId, { index: 1, known: true })).statusCode).toBe(404);
   });
 
+  it('답안은 분당 기본 한도(120)를 넘겨 몰아서 보내도 막히지 않는다', async () => {
+    const user = await makeUser();
+    const packId = await createPack(user, 150);
+    const { sessionId } = await start(user, packId, 'FLASHCARD');
+    const codes = new Set<number>();
+    for (let index = 0; index < 150; index++) {
+      codes.add((await answer(user, sessionId, { index, known: true })).statusCode);
+    }
+    expect([...codes]).toEqual([200]);
+  });
+
   it('같은 Idempotency-Key로 다시 보내면 저장한 응답을 그대로 돌려준다', async () => {
     const user = await makeUser();
     const packId = await createPack(user);
