@@ -1,7 +1,9 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  date,
   datetime,
+  decimal,
   index,
   int,
   json,
@@ -17,6 +19,8 @@ import {
   QUESTION_TYPE,
   QUIZ_DIRECTION,
   QUIZ_MODE,
+  STREAK_KIND,
+  STUDY_END_REASON,
   STUDY_SESSION_STATUS,
   STUDY_SOURCE,
   WRONG_NOTE_STATUS,
@@ -41,6 +45,8 @@ export const studySessions = mysqlTable(
     mode: mysqlEnum('mode', QUIZ_MODE).notNull(),
     direction: mysqlEnum('direction', QUIZ_DIRECTION).notNull(),
     shuffle: boolean('shuffle').notNull(),
+    // 팩의 단어를 모두 냈는지 (완주 보너스 판정)
+    coversPack: boolean('covers_pack').notNull().default(false),
     status: mysqlEnum('status', STUDY_SESSION_STATUS).notNull().default('IN_PROGRESS'),
     total: int('total').notNull(),
     answeredCount: int('answered_count').notNull().default(0),
@@ -167,3 +173,104 @@ export const userWordProgress = mysqlTable(
 );
 
 export type UserWordProgressRow = typeof userWordProgress.$inferSelect;
+
+export const studyRecords = mysqlTable(
+  'study_records',
+  {
+    id: id(),
+    userId: binaryUuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    // 끝난 세션을 정리해도 기록은 남긴다
+    sessionId: binaryUuid('session_id')
+      .unique('study_records_session_uq')
+      .references(() => studySessions.id, { onDelete: 'set null' }),
+    source: mysqlEnum('source', STUDY_SOURCE).notNull(),
+    // 팩이 삭제되면 목록에서 '삭제됨'으로 보이도록 소프트 삭제된 팩도 그대로 참조한다
+    packId: binaryUuid('pack_id').references(() => packs.id),
+    mode: mysqlEnum('mode', QUIZ_MODE).notNull(),
+    direction: mysqlEnum('direction', QUIZ_DIRECTION).notNull(),
+    reason: mysqlEnum('reason', STUDY_END_REASON).notNull(),
+    correctCount: int('correct_count').notNull(),
+    wrongCount: int('wrong_count').notNull(),
+    knownCount: int('known_count'),
+    unknownCount: int('unknown_count'),
+    accuracy: decimal('accuracy', { precision: 4, scale: 1, mode: 'number' }),
+    xpEarned: int('xp_earned').notNull(),
+    packCompleteBonus: boolean('pack_complete_bonus').notNull(),
+    completedAt: datetime('completed_at', { mode: 'date', fsp: 3 }).notNull(),
+    completedDate: date('completed_date', { mode: 'string' }).notNull(),
+  },
+  (t) => [
+    index('study_records_user_completed_idx').on(t.userId, t.completedAt, t.id),
+    index('study_records_user_date_idx').on(t.userId, t.completedDate),
+  ],
+);
+
+/** 단어가 수정·삭제돼도 기록이 남도록 영어·뜻을 스냅샷으로 둔다. 답한 문항만 */
+export const studyRecordItems = mysqlTable(
+  'study_record_items',
+  {
+    recordId: binaryUuid('record_id')
+      .notNull()
+      .references(() => studyRecords.id, { onDelete: 'cascade' }),
+    idx: int('idx').notNull(),
+    wordId: binaryUuid('word_id').notNull(),
+    english: varchar('english', { length: 50 }).notNull(),
+    meanings: json('meanings').$type<string[]>().notNull(),
+    questionType: mysqlEnum('question_type', QUESTION_TYPE),
+    correct: boolean('correct'),
+    known: boolean('known'),
+    userAnswer: varchar('user_answer', { length: 200 }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.recordId, t.idx] }),
+    index('study_record_items_word_idx').on(t.wordId),
+  ],
+);
+
+/** 달력·통계용 일별 집계 (KST). 기록을 정리해도 남는다 */
+export const dailyStudyStats = mysqlTable(
+  'daily_study_stats',
+  {
+    userId: binaryUuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    date: date('date', { mode: 'string' }).notNull(),
+    // 낸 답 전체 (플래시카드 포함)
+    solvedCount: int('solved_count').notNull().default(0),
+    // 정답률 분모: 4지선다·직접 입력만
+    gradedCount: int('graded_count').notNull().default(0),
+    correctCount: int('correct_count').notNull().default(0),
+    sessionsCompleted: int('sessions_completed').notNull().default(0),
+    xpStudy: int('xp_study').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.date] })],
+);
+
+/** 기간 내 서로 다른 학습 단어 수(studiedWordCount)용 */
+export const dailyStudiedWords = mysqlTable(
+  'daily_studied_words',
+  {
+    userId: binaryUuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    date: date('date', { mode: 'string' }).notNull(),
+    wordId: binaryUuid('word_id').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.date, t.wordId] })],
+);
+
+export const userStreaks = mysqlTable(
+  'user_streaks',
+  {
+    userId: binaryUuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: mysqlEnum('kind', STREAK_KIND).notNull(),
+    current: int('current').notNull().default(0),
+    best: int('best').notNull().default(0),
+    lastDate: date('last_date', { mode: 'string' }),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.kind] })],
+);
