@@ -6,8 +6,8 @@ import { type Database, DB, type Transaction } from '../../infra/db/db.module.js
 import { isDuplicateKeyError } from '../../infra/db/errors.js';
 import {
   packs,
-  studySessionQuestions,
   type StudySessionRow,
+  studySessionQuestions,
   studySessions,
   wordFavorites,
   words,
@@ -15,7 +15,7 @@ import {
 import { newId } from '../../infra/db/uuid.js';
 import { PacksService } from '../packs/packs.service.js';
 import { visibleWords } from '../words/word-common.js';
-import { buildQuestion, type BuiltQuestion, type QuizWord, shuffled } from './question-builder.js';
+import { type BuiltQuestion, buildQuestion, type QuizWord, shuffled } from './question-builder.js';
 import type { CurrentStudy, StartStudy, StudySession } from './study.schemas.js';
 
 export const SESSION_TTL_DAYS = 7;
