@@ -95,10 +95,10 @@ export class StudySessionsService {
         }
       });
     } catch (error) {
-      // 같은 요청이 동시에 두 번 들어온 경우
+      // 같은 요청이 동시에 두 번 들어와 다른 요청이 먼저 만든 경우
       if (isDuplicateKeyError(error, ACTIVE_INDEX)) {
         const active = await this.findActive(this.db, user.userId, body.source, packId);
-        throw StudyErrors.exists(active?.id ?? sessionId);
+        if (active) throw StudyErrors.exists(active.id);
       }
       throw error;
     }
@@ -258,7 +258,10 @@ export class StudySessionsService {
     });
   }
 
-  /** 같은 팩(팩이 없으면 같은 소스)에 이어할 학습이 있으면 409. 만료됐거나 force면 버린다 */
+  /**
+   * 같은 팩(팩이 없으면 같은 소스)에 이어할 학습이 있으면 409. 만료됐거나 force면 버린다.
+   * 잠금 읽기(FOR UPDATE)를 쓰면 동시에 시작할 때 갭 락끼리 교착되므로 쓰지 않고, 경쟁은 active_key 유니크 인덱스로 막는다
+   */
   private async releaseActive(
     tx: Transaction,
     userId: string,
@@ -266,7 +269,7 @@ export class StudySessionsService {
     packId: string | null,
     force: boolean,
   ): Promise<void> {
-    const active = await this.findActive(tx, userId, source, packId, true);
+    const active = await this.findActive(tx, userId, source, packId);
     if (!active) return;
     if (active.expiresAt > new Date() && !force) throw StudyErrors.exists(active.id);
     await tx
@@ -280,9 +283,8 @@ export class StudySessionsService {
     userId: string,
     source: StartStudy['source'],
     packId: string | null,
-    lock = false,
   ) {
-    const query = executor
+    const [row] = await executor
       .select({ id: studySessions.id, expiresAt: studySessions.expiresAt })
       .from(studySessions)
       .where(
@@ -294,7 +296,6 @@ export class StudySessionsService {
             : and(isNull(studySessions.packId), eq(studySessions.source, source)),
         ),
       );
-    const [row] = lock ? await query.for('update') : await query;
     return row ?? null;
   }
 }
