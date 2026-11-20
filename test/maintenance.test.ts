@@ -204,6 +204,7 @@ describe('정리 작업', () => {
       'purgedFavorites',
       'purgedSessions',
     ]);
+    await expect(processor.process({ name: 'unknown-job' } as Job)).rejects.toThrow('unknown-job');
     expect(
       await db.select().from(studyRecords).where(eq(studyRecords.userId, user.userId)),
     ).toHaveLength(60);

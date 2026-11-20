@@ -51,15 +51,24 @@ export class MaintenanceProcessor extends WorkerHost implements OnApplicationBoo
   }
 
   async process(job: Job): Promise<Record<string, number>> {
-    const result: Record<string, number> =
-      job.name === MaintenanceJob.expireSessions
-        ? { expiredSessions: await this.maintenance.expireStudySessions() }
-        : {
-            expiredSessions: await this.maintenance.expireStudySessions(),
-            purgedSessions: await this.maintenance.purgeEndedSessions(),
-            purgedFavorites: await this.maintenance.purgeDeletedWordFavorites(),
-          };
+    const result = await this.run(job.name);
     this.logger.log(`${job.name} ${JSON.stringify(result)}`);
     return result;
+  }
+
+  private async run(name: string): Promise<Record<string, number>> {
+    switch (name) {
+      case MaintenanceJob.expireSessions:
+        return { expiredSessions: await this.maintenance.expireStudySessions() };
+      case MaintenanceJob.dailyCleanup:
+        return {
+          expiredSessions: await this.maintenance.expireStudySessions(),
+          purgedSessions: await this.maintenance.purgeEndedSessions(),
+          purgedFavorites: await this.maintenance.purgeDeletedWordFavorites(),
+        };
+      default:
+        // 같은 큐에 작업을 추가하고 여기 처리를 빠뜨리면 조용히 다른 작업이 돌지 않게 실패시킨다
+        throw new Error(`알 수 없는 정리 작업: ${name}`);
+    }
   }
 }
