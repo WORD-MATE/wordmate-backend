@@ -75,3 +75,50 @@ export function nextProgress(
     totalWrong: base.totalWrong,
   };
 }
+
+/** 복습 간격(일). 복습에서 맞힐 때마다 다음 간격으로, 다 통과하면 일정에서 빠진다 */
+export const REVIEW_INTERVALS = [1, 3, 7, 14, 30] as const;
+/** 하루에 내는 복습 단어 수 */
+export const DAILY_REVIEW_LIMIT = 30;
+
+export type ReviewState = {
+  reviewStage: number;
+  nextReviewOn: string | null;
+  lastReviewedOn: string | null;
+};
+
+const addDays = (date: string, days: number) =>
+  Temporal.PlainDate.from(date).add({ days }).toString();
+
+/**
+ * 답 하나를 반영한 복습 일정 (today는 KST 날짜).
+ * - 처음 답하면 다음 날 복습
+ * - 틀리면 어디서 틀렸든 첫 간격(다음 날)부터 다시
+ * - 복습 학습에서 오늘 복습할 단어를 맞히면 다음 간격으로. 너무 빨리 낸 정답은 넘어가지 않는다
+ * - 일반 학습에서 맞힌 것은 일정을 바꾸지 않는다
+ */
+export function nextReview(
+  previous: ReviewState | null,
+  answer: { correct: boolean; counted: boolean; isReview: boolean },
+  today: string,
+): ReviewState {
+  const base: ReviewState = previous ?? {
+    reviewStage: 0,
+    nextReviewOn: null,
+    lastReviewedOn: null,
+  };
+  const lastReviewedOn = answer.isReview ? today : base.lastReviewedOn;
+  const fresh = base.reviewStage === 0 && base.nextReviewOn === null;
+  if (!answer.correct || fresh) {
+    return { reviewStage: 0, nextReviewOn: addDays(today, REVIEW_INTERVALS[0]), lastReviewedOn };
+  }
+  const due = base.nextReviewOn !== null && base.nextReviewOn <= today;
+  if (!answer.isReview || !answer.counted || !due) return { ...base, lastReviewedOn };
+  const reviewStage = base.reviewStage + 1;
+  const interval = REVIEW_INTERVALS[reviewStage];
+  return {
+    reviewStage,
+    nextReviewOn: interval === undefined ? null : addDays(today, interval),
+    lastReviewedOn,
+  };
+}
