@@ -11,9 +11,8 @@ import {
   battleResults,
   battleRoomParticipants,
   users,
-  wrongNotes,
 } from '../../infra/db/schema/index.js';
-import { newId } from '../../infra/db/uuid.js';
+import { recordWrongWords } from '../wrong-notes/wrong-note-writer.js';
 import { XpService } from '../xp/xp.service.js';
 import { battleXpOf, DAILY_PAIR_LIMIT, decideOutcomes } from './battle-rules.js';
 
@@ -109,7 +108,7 @@ export class BattleFinishService {
       });
     }
     await tx.insert(battleResults).values(rows);
-    await this.recordWrongWords(tx, room, battle, ids, finishedAt);
+    await this.saveWrongWords(tx, room, battle, ids, finishedAt);
     return earned;
   }
 
@@ -173,7 +172,7 @@ export class BattleFinishService {
   }
 
   /** 틀렸거나 답하지 않은 단어를 (단어, 문제 유형)별로 오답노트에 쌓는다. 같은 단어가 여러 번 나와도 한 번 */
-  private async recordWrongWords(
+  private async saveWrongWords(
     tx: Transaction,
     room: BattleRoom,
     battle: Battle,
@@ -197,30 +196,11 @@ export class BattleFinishService {
           inArray(battleAnswers.userId, userIds),
         ),
       );
-    if (wrong.length === 0) return;
-    await tx
-      .insert(wrongNotes)
-      .values(
-        wrong.map((row) => ({
-          id: newId(),
-          userId: row.userId,
-          wordId: row.wordId,
-          packId: room.packId,
-          questionType: room.questionType,
-          source: 'BATTLE' as const,
-          firstWrongAt: now,
-          lastWrongAt: now,
-        })),
-      )
-      .onDuplicateKeyUpdate({
-        set: {
-          status: 'ACTIVE',
-          wrongCount: sql`${wrongNotes.wrongCount} + 1`,
-          consecutiveCorrect: 0,
-          source: 'BATTLE',
-          lastWrongAt: now,
-          graduatedAt: null,
-        },
-      });
+    await recordWrongWords(
+      tx,
+      wrong.map((row) => ({ ...row, packId: room.packId, questionType: room.questionType })),
+      'BATTLE',
+      now,
+    );
   }
 }
