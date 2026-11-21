@@ -208,3 +208,28 @@ export const battleDailyPairs = mysqlTable(
   },
   (t) => [primaryKey({ columns: [t.date, t.userId, t.opponentId] })],
 );
+
+/** 혼자 하는 연습. 정답을 미리 내려주고 클라이언트가 시간을 잰다 (XP 없음) */
+export const practiceSessions = mysqlTable(
+  'practice_sessions',
+  {
+    id: id(),
+    userId: binaryUuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    packId: binaryUuid('pack_id').notNull(),
+    questionType: mysqlEnum('question_type', QUESTION_TYPE).notNull(),
+    questionCount: int('question_count').notNull(),
+    timeLimitSec: int('time_limit_sec').notNull(),
+    questions: json('questions')
+      .$type<
+        { index: number; wordId: string; prompt: string; choices: string[]; answerIndex: number }[]
+      >()
+      .notNull(),
+    score: int('score'),
+    correctCount: int('correct_count'),
+    completedAt: datetime('completed_at', { mode: 'date', fsp: 3 }),
+    ...timestamps,
+  },
+  (t) => [index('practice_sessions_created_idx').on(t.createdAt)],
+);
