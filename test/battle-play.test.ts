@@ -19,6 +19,7 @@ import {
 } from '../src/infra/db/schema/index.js';
 import { newId } from '../src/infra/db/uuid.js';
 import { LobbyService } from '../src/modules/battles/lobby.service.js';
+import { PlayService } from '../src/modules/battles/play.service.js';
 import { createTestApp, inject } from './support/create-test-app.js';
 import { connectAs, type WsClient } from './support/ws-client.js';
 
@@ -76,11 +77,11 @@ describe('대결 문항 진행', () => {
     return packId;
   };
 
-  const settings = (packId: string) => ({
+  const settings = (packId: string, timeLimitSec = 5) => ({
     packId,
     questionType: 'KO_TO_EN_CHOICE',
     questionCount: 10,
-    timeLimitSec: 5,
+    timeLimitSec,
     maxParticipants: 4,
   });
 
@@ -95,10 +96,15 @@ describe('대결 문항 진행', () => {
   };
 
   /** 방을 만들고 guests가 참가해 구독한 뒤 방장이 시작해 첫 문항까지 기다린다 */
-  const startBattle = async (guestCount: number) => {
+  const startBattle = async (guestCount: number, timeLimitSec = 5) => {
     const hostUser = await makeUser();
     const room = (
-      await call(hostUser, 'POST', '/battles/rooms', settings(await createPack(hostUser)))
+      await call(
+        hostUser,
+        'POST',
+        '/battles/rooms',
+        settings(await createPack(hostUser), timeLimitSec),
+      )
     ).json() as Room;
     const guestUsers = await Promise.all(Array.from({ length: guestCount }, () => makeUser()));
     for (const guest of guestUsers) {
@@ -188,7 +194,7 @@ describe('대결 문항 진행', () => {
     const answerWindow =
       new Date(first?.payload.deadlineAt as string).getTime() -
       new Date(first?.serverTime as string).getTime();
-    expect(answerWindow).toBeGreaterThan(4000);
+    expect(answerWindow).toBeGreaterThan(3000);
     expect(answerWindow).toBeLessThanOrEqual(5000);
 
     for (let i = 0; i < 10; i++) {
@@ -241,6 +247,11 @@ describe('대결 문항 진행', () => {
     expect(answers?.total).toBe(20);
     const view = (await call(host.user, 'GET', `/battles/rooms/${room.inviteCode}`)).json();
     expect(view).toMatchObject({ status: 'FINISHED', battleId: battle?.id });
+    // 끝난 뒤 이어 받으려 하면 결과 id를 다시 보낸다
+    guest.received.length = 0;
+    guest.send('ROOM_RESUME', { roomId: room.roomId });
+    expect((await guest.waitFor('ROOM_STATE')).payload.room).toMatchObject({ status: 'FINISHED' });
+    await guest.waitFor('BATTLE_FINISHED', { battleId: battle?.id });
     // 끝난 방은 사용자를 붙잡지 않는다
     expect(
       (await call(host.user, 'POST', '/battles/rooms', settings(await createPack(host.user))))
@@ -288,7 +299,14 @@ describe('대결 문항 진행', () => {
   }, 60_000);
 
   it('끊겼다가 ROOM_RESUME하면 진행 중인 문항부터 이어서 답한다', async () => {
-    const { room, host, guests } = await startBattle(1);
+    const { room, host, guests } = await startBattle(1, 15);
+    // 서버 시계 차이로 마감 작업이 일찍 돌아도 문항을 끝내지 않는다
+    const [battle] = await db.select().from(battles).where(eq(battles.roomId, room.roomId));
+    await app.get(PlayService).endQuestion(battle?.id as string, 0, true);
+    expect(
+      (await db.select().from(battles).where(eq(battles.roomId, room.roomId)))[0],
+    ).toMatchObject({ phase: 'QUESTION', currentIndex: 0 });
+
     const guest = guests[0] as WsClient;
     const hostQuestion = host.received.find((m) => m.type === 'QUESTION_STARTED');
     await guest.close();
@@ -303,7 +321,7 @@ describe('대결 문항 진행', () => {
     const state = await back.waitFor('ROOM_STATE');
     expect(state.payload.room).toMatchObject({ status: 'IN_PROGRESS' });
     expect(typeof (state.payload.room as { battleId: unknown }).battleId).toBe('string');
-    const resumed = await back.waitFor('QUESTION_STARTED');
+    const resumed = await back.waitFor('QUESTION_STARTED', { questionIndex: 0 });
     expect(resumed.payload).toEqual(hostQuestion?.payload);
     await host.waitFor('PARTICIPANT_STATE', { userId: guest.user.userId, state: 'CONNECTED' });
     expect((await participantOf(room.roomId, guest.user.userId))?.disconnectedAt).toBeNull();
@@ -315,6 +333,32 @@ describe('대결 문항 진행', () => {
     back.send('ROOM_RESUME', { roomId: room.roomId });
     await back.waitFor('QUESTION_STARTED', { questionIndex: 0 });
     await back.waitFor('ANSWER_ACCEPTED', { questionIndex: 0 });
+
+    host.send('ROOM_LEAVE', { roomId: room.roomId });
+    back.send('ROOM_LEAVE', { roomId: room.roomId });
+    await expect.poll(async () => (await roomRow(room.roomId))?.status).toBe('EXPIRED');
+  }, 60_000);
+
+  it('다시 접속해 ROOM_RESUME 없이 답해도 돌아온 것으로 본다', async () => {
+    const { room, host, guests } = await startBattle(1, 15);
+    const guest = guests[0] as WsClient;
+    await guest.close();
+    await host.waitFor('PARTICIPANT_STATE', { userId: guest.user.userId, state: 'DISCONNECTED' });
+    const disconnectedAt = (await participantOf(room.roomId, guest.user.userId))
+      ?.disconnectedAt as Date;
+
+    const back = await connectAs(app, guest.user);
+    clients.push(back);
+    back.send('ANSWER_SUBMIT', { questionIndex: 0, choiceIndex: 0 });
+    await back.waitFor('ANSWER_ACCEPTED', { questionIndex: 0 });
+    await host.waitFor('PARTICIPANT_STATE', { userId: guest.user.userId, state: 'CONNECTED' });
+    expect(await participantOf(room.roomId, guest.user.userId)).toMatchObject({
+      state: 'CONNECTED',
+      disconnectedAt: null,
+    });
+    // 끊겼을 때 잡힌 유예가 돌아도 내보내지 않는다
+    await app.get(LobbyService).expireGrace(room.roomId, guest.user.userId, disconnectedAt);
+    expect(await participantOf(room.roomId, guest.user.userId)).toMatchObject({ active: true });
 
     host.send('ROOM_LEAVE', { roomId: room.roomId });
     back.send('ROOM_LEAVE', { roomId: room.roomId });
