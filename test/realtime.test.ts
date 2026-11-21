@@ -48,6 +48,7 @@ describe('실시간 게이트웨이', () => {
   let valkey: Redis;
   let realtime: RealtimeService;
   let wsBase: string;
+  let otherWsBase: string;
 
   const makeUser = async (): Promise<AuthUser> => {
     const userId = newId();
@@ -73,17 +74,14 @@ describe('실시간 게이트웨이', () => {
     valkey = app.get(VALKEY);
     realtime = app.get(RealtimeService);
     realtime.handle('TEST_ECHO', z.object({ text: z.string().max(20) }), (ctx, payload) =>
-      realtime.reply(
-        ctx.userId,
-        'TEST_ECHOED',
-        { text: payload.text, userId: ctx.userId },
-        ctx.requestId,
-      ),
+      ctx.reply('TEST_ECHOED', { text: payload.text, userId: ctx.userId }),
     );
     await app.listen(0, '127.0.0.1');
     const { port } = app.getHttpServer().address() as AddressInfo;
     wsBase = `ws://127.0.0.1:${port}/ws`;
     other = await createTestApp();
+    await other.listen(0, '127.0.0.1');
+    otherWsBase = `ws://127.0.0.1:${(other.getHttpServer().address() as AddressInfo).port}/ws`;
   });
 
   afterAll(async () => {
@@ -163,6 +161,40 @@ describe('실시간 게이트웨이', () => {
 
     client.socket.close();
     await client.closed;
+    await expect.poll(() => realtime.isOnline(user.userId)).toBe(false);
+  });
+
+  it('응답은 요청한 연결에만, 서버 쪽에서 보내는 메시지는 사용자의 모든 연결에', async () => {
+    const user = await makeUser();
+    const tabA = connect(`${wsBase}?ticket=${(await ticketFor(user)).ticket}`);
+    const tabB = connect(`${wsBase}?ticket=${(await ticketFor(user)).ticket}`);
+    await Promise.all([tabA.opened, tabB.opened]);
+
+    tabA.send({ type: 'TEST_ECHO', requestId: 'only-a', payload: { text: 'a' } });
+    await tabA.waitFor((m) => m.type === 'TEST_ECHOED');
+    await realtime.sendToUsers([user.userId], 'BROADCAST', {});
+    await tabB.waitFor((m) => m.type === 'BROADCAST');
+    await tabA.waitFor((m) => m.type === 'BROADCAST');
+    expect(tabB.received.some((m) => m.type === 'TEST_ECHOED')).toBe(false);
+    tabA.socket.close();
+    tabB.socket.close();
+  });
+
+  it('여러 서버에 붙은 사용자는 한쪽이 끊겨도 접속 중으로 남는다', async () => {
+    const user = await makeUser();
+    const phone = connect(`${wsBase}?ticket=${(await ticketFor(user)).ticket}`);
+    const web = connect(`${otherWsBase}?ticket=${(await ticketFor(user)).ticket}`);
+    await Promise.all([phone.opened, web.opened]);
+    await expect.poll(() => realtime.isOnline(user.userId)).toBe(true);
+
+    phone.socket.close();
+    await phone.closed;
+    // 끊긴 쪽이 정리를 마칠 시간을 준 뒤에도 다른 서버의 연결 때문에 접속 중이어야 한다
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(await realtime.isOnline(user.userId)).toBe(true);
+
+    web.socket.close();
+    await web.closed;
     await expect.poll(() => realtime.isOnline(user.userId)).toBe(false);
   });
 });
