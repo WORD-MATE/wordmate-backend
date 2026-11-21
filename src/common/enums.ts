@@ -199,6 +199,9 @@ export type FaqCategory = Values<typeof FAQ_CATEGORY>;
 export const FORBIDDEN_WORD_TYPE = ['FORBIDDEN', 'ALLOWED'] as const;
 export type ForbiddenWordType = Values<typeof FORBIDDEN_WORD_TYPE>;
 
+export const SEASON_PERIOD = ['WEEKLY', 'MONTHLY'] as const;
+export type SeasonPeriod = Values<typeof SEASON_PERIOD>;
+
 export const SEASON_STATUS = ['CLOSED_PENDING', 'CONFIRMED', 'FAILED'] as const;
 export type SeasonStatus = Values<typeof SEASON_STATUS>;
 
