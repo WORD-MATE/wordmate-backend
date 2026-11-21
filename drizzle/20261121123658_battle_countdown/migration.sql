@@ -1,0 +1,1 @@
+ALTER TABLE `battle_rooms` ADD `countdown_ends_at` datetime(3);
