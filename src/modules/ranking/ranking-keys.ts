@@ -49,3 +49,26 @@ export const RANK_KEY_TTL_SECONDS: Record<RankPeriod, number | null> = {
   MONTHLY: 400 * 24 * 60 * 60,
   ALL: null,
 };
+
+/** 지난 기간에 속한 아무 날짜 (전체 기간은 지난 기간이 없다) */
+export function previousPeriodDate(period: RankPeriod, kstDate: string): string | null {
+  const day = Temporal.PlainDate.from(kstDate);
+  if (period === 'WEEKLY') return day.subtract({ days: 7 }).toString();
+  if (period === 'MONTHLY') return day.with({ day: 1 }).subtract({ days: 1 }).toString();
+  return null;
+}
+
+/** 조회하는 사용자의 학년·반 기준 범위 키. 학년·반이 없으면 null (FRIENDS는 키가 없다) */
+export function scopeKeyFor(
+  scope: 'SCHOOL' | 'GRADE' | 'CLASS',
+  member: { grade: number | null; classNo: number | null },
+): string | null {
+  if (scope === 'SCHOOL') return 'school';
+  if (member.grade === null) return null;
+  if (scope === 'GRADE') return `grade:${member.grade}`;
+  return member.classNo === null ? null : `class:${member.grade}-${member.classNo}`;
+}
+
+/** 상위 N% (올림, 1~100) */
+export const topPercentOf = (rank: number, total: number): number =>
+  Math.min(100, Math.max(1, Math.ceil((rank / total) * 100)));
