@@ -372,6 +372,12 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
   - 반 랭킹은 공개 참여자(XP 1 이상)가 3명 미만이면 `available=false`입니다.
   - FRIENDS는 나 + 친구를 학교 범위 점수로 비교합니다. 친구 기능 전까지는 나만 나옵니다.
 - `GET /ranking/me`(학생만)는 캐시 없이 지금 값으로 계산합니다. 비공개 사용자도 공개 사용자 사이에 자기를 끼워 순위를 봅니다. 100위 밖이면 `rank` 대신 `topPercent`(올림)를 주고, `change`는 지난 기간 ZSET의 순위와 비교한 변동입니다(양수면 상승).
+- 시즌 마감: 주간·월간 기간 하나가 시즌 하나입니다(`ranking_seasons`). BullMQ `ranking` 큐의 `close-seasons` 작업이 매시 10분(KST)에 돕니다.
+  - 끝났는데 확정하지 못한 시즌(`CLOSED_PENDING`·`FAILED`)을 마감하고, 그 기간의 학교·학년·반 ZSET을 `ranking_snapshots`에 남긴 뒤 `CONFIRMED`로 바꿉니다.
+  - 실패하면 `FAILED`·`last_error`를 남기고 다음 시간에 다시 시도합니다. 서버가 꺼져 있던 동안의 시즌도 주간 4주·월간 2달까지 따라잡습니다(지난 ZSET이 만료되기 전).
+  - 스냅샷 순위는 목록에 보이는 사람끼리 셉니다. 비공개 등 목록에 없던 사람은 자기를 그 사이에 끼워 넣은 순위를 받습니다(`listed=false`).
+  - `/ranking/me`의 `change`는 직전 시즌이 확정됐으면 그 스냅샷 순위로, 아직이면 지난 기간 ZSET에서 계산합니다.
+  - 시즌 배지·주간 결과 알림은 시즌을 `CONFIRMED`로 바꾸는 곳(`SeasonService.close`)에 붙입니다.
 - `PATCH /users/me/privacy`(학생만)는 공개 설정과 함께 `ranking_onboarded`를 true로 바꿉니다. 랭킹 첫 진입 안내와 설정 화면이 같이 씁니다. ZSET은 건드리지 않습니다.
 - `GET /users/me/xp-history`(학생만)는 XP 원장을 최신순으로 보여줍니다. 하루 상한에 걸려 0이 된 지급도 `blockedReason`과 함께 보여주고, 관리자 조정은 음수입니다.
 - Valkey가 날아가면 `pnpm ranking:rebuild`(서버는 `docker compose run --rm migrate dist/ranking-rebuild.js`)로 원장에서 다시 만듭니다. 학년·반은 지금 값으로 넣습니다.
