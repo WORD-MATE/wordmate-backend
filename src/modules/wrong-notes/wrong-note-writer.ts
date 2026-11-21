@@ -22,10 +22,14 @@ export async function recordWrongWords(
   now: Date,
 ): Promise<void> {
   if (rows.length === 0) return;
+  // 같은 행을 건드리는 트랜잭션끼리 잠그는 순서를 맞춰 교착을 피한다
+  const sorted = [...rows].sort(
+    (a, b) => a.userId.localeCompare(b.userId) || a.wordId.localeCompare(b.wordId),
+  );
   await tx
     .insert(wrongNotes)
     .values(
-      rows.map((row) => ({
+      sorted.map((row) => ({
         id: newId(),
         ...row,
         source,
