@@ -17,6 +17,7 @@ import {
   words,
 } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
+import { RankingService } from '../ranking/ranking.service.js';
 import { type XpGrant, XpService } from '../xp/xp.service.js';
 import type { CompleteResult, CompleteStudy } from './study.schemas.js';
 import {
@@ -36,6 +37,7 @@ export class StudyCompleteService {
   constructor(
     @Inject(DB) private readonly db: Database,
     private readonly xp: XpService,
+    private readonly ranking: RankingService,
   ) {}
 
   /**
@@ -43,7 +45,8 @@ export class StudyCompleteService {
    * 같은 Idempotency-Key로 다시 보내면 인터셉터가 저장한 결과를 돌려준다
    */
   async complete(user: AuthUser, sessionId: string, body: CompleteStudy): Promise<CompleteResult> {
-    return this.db.transaction(async (tx) => {
+    const completedAt = new Date();
+    const result = await this.db.transaction(async (tx) => {
       const [session] = await tx
         .select()
         .from(studySessions)
@@ -53,7 +56,7 @@ export class StudyCompleteService {
       if (session.userId !== user.userId) throw CommonErrors.forbidden();
       if (session.status !== 'IN_PROGRESS') throw StudyErrors.closed();
 
-      const now = new Date();
+      const now = completedAt;
       const today = kstDate(now);
       await tx
         .update(studySessions)
@@ -133,6 +136,8 @@ export class StudyCompleteService {
         streak,
       };
     });
+    await this.ranking.addXp(user.userId, result.xp.earned, completedAt);
+    return result;
   }
 
   private async grantXp(

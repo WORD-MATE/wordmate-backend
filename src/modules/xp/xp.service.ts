@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, sum } from 'drizzle-orm';
+import { and, eq, sql, sum } from 'drizzle-orm';
 import type { XpBlockReason, XpSource } from '../../common/enums.js';
 import { kstDate } from '../../common/time/kst.js';
 import type { Transaction } from '../../infra/db/db.module.js';
@@ -22,7 +22,8 @@ export type XpGrantResult = {
 @Injectable()
 export class XpService {
   /**
-   * 트랜잭션 안에서 호출한다. 사용자 행을 잠가 동시에 지급해도 하루 상한을 넘지 않게 하고,
+   * 트랜잭션 안에서 호출하고, 커밋된 뒤 RankingService.addXp로 랭킹에 반영한다.
+   * 사용자 행을 잠가 동시에 지급해도 하루 상한을 넘지 않게 하고,
    * (출처, refKey)가 이미 원장에 있으면 다시 주지 않는다. 상한에 걸려 0이 된 지급도 원장에 남긴다
    */
   async grant(
@@ -61,9 +62,16 @@ export class XpService {
       todayTotal += amount;
       granted.push(amount);
     }
+    const earned = granted.reduce<number>((total, amount) => total + (amount ?? 0), 0);
+    if (earned > 0) {
+      await tx
+        .update(users)
+        .set({ totalXp: sql`${users.totalXp} + ${earned}` })
+        .where(eq(users.id, userId));
+    }
     return {
       granted,
-      earned: granted.reduce<number>((total, amount) => total + (amount ?? 0), 0),
+      earned,
       capped,
       todayTotal,
     };
