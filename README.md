@@ -495,6 +495,45 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
   - XP는 정답 1개당 3(`xp_ledger` 출처 `CHALLENGE`, `challenge:{date}`), 하루 500 상한 포함. 시도 행을 잠그고 처리해 한 번만 끝낼 수 있습니다(409 `CHALLENGE_ALREADY_DONE`).
 - `@Idempotent({ required: true })`: 멱등 키가 필수인 API는 키 없이 보내면 400을 돌려줍니다.
 
+## 부하 테스트 (k6)
+
+실시간 대결이 전교생 동시 대결을 버티는지 개발 서버에서 확인합니다. 시나리오는 `load/battle.js`입니다.
+
+- `SCENARIO=match`: 사용자마다 티켓 → WebSocket 접속 → 빠른 매칭 → 문항마다 0.5~4초 생각한 뒤 아무 보기나 답 → `BATTLE_FINISHED` 뒤 결과 조회. `VUS`명이 `ITERATIONS`판씩 합니다.
+- `SCENARIO=room`: `ROOM_SIZE`명씩 `ROOMS`개 방을 미리 만들고, 모두 들어오면 방장이 시작합니다(반 전체 대결). 다 모이지 않아도 1분 뒤 시작합니다.
+- 기록하는 지표: `answer_ack_ms`(답 → `ANSWER_ACCEPTED`), `question_delivery_ms`(문항 전송 시각 → 받은 시각, 부하 PC와 서버 시계가 맞아야 의미 있음), `match_wait_ms`, `battles_finished`, `match_timeouts`, `server_errors`(코드별).
+
+### 목표
+
+| 시나리오 | 설정                   | 동시 접속 | 통과 기준                                                                                  |
+| -------- | ---------------------- | --------- | ------------------------------------------------------------------------------------------ |
+| match    | `VUS=200 ITERATIONS=3` | 200명     | `answer_ack_ms` p95 < 300ms, `question_delivery_ms` p95 < 500ms, 에러 < 10, HTTP 실패 < 1% |
+| room     | `ROOM_SIZE=30 ROOMS=6` | 180명     | 위와 같음                                                                                  |
+
+전교생(3학년 × 4반, 약 200명)이 한꺼번에 대결하는 경우를 기준으로 잡았습니다. 서버는 CPU 70% 미만, 메모리(4GB)에 여유가 있어야 합니다.
+
+### 실행
+
+1. 개발 서버에서 계정과 토큰을 만듭니다(토큰은 30분 유효, 파일은 소유자만 읽을 수 있고 화면에 출력하지 않습니다).
+   ```bash
+   docker exec <앱 컨테이너> node dist/load-users.js create 200 /tmp/tokens.json --confirm-dev
+   docker cp <앱 컨테이너>:/tmp/tokens.json ./tokens.json
+   ```
+2. 서버와 다른 PC(같은 학교 네트워크)에서 k6를 돌립니다. 같은 서버에서 돌리면 k6가 CPU를 나눠 써서 결과가 흐려집니다.
+   ```bash
+   k6 run -e BASE_URL=https://<개발 서버> -e TOKENS=tokens.json -e SCENARIO=match -e VUS=200 load/battle.js
+   k6 run -e BASE_URL=https://<개발 서버> -e TOKENS=tokens.json -e SCENARIO=room -e ROOMS=6 load/battle.js
+   ```
+   `WS_URL`로 WebSocket 주소를, `CLIENT_VERSION`으로 앱 버전 헤더를 바꿀 수 있습니다(기본 `99.0.0`). 토큰이 만료되면 `tokens` 명령으로 다시 발급합니다.
+3. 도는 동안 서버 지표를 남깁니다: `docker stats`(CPU·메모리), `valkey-cli info stats`·`info memory`, MySQL `SHOW GLOBAL STATUS LIKE 'Threads_running'`·느린 쿼리 로그, 앱 로그의 에러.
+4. 끝나면 계정과 대결·XP·랭킹 기록을 지웁니다.
+   ```bash
+   docker exec <앱 컨테이너> node dist/load-users.js cleanup --confirm-dev
+   ```
+
+- 계정은 `datagsm_id`가 `loadtest:`로 시작하는 학생이고, 학년·반을 돌려 가며 나누며 랭킹 목록에는 나오지 않습니다. 명령은 `--confirm-dev` 없이는 돌지 않습니다.
+- 빠른 매칭은 같은 대기열을 쓰므로, 테스트 중 개발 서버의 실제 사용자가 매칭하면 부하 계정과 짝지어질 수 있습니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.
