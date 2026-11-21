@@ -13,7 +13,7 @@ import type { Redis } from 'ioredis';
 import { catchError, concatMap, from, type Observable, of, switchMap } from 'rxjs';
 import { VALKEY } from '../../infra/valkey/valkey.module.js';
 import { AppException, CommonErrors } from '../errors/app-exception.js';
-import { IDEMPOTENT } from './idempotent.decorator.js';
+import { IDEMPOTENT, type IdempotentOptions } from './idempotent.decorator.js';
 
 const TTL_SECONDS = 24 * 60 * 60;
 const PROCESSING = '__processing__';
@@ -33,12 +33,22 @@ export class IdempotencyInterceptor implements NestInterceptor {
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    if (!this.reflector.get<boolean>(IDEMPOTENT, context.getHandler())) return next.handle();
+    const options = this.reflector.get<IdempotentOptions | undefined>(
+      IDEMPOTENT,
+      context.getHandler(),
+    );
+    if (!options) return next.handle();
 
     const http = context.switchToHttp();
     const request = http.getRequest<FastifyRequest>();
     const idempotencyKey = request.headers['idempotency-key'];
-    if (idempotencyKey === undefined) return next.handle();
+    if (idempotencyKey === undefined) {
+      if (!options.required) return next.handle();
+      throw CommonErrors.invalidRequest(
+        { header: 'Idempotency-Key' },
+        'Idempotency-Key가 필요합니다.',
+      );
+    }
     if (typeof idempotencyKey !== 'string' || !UUID.test(idempotencyKey)) {
       throw CommonErrors.invalidRequest(
         { header: 'Idempotency-Key' },
