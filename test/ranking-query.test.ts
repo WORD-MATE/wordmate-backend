@@ -180,7 +180,7 @@ describe('랭킹 조회', () => {
     const teacher = await makeUser({ role: 'TEACHER' });
     expect((await call(teacher, '/ranking')).statusCode).toBe(200);
     expect((await call(teacher, '/ranking?scope=GRADE')).statusCode).toBe(403);
-    expect((await call(teacher, '/ranking/me')).statusCode).toBe(403);
+    expect((await call(teacher, '/ranking/me')).json().code).toBe('FORBIDDEN');
 
     const student = await makeUser({ grade: 3, classNo: 14 });
     await ranking.addXp(student.userId, 7);
