@@ -5,5 +5,6 @@ import { RecordsService } from './records.service.js';
 @Module({
   controllers: [RecordsController, StatsController],
   providers: [RecordsService],
+  exports: [RecordsService],
 })
 export class RecordsModule {}
