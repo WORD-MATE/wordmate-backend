@@ -6,9 +6,9 @@ import { type Database, DB, type Transaction } from '../../infra/db/db.module.js
 import { isDuplicateKeyError } from '../../infra/db/errors.js';
 import {
   type Battle,
+  type BattleRoom,
   battleAnswers,
   battleQuestions,
-  type BattleRoom,
   battleRoomParticipants,
   battleRooms,
   battles,

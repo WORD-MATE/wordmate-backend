@@ -1,8 +1,8 @@
 import { randomInt } from 'node:crypto';
 import type { QuizDirection } from '../../common/enums.js';
 import {
-  buildQuestion,
   type BuiltQuestion,
+  buildQuestion,
   pickDistractors,
   type QuizWord,
   type Random,
