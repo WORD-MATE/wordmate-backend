@@ -12,6 +12,7 @@ import {
   type BattleRoom,
   battleRoomParticipants,
   battleRooms,
+  battles,
   classes,
   teacherClasses,
   users,
@@ -349,6 +350,10 @@ export class RoomsService {
         and(eq(battleRoomParticipants.roomId, roomId), eq(battleRoomParticipants.active, true)),
       )
       .orderBy(asc(battleRoomParticipants.joinedAt));
+    const [battle] = await this.db
+      .select({ id: battles.id })
+      .from(battles)
+      .where(eq(battles.roomId, roomId));
     const base = this.config.get('SHARE_LINK_BASE', { infer: true }).replace(/\/$/, '');
     return {
       roomId: room.id,
@@ -373,7 +378,7 @@ export class RoomsService {
         joinedAt: participant.joinedAt.toISOString(),
       })),
       duplicateQuestions: room.duplicateQuestions,
-      battleId: null,
+      battleId: battle?.id ?? null,
       expiresAt: room.expiresAt.toISOString(),
     };
   }

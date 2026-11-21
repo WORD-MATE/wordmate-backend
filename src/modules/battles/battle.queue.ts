@@ -3,7 +3,22 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 
 export const BATTLE_QUEUE = 'battle';
-export const BattleJob = { expireRoom: 'expire-room', startBattle: 'start-battle' } as const;
+export const BattleJob = {
+  expireRoom: 'expire-room',
+  startBattle: 'start-battle',
+  startQuestion: 'start-question',
+  endQuestion: 'end-question',
+  disconnectGrace: 'disconnect-grace',
+} as const;
+
+const PLAY_JOB = {
+  attempts: 5,
+  backoff: { type: 'exponential', delay: 500 },
+  removeOnComplete: true,
+  removeOnFail: 100,
+} as const;
+
+const delayUntil = (at: Date) => Math.max(0, at.getTime() - Date.now());
 
 @Injectable()
 export class BattleQueue {
@@ -44,6 +59,42 @@ export class BattleQueue {
         backoff: { type: 'exponential', delay: 500 },
         removeOnComplete: true,
         removeOnFail: 100,
+      },
+    );
+  }
+
+  /** 문항 시작(마지막 문항 다음이면 대결 종료). 같은 문항은 id가 같아 한 번만 예약된다 */
+  async scheduleQuestionStart(battleId: string, idx: number, at: Date): Promise<void> {
+    await this.queue.add(
+      BattleJob.startQuestion,
+      { battleId, idx },
+      { ...PLAY_JOB, delay: delayUntil(at), jobId: `question-start-${battleId}-${idx}` },
+    );
+  }
+
+  /** 마감 시각에 문항을 끝낸다 (전원이 먼저 답해 이미 끝났으면 아무것도 하지 않는다) */
+  async scheduleQuestionEnd(battleId: string, idx: number, at: Date): Promise<void> {
+    await this.queue.add(
+      BattleJob.endQuestion,
+      { battleId, idx },
+      { ...PLAY_JOB, delay: delayUntil(at), jobId: `question-end-${battleId}-${idx}` },
+    );
+  }
+
+  /** 진행 중 끊긴 참가자를 유예 뒤 내보낸다. 끊긴 시각으로 그사이 돌아왔다 다시 끊긴 경우를 구분한다 */
+  async scheduleDisconnectGrace(
+    roomId: string,
+    userId: string,
+    disconnectedAt: Date,
+    at: Date,
+  ): Promise<void> {
+    await this.queue.add(
+      BattleJob.disconnectGrace,
+      { roomId, userId, disconnectedAt: disconnectedAt.toISOString() },
+      {
+        ...PLAY_JOB,
+        delay: delayUntil(at),
+        jobId: `disconnect-grace-${roomId}-${userId}-${disconnectedAt.getTime()}`,
       },
     );
   }

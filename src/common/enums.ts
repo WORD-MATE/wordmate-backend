@@ -86,6 +86,10 @@ export type RoomType = Values<typeof ROOM_TYPE>;
 export const ROOM_STATUS = ['WAITING', 'COUNTDOWN', 'IN_PROGRESS', 'FINISHED', 'EXPIRED'] as const;
 export type RoomStatus = Values<typeof ROOM_STATUS>;
 
+/** 대결 한 판의 진행 단계: 문항 풀이 중 → 결과 표시(2초) → 다음 문항 … → 끝 */
+export const BATTLE_PHASE = ['READY', 'QUESTION', 'RESULT', 'FINISHED'] as const;
+export type BattlePhase = Values<typeof BATTLE_PHASE>;
+
 export const PARTICIPANT_STATE = ['CONNECTED', 'DISCONNECTED', 'LEFT', 'KICKED'] as const;
 export type ParticipantState = Values<typeof PARTICIPANT_STATE>;
 

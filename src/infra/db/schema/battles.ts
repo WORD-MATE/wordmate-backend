@@ -5,18 +5,26 @@ import {
   datetime,
   index,
   int,
+  json,
   mysqlEnum,
   mysqlTable,
   primaryKey,
   uniqueIndex,
   varchar,
 } from 'drizzle-orm/mysql-core';
-import { PARTICIPANT_STATE, QUESTION_TYPE, ROOM_STATUS, ROOM_TYPE } from '../../../common/enums.js';
+import {
+  BATTLE_PHASE,
+  PARTICIPANT_STATE,
+  QUESTION_TYPE,
+  ROOM_STATUS,
+  ROOM_TYPE,
+} from '../../../common/enums.js';
 import { id, timestamps } from '../columns.js';
 import { binaryUuid } from '../uuid.js';
 import { classes } from './classes.js';
 import { packs } from './packs.js';
 import { users } from './users.js';
+import { words } from './words.js';
 
 export const battleRooms = mysqlTable(
   'battle_rooms',
@@ -74,6 +82,8 @@ export const battleRoomParticipants = mysqlTable(
     // 이 방에 아직 있는지 (나가기·강퇴·방 종료·만료면 false)
     active: boolean('active').notNull().default(true),
     joinedAt: datetime('joined_at', { mode: 'date', fsp: 3 }).notNull(),
+    // 진행 중 끊긴 시각. 30초 유예 작업이 그사이 돌아왔다 다시 끊긴 경우를 구분하는 데 쓴다
+    disconnectedAt: datetime('disconnected_at', { mode: 'date', fsp: 3 }),
     leftAt: datetime('left_at', { mode: 'date', fsp: 3 }),
     // 사용자당 활성 방 하나 (생성·참가·매칭·다시 하기 모두 이 제약으로 막는다)
     activeUser: binaryUuid('active_user').generatedAlwaysAs(sql`IF(active, user_id, NULL)`, {
@@ -83,5 +93,72 @@ export const battleRoomParticipants = mysqlTable(
   (t) => [
     primaryKey({ columns: [t.roomId, t.userId] }),
     uniqueIndex('battle_room_participants_active_user_uq').on(t.activeUser),
+  ],
+);
+
+/** 대결 한 판. 문항 진행 상태를 여기 두고, 문항 시작·종료는 이 행을 잠가 한 번만 일어나게 한다 */
+export const battles = mysqlTable(
+  'battles',
+  {
+    id: id(),
+    roomId: binaryUuid('room_id')
+      .notNull()
+      .references(() => battleRooms.id, { onDelete: 'cascade' }),
+    questionCount: int('question_count').notNull(),
+    timeLimitSec: int('time_limit_sec').notNull(),
+    phase: mysqlEnum('phase', BATTLE_PHASE).notNull().default('READY'),
+    // 마지막으로 시작한 문항 (아직 없으면 -1)
+    currentIndex: int('current_index').notNull().default(-1),
+    questionStartedAt: datetime('question_started_at', { mode: 'date', fsp: 3 }),
+    deadlineAt: datetime('deadline_at', { mode: 'date', fsp: 3 }),
+    startedAt: datetime('started_at', { mode: 'date', fsp: 3 }).notNull(),
+    finishedAt: datetime('finished_at', { mode: 'date', fsp: 3 }),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('battles_room_uq').on(t.roomId)],
+);
+
+export type Battle = typeof battles.$inferSelect;
+
+/** 시작할 때 서버가 만들어 고정한 문항과 보기 */
+export const battleQuestions = mysqlTable(
+  'battle_questions',
+  {
+    battleId: binaryUuid('battle_id')
+      .notNull()
+      .references(() => battles.id, { onDelete: 'cascade' }),
+    idx: int('idx').notNull(),
+    wordId: binaryUuid('word_id')
+      .notNull()
+      .references(() => words.id),
+    questionType: mysqlEnum('question_type', QUESTION_TYPE).notNull(),
+    prompt: varchar('prompt', { length: 1000 }).notNull(),
+    choices: json('choices').$type<string[]>().notNull(),
+    answerIndex: int('answer_index').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.battleId, t.idx] })],
+);
+
+/** 문항별 답. 마감까지 답하지 않은 참가자는 문항이 끝날 때 choice_index NULL로 남긴다 */
+export const battleAnswers = mysqlTable(
+  'battle_answers',
+  {
+    battleId: binaryUuid('battle_id')
+      .notNull()
+      .references(() => battles.id, { onDelete: 'cascade' }),
+    idx: int('idx').notNull(),
+    userId: binaryUuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    choiceIndex: int('choice_index'),
+    // 서버가 받은 시각 (판정 기준)
+    receivedAt: datetime('received_at', { mode: 'date', fsp: 3 }),
+    elapsedMs: int('elapsed_ms'),
+    correct: boolean('correct').notNull(),
+    score: int('score').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.battleId, t.idx, t.userId] }),
+    index('battle_answers_user_idx').on(t.userId),
   ],
 );

@@ -48,7 +48,10 @@ export const Room = z
       .array(Participant)
       .describe('방에 남아 있는 참가자 (교사용 반 방의 교사는 진행자라 들어가지 않음)'),
     duplicateQuestions: z.boolean().describe('단어 수가 문항 수보다 적어 같은 단어가 다시 나옴'),
-    battleId: z.string().nullable().describe('대결이 끝나면 결과 조회용 id'),
+    battleId: z
+      .string()
+      .nullable()
+      .describe('대결이 시작되면 생긴다. 끝난 뒤 결과 조회(GET /battles/{battleId}/result)에 쓴다'),
     expiresAt: z.iso.datetime().describe('이때까지 시작하지 않으면 방이 닫힘'),
   })
   .meta({ id: 'Room' });
