@@ -190,7 +190,53 @@ describe('빠른 1:1 매칭', () => {
     expect((await high.waitFor('MATCH_FOUND')).payload).toEqual(found.payload);
     expect(low.has('MATCH_FOUND')).toBe(false);
     expect(await valkey.zrange('mm:queue', '0', '-1')).toEqual([low.user.userId]);
+    const { roomId } = found.payload as { roomId: string };
+    near.send('ROOM_LEAVE', { roomId });
+    high.send('ROOM_LEAVE', { roomId });
+    await expect
+      .poll(
+        async () =>
+          (await db.select().from(battleRooms).where(eq(battleRooms.id, roomId)))[0]?.status,
+      )
+      .toBe('EXPIRED');
   });
+
+  it('연결이 끊긴 대기자와는 짝짓지 않고 다음 대기자를 본다', async () => {
+    const gone = await makeUser({ totalXp: 500 });
+    await valkey.zadd('mm:queue', 500, gone.userId);
+    await valkey.hset('mm:queued', gone.userId, Date.now());
+    const a = await online({ totalXp: 500 });
+    expect((await enqueue(a)).statusCode).toBe(202);
+    expect(a.has('MATCH_FOUND')).toBe(false);
+    expect(await valkey.zrange('mm:queue', '0', '-1')).toEqual([a.user.userId]);
+    expect(await valkey.get(`mm:found:${gone.userId}`)).toBeNull();
+  });
+
+  it('성사 처리 중이면 다시 줄 서지 못하고, 남은 기록은 방에 있을 때만 믿는다', async () => {
+    const a = await online();
+    const foundKey = `mm:found:${a.user.userId}`;
+    await valkey.set(foundKey, 'PENDING', 'EX', 120);
+    expect((await enqueue(a)).json().code).toBe('MATCH_ALREADY_QUEUED');
+    // 성사 처리가 중간에 끊겨 방이 없으면 잠깐 기다린 뒤 404, 기록도 지운다
+    expect((await call(a.user, 'DELETE', '/battles/matchmaking')).json().code).toBe(
+      'MATCH_NOT_QUEUED',
+    );
+    expect(await valkey.get(foundKey)).toBeNull();
+    // 이미 끝난 방을 가리키는 기록도 404
+    await valkey.set(
+      foundKey,
+      JSON.stringify({ roomId: newId(), inviteCode: 'ABCDEF' }),
+      'EX',
+      120,
+    );
+    expect((await call(a.user, 'DELETE', '/battles/matchmaking')).json().code).toBe(
+      'MATCH_NOT_QUEUED',
+    );
+    // 만료 작업이 유실돼 남은 자기 대기는 새로 줄 서면 덮는다
+    await valkey.zadd('mm:queue', 0, a.user.userId);
+    await valkey.hset('mm:queued', a.user.userId, Date.now() - 61_000);
+    expect((await enqueue(a)).statusCode).toBe(202);
+  }, 15_000);
 
   it('취소: 대기 중이면 204, 없으면 404', async () => {
     const a = await online();
