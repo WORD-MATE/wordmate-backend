@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { encodeScore, periodKey, rankKey, scopeKeys, xpOfScore } from './ranking-keys.js';
+import {
+  encodeScore,
+  periodKey,
+  previousPeriodDate,
+  rankKey,
+  scopeKeyFor,
+  scopeKeys,
+  topPercentOf,
+  xpOfScore,
+} from './ranking-keys.js';
 
 describe('랭킹 점수', () => {
   it('XP가 같으면 먼저 도달한 쪽이 크고, XP가 다르면 XP가 우선', () => {
@@ -41,5 +50,29 @@ describe('랭킹 키', () => {
     expect(scopeKeys({ role: 'STUDENT', grade: 1, classNo: null })).toEqual(['school', 'grade:1']);
     expect(scopeKeys({ role: 'STUDENT', grade: null, classNo: null })).toEqual(['school']);
     expect(scopeKeys({ role: 'TEACHER', grade: 2, classNo: 3 })).toEqual([]);
+  });
+});
+
+describe('조회 도우미', () => {
+  it('지난 기간: 주간은 7일 전, 월간은 지난달 말일, 전체는 없음', () => {
+    expect(previousPeriodDate('WEEKLY', '2026-11-16')).toBe('2026-11-09');
+    expect(previousPeriodDate('MONTHLY', '2026-03-15')).toBe('2026-02-28');
+    expect(previousPeriodDate('MONTHLY', '2026-01-01')).toBe('2025-12-31');
+    expect(previousPeriodDate('ALL', '2026-11-16')).toBeNull();
+  });
+
+  it('범위 키는 조회하는 사람의 학년·반 기준', () => {
+    const me = { grade: 2, classNo: 3 };
+    expect(scopeKeyFor('SCHOOL', me)).toBe('school');
+    expect(scopeKeyFor('GRADE', me)).toBe('grade:2');
+    expect(scopeKeyFor('CLASS', me)).toBe('class:2-3');
+    expect(scopeKeyFor('CLASS', { grade: 2, classNo: null })).toBeNull();
+    expect(scopeKeyFor('GRADE', { grade: null, classNo: null })).toBeNull();
+  });
+
+  it('상위 %는 올림, 1~100', () => {
+    expect(topPercentOf(101, 400)).toBe(26);
+    expect(topPercentOf(1, 1000)).toBe(1);
+    expect(topPercentOf(400, 400)).toBe(100);
   });
 });

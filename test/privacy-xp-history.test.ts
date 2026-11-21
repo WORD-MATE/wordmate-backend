@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessTokenService } from '../src/common/auth/access-token.service.js';
 import type { AuthUser } from '../src/common/auth/auth-user.js';
 import { type Database, DB } from '../src/infra/db/db.module.js';
-import { users, xpLedger } from '../src/infra/db/schema/index.js';
+import { classes, teacherClasses, users, xpLedger } from '../src/infra/db/schema/index.js';
 import { newId } from '../src/infra/db/uuid.js';
 import { createTestApp, inject } from './support/create-test-app.js';
 
@@ -23,6 +23,13 @@ describe('랭킹 공개 설정·XP 적립 내역', () => {
       grade: role === 'STUDENT' ? 1 : null,
       classNo: role === 'STUDENT' ? 1 : null,
     });
+    // 담당 반이 없는 교사는 온보딩 가드에서 먼저 막히므로, 학생 전용 권한을 확인하려면 반을 맡긴다
+    if (role === 'TEACHER') {
+      const [someClass] = await db.select({ id: classes.id }).from(classes).limit(1);
+      await db
+        .insert(teacherClasses)
+        .values({ teacherId: userId, classId: someClass?.id as string });
+    }
     return { userId, role, isAdmin: false, deviceId: newId() };
   };
 
@@ -59,9 +66,9 @@ describe('랭킹 공개 설정·XP 적립 내역', () => {
     expect((await call(student, 'PATCH', '/users/me/privacy', {})).statusCode).toBe(400);
 
     const teacher = await makeUser('TEACHER');
-    expect(
-      (await call(teacher, 'PATCH', '/users/me/privacy', { rankingPublic: false })).statusCode,
-    ).toBe(403);
+    const denied = await call(teacher, 'PATCH', '/users/me/privacy', { rankingPublic: false });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json().code).toBe('FORBIDDEN');
   });
 
   it('XP 적립 내역은 최신순, 상한에 걸린 지급·관리자 조정도 보이고 남의 것은 안 보인다', async () => {
@@ -123,6 +130,6 @@ describe('랭킹 공개 설정·XP 적립 내역', () => {
     expect(second.nextCursor).toBeNull();
 
     const teacher = await makeUser('TEACHER');
-    expect((await call(teacher, 'GET', '/users/me/xp-history')).statusCode).toBe(403);
+    expect((await call(teacher, 'GET', '/users/me/xp-history')).json().code).toBe('FORBIDDEN');
   });
 });
