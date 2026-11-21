@@ -399,9 +399,9 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
   - `WS_UNKNOWN_TYPE`: 등록되지 않은 type
   - `INVALID_REQUEST`: payload 검증 실패
   - `RATE_LIMITED`: 10초에 30개 초과(첫 번째 초과에만 알리고 나머지는 버림)
-- 기능 모듈은 `RealtimeService.handle(type, zod 스키마, 처리기)`로 메시지 처리기를 등록하고, `sendToUsers(userIds, type, payload)`로 보냅니다. 보내기는 Valkey pub/sub(`rt:deliver`)을 거쳐 사용자가 붙어 있는 인스턴스에서 전달되므로 서버가 여러 대여도 됩니다.
+- 기능 모듈은 `RealtimeService.handle(type, zod 스키마, 처리기)`로 메시지 처리기를 등록합니다. 요청에 대한 답은 `ctx.reply()`로 보내 그 연결에만(같은 사용자의 다른 탭 제외) 가고, 서버 쪽 알림은 `sendToUsers(userIds, type, payload)`로 사용자의 모든 연결에 보냅니다. 보내기는 Valkey pub/sub(`rt:deliver`)을 거쳐 사용자가 붙어 있는 인스턴스에서 전달되므로 서버가 여러 대여도 됩니다.
 - 티켓 확인 전에 도착한 메시지는 모아 두었다가 처리하고, 한 연결의 메시지는 받은 순서대로 하나씩 처리합니다.
-- 서버가 30초마다 ping을 보내고 다음 ping까지 pong이 없으면 끊습니다. 접속 상태는 `ws:online:{userId}`(90초, ping마다 연장)에 남습니다.
+- 서버가 30초마다 ping을 보내고 다음 ping까지 pong이 없으면 끊습니다. 접속 상태는 `ws:online:{userId}` 해시에 인스턴스별 연결 수로 남습니다(90초, ping마다 연장). 폰·웹처럼 여러 인스턴스에 붙은 사용자는 한쪽이 끊겨도 접속 중으로 남습니다.
 
 ## 정리 작업
 
