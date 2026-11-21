@@ -390,6 +390,19 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 - 추천 단어팩은 학습 기록이 하나도 없는 사용자에게만 기본 단어팩 추천순 5개를 줍니다. 교사는 주간 순위가 null입니다.
 - 오늘의 문장(`morning`)과 미션(`missions`)은 기능이 생기기 전까지 null입니다.
 
+## 실시간 (WebSocket)
+
+- `POST /realtime/ticket`으로 1회용 티켓(30초, Valkey `ws:ticket:{ticket}`)을 받아 `{wsUrl}?ticket=`으로 접속합니다. 접속할 때 `GETDEL`로 꺼내므로 다시 쓸 수 없고, 틀리면 4401로 끊습니다.
+- `@nestjs/platform-ws`의 `WsAdapter`로 Fastify와 같은 포트의 `/ws`에 붙습니다. 메시지는 최대 16KB입니다.
+- 메시지 형식은 `{ type, requestId, payload }`이고 서버가 보낼 때 `serverTime`을 붙입니다. 실패는 `ERROR { code, message }`이며 받은 `requestId`를 돌려줍니다.
+  - `WS_BAD_MESSAGE`: JSON이 아니거나 type이 없음
+  - `WS_UNKNOWN_TYPE`: 등록되지 않은 type
+  - `INVALID_REQUEST`: payload 검증 실패
+  - `RATE_LIMITED`: 10초에 30개 초과(첫 번째 초과에만 알리고 나머지는 버림)
+- 기능 모듈은 `RealtimeService.handle(type, zod 스키마, 처리기)`로 메시지 처리기를 등록합니다. 요청에 대한 답은 `ctx.reply()`로 보내 그 연결에만(같은 사용자의 다른 탭 제외) 가고, 서버 쪽 알림은 `sendToUsers(userIds, type, payload)`로 사용자의 모든 연결에 보냅니다. 보내기는 Valkey pub/sub(`rt:deliver`)을 거쳐 사용자가 붙어 있는 인스턴스에서 전달되므로 서버가 여러 대여도 됩니다.
+- 티켓 확인 전에 도착한 메시지는 모아 두었다가 처리하고, 한 연결의 메시지는 받은 순서대로 하나씩 처리합니다.
+- 서버가 30초마다 ping을 보내고 다음 ping까지 pong이 없으면 끊습니다. 접속 상태는 `ws:online:{userId}` 해시에 인스턴스별 연결 수로 남습니다(90초, ping마다 연장). 폰·웹처럼 여러 인스턴스에 붙은 사용자는 한쪽이 끊겨도 접속 중으로 남습니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.

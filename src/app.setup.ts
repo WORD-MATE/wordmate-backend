@@ -4,6 +4,7 @@ import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import { Reflector } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { WsAdapter } from '@nestjs/platform-ws';
 import type { FastifyServerOptions } from 'fastify';
 import { GlobalExceptionFilter } from './common/errors/global-exception.filter.js';
 import { PinoNestLogger } from './common/logging/pino-nest-logger.js';
@@ -49,6 +50,7 @@ export async function setupApp(
     allowedHeaders: ['Content-Type', 'Authorization', ...CLIENT_HEADERS],
     exposedHeaders: ['Retry-After', 'Idempotent-Replayed'],
   });
+  app.useWebSocketAdapter(new WsAdapter(app));
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalInterceptors(new ZodResponseInterceptor(app.get(Reflector)));
   if (options.swagger) setupSwagger(app);
