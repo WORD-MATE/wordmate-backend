@@ -3,7 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 
 export const BATTLE_QUEUE = 'battle';
-export const BattleJob = { expireRoom: 'expire-room' } as const;
+export const BattleJob = { expireRoom: 'expire-room', startBattle: 'start-battle' } as const;
 
 @Injectable()
 export class BattleQueue {
@@ -30,5 +30,21 @@ export class BattleQueue {
       .catch((error: unknown) =>
         this.logger.error(`방 만료 예약 실패 (${roomId}): ${String(error)}`),
       );
+  }
+
+  /** 카운트다운이 끝나는 시각에 대결을 시작한다. 취소 뒤 다시 시작할 수 있어 시각을 id에 넣는다 */
+  async scheduleStart(roomId: string, at: Date): Promise<void> {
+    await this.queue.add(
+      BattleJob.startBattle,
+      { roomId },
+      {
+        delay: Math.max(0, at.getTime() - Date.now()),
+        jobId: `start-battle-${roomId}-${at.getTime()}`,
+        attempts: 3,
+        backoff: { type: 'fixed', delay: 500 },
+        removeOnComplete: true,
+        removeOnFail: 100,
+      },
+    );
   }
 }
