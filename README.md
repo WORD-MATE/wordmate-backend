@@ -415,6 +415,21 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 - 교사용 반 방(`POST /classes/{classId}/rooms`)의 교사는 진행자라 참가자·인원에 들어가지 않고, 진행 중인 반 방은 교사당 하나입니다(교사 행을 잠가 동시에 만들어도 하나만). 그 반 학생만 들어올 수 있습니다.
 - `Room.battleId`는 대결이 끝난 뒤 결과 조회용으로 채웁니다(대결 진행 작업에서).
 
+### 대기실 (WebSocket)
+
+- `ROOM_SUBSCRIBE { roomId }`: 참가자(교사용 방은 진행자도)만 구독할 수 있고, 답으로 `ROOM_STATE { room }`을 받습니다. 끊겼다 돌아온 참가자는 다시 `CONNECTED`가 되고 나머지에게 `PARTICIPANT_STATE`를 보냅니다.
+- 모든 인스턴스에서 연결이 끊기면 대기실 참가자는 `DISCONNECTED`로만 표시하고 방에 남깁니다(`RealtimeService.onUserGone`).
+- `ROOM_LEAVE`: 나간 사람을 포함해 `PARTICIPANT_STATE { LEFT }`를 보냅니다.
+  - 방장이 나가면 가장 먼저 들어온 참가자가 방장이 됩니다(`HOST_CHANGED`).
+  - 모두 나가면 방을 닫고, 교사용 방에서 진행자가 나가면 `ROOM_CLOSED { HOST_LEFT }`로 닫습니다.
+- `ROOM_KICK { roomId, userId }`: 방장만, 대기실에서만 합니다. 강퇴된 사람에게는 `ROOM_CLOSED { KICKED }`, 나머지에게는 `PARTICIPANT_STATE { KICKED }`를 보냅니다.
+- `ROOM_START`: 방장만, 참가자 2명 이상일 때 `COUNTDOWN`으로 바꾸고 `COUNTDOWN_STARTED { startsAt }`(3초 뒤)를 보냅니다.
+  - BullMQ 지연 작업(`start-battle`)이 3초 뒤 `IN_PROGRESS`로 바꾸고 `ROOM_STATE`를 보냅니다.
+  - 그사이 인원이 2명 아래가 되면 `COUNTDOWN_CANCELLED { NOT_ENOUGH_PARTICIPANTS }`와 함께 대기실로 돌아갑니다.
+  - 예약에 실패하면 카운트다운이 끝나지 않으므로 대기실로 되돌립니다.
+- `REACTION_SEND { roomId, reaction }`: 3초에 한 번(Valkey `react:rl:{roomId}:{userId}`), 보낸 사람을 뺀 방 사람들에게 `REACTION_RECEIVED`를 보냅니다.
+- 상태를 바꾸는 메시지는 방 행을 잠근 트랜잭션에서 처리하고, 알림은 커밋한 뒤에 보냅니다. 에러 코드는 `ROOM_NOT_MEMBER`, `ROOM_NOT_HOST`, `ROOM_NOT_ENOUGH_PARTICIPANTS`, `ROOM_KICK_TARGET_INVALID`, `ROOM_ALREADY_STARTED`, `ROOM_NOT_FOUND`입니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.
