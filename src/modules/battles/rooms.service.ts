@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { and, asc, count, desc, eq, inArray, lte } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, lte, or } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { AppException, CommonErrors } from '../../common/errors/app-exception.js';
@@ -25,6 +25,11 @@ import { BattleQueue } from './battle.queue.js';
 import { type CreateRoom, INVITE_CODE_PATTERN, type Room } from './battle.schemas.js';
 
 export const ROOM_TTL_MS = 30 * 60 * 1000;
+/** 문항 30개 × (15초 + 결과 2초)보다 넉넉히. 이보다 오래 진행 중이면 멈춘 방으로 보고 닫는다 */
+export const MAX_BATTLE_MS = 30 * 60 * 1000;
+/** 카운트다운이 끝나고 이만큼 지나도 시작 작업이 안 돌았으면 예약이 유실된 것으로 보고 대기실로 돌린다 */
+export const COUNTDOWN_STALL_MS = 30 * 1000;
+const EXPIRY_RECHECK_MS = 60 * 1000;
 export const MIN_BATTLE_WORDS = 10;
 export const JOIN_FAIL_LIMIT = 5;
 export const JOIN_FAIL_WINDOW_SECONDS = 60;
@@ -119,6 +124,7 @@ export class RoomsService {
     const pack = await this.packs.findVisible(user, body.packId);
     if (pack.wordCount < MIN_BATTLE_WORDS) throw RoomErrors.packTooFewWords();
     await this.expireOverdue();
+    await this.recoverStalledHostedBy(user.userId);
     const roomId = await this.insertRoom(body, pack, {
       type: 'CLASS',
       hostUserId: user.userId,
@@ -224,9 +230,11 @@ export class RoomsService {
           );
         if ((occupied?.total ?? 0) >= room.maxParticipants) throw RoomErrors.full();
 
+        // 예전에 방장이었다 나간 사람이 다시 들어와도 방장 표시가 남지 않게 지운다
         const values = {
           state: 'CONNECTED' as const,
           active: true,
+          isHost: false,
           joinedAt: new Date(),
           leftAt: null,
         };
@@ -243,7 +251,7 @@ export class RoomsService {
         } else {
           await tx
             .insert(battleRoomParticipants)
-            .values({ roomId: room.id, userId: user.userId, isHost: false, ...values });
+            .values({ roomId: room.id, userId: user.userId, ...values });
         }
         return true;
       });
@@ -305,15 +313,21 @@ export class RoomsService {
     return true;
   }
 
-  /** 지연 작업용: 서버 시계 차이로 아직 만료 시각 전이면 다시 예약한다 */
+  /**
+   * 지연 작업용. 서버 시계 차이로 아직 만료 시각 전이면 다시 예약하고,
+   * 카운트다운 중이면 취소돼 대기실로 돌아올 수 있으므로 잠시 뒤 다시 확인한다
+   */
   async expireOrReschedule(roomId: string): Promise<boolean> {
     if (await this.expire(roomId)) return true;
     const [room] = await this.db
       .select({ status: battleRooms.status, expiresAt: battleRooms.expiresAt })
       .from(battleRooms)
       .where(eq(battleRooms.id, roomId));
-    if (room?.status === 'WAITING' && room.expiresAt > new Date()) {
+    const now = Date.now();
+    if (room?.status === 'WAITING' && room.expiresAt.getTime() > now) {
       await this.queue.scheduleExpiry(roomId, room.expiresAt, true);
+    } else if (room?.status === 'COUNTDOWN') {
+      await this.queue.scheduleExpiry(roomId, new Date(now + EXPIRY_RECHECK_MS), true);
     }
     return false;
   }
@@ -475,6 +489,115 @@ export class RoomsService {
         ),
       );
     for (const room of overdue) await this.expire(room.id);
+    await this.recoverStalled(userId);
+  }
+
+  /**
+   * 멈춘 방을 풀어 준다. 시작 작업이 유실된 카운트다운은 대기실로 돌리고,
+   * 너무 오래 진행 중인 방은 닫는다 (사용자가 다른 방에 들어갈 수 없게 되지 않도록)
+   */
+  private async recoverStalled(userId: string): Promise<void> {
+    const now = Date.now();
+    const stalled = await this.db
+      .selectDistinct({ id: battleRooms.id, status: battleRooms.status })
+      .from(battleRooms)
+      .innerJoin(battleRoomParticipants, eq(battleRoomParticipants.roomId, battleRooms.id))
+      .where(
+        and(
+          eq(battleRoomParticipants.userId, userId),
+          eq(battleRoomParticipants.active, true),
+          or(
+            and(
+              eq(battleRooms.status, 'COUNTDOWN'),
+              lte(battleRooms.countdownEndsAt, new Date(now - COUNTDOWN_STALL_MS)),
+            ),
+            and(
+              eq(battleRooms.status, 'IN_PROGRESS'),
+              lte(battleRooms.startedAt, new Date(now - MAX_BATTLE_MS)),
+            ),
+          ),
+        ),
+      );
+    for (const room of stalled) {
+      if (room.status === 'COUNTDOWN') {
+        await this.db
+          .update(battleRooms)
+          .set({ status: 'WAITING', countdownEndsAt: null })
+          .where(
+            and(
+              eq(battleRooms.id, room.id),
+              eq(battleRooms.status, 'COUNTDOWN'),
+              lte(battleRooms.countdownEndsAt, new Date(now - COUNTDOWN_STALL_MS)),
+            ),
+          );
+      } else {
+        await this.closeStaleInProgress(room.id, new Date(now - MAX_BATTLE_MS));
+      }
+    }
+  }
+
+  private async closeStaleInProgress(roomId: string, startedBefore: Date): Promise<void> {
+    const targets = await this.db.transaction(async (tx) => {
+      const [room] = await tx
+        .select({ hostUserId: battleRooms.hostUserId })
+        .from(battleRooms)
+        .where(
+          and(
+            eq(battleRooms.id, roomId),
+            eq(battleRooms.status, 'IN_PROGRESS'),
+            lte(battleRooms.startedAt, startedBefore),
+          ),
+        )
+        .for('update');
+      if (!room) return null;
+      const active = await tx
+        .select({ userId: battleRoomParticipants.userId })
+        .from(battleRoomParticipants)
+        .where(
+          and(eq(battleRoomParticipants.roomId, roomId), eq(battleRoomParticipants.active, true)),
+        );
+      await tx.update(battleRooms).set({ status: 'EXPIRED' }).where(eq(battleRooms.id, roomId));
+      await tx
+        .update(battleRoomParticipants)
+        .set({ active: false })
+        .where(eq(battleRoomParticipants.roomId, roomId));
+      const ids = new Set(active.map((row) => row.userId));
+      if (room.hostUserId) ids.add(room.hostUserId);
+      return [...ids];
+    });
+    if (targets) {
+      await this.realtime
+        .sendToUsers(targets, 'ROOM_CLOSED', { reason: 'EXPIRED' })
+        .catch(() => {});
+    }
+  }
+
+  /** 교사용 방은 진행자가 참가자가 아니라 참가자 기준 정리에 걸리지 않으므로 따로 본다 */
+  private async recoverStalledHostedBy(hostUserId: string): Promise<void> {
+    const now = Date.now();
+    const stale = await this.db
+      .select({ id: battleRooms.id })
+      .from(battleRooms)
+      .where(
+        and(
+          eq(battleRooms.hostUserId, hostUserId),
+          eq(battleRooms.status, 'IN_PROGRESS'),
+          lte(battleRooms.startedAt, new Date(now - MAX_BATTLE_MS)),
+        ),
+      );
+    for (const room of stale) {
+      await this.closeStaleInProgress(room.id, new Date(now - MAX_BATTLE_MS));
+    }
+    await this.db
+      .update(battleRooms)
+      .set({ status: 'WAITING', countdownEndsAt: null })
+      .where(
+        and(
+          eq(battleRooms.hostUserId, hostUserId),
+          eq(battleRooms.status, 'COUNTDOWN'),
+          lte(battleRooms.countdownEndsAt, new Date(now - COUNTDOWN_STALL_MS)),
+        ),
+      );
   }
 
   private async expireOverdue(): Promise<void> {

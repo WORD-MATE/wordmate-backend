@@ -13,12 +13,12 @@ export class BattleProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job<{ roomId: string }>): Promise<boolean> {
+  async process(job: Job<{ roomId: string; countdownEndsAt?: string }>): Promise<boolean> {
     switch (job.name) {
       case BattleJob.expireRoom:
         return this.rooms.expireOrReschedule(job.data.roomId);
       case BattleJob.startBattle:
-        return this.lobby.begin(job.data.roomId);
+        return this.lobby.begin(job.data.roomId, new Date(job.data.countdownEndsAt ?? 0));
       default:
         throw new Error(`알 수 없는 대결 작업: ${job.name}`);
     }

@@ -36,7 +36,7 @@ export class BattleQueue {
   async scheduleStart(roomId: string, at: Date): Promise<void> {
     await this.queue.add(
       BattleJob.startBattle,
-      { roomId },
+      { roomId, countdownEndsAt: at.toISOString() },
       {
         delay: Math.max(0, at.getTime() - Date.now()),
         jobId: `start-battle-${roomId}-${at.getTime()}`,

@@ -39,6 +39,8 @@ export const battleRooms = mysqlTable(
     duplicateQuestions: boolean('duplicate_questions').notNull(),
     sourceBattleId: binaryUuid('source_battle_id'),
     expiresAt: datetime('expires_at', { mode: 'date', fsp: 3 }).notNull(),
+    // 카운트다운이 끝나는 시각. 시작 작업이 자기 카운트다운인지 확인하는 데 쓴다 (취소 뒤 다시 시작한 경우)
+    countdownEndsAt: datetime('countdown_ends_at', { mode: 'date', fsp: 3 }),
     startedAt: datetime('started_at', { mode: 'date', fsp: 3 }),
     finishedAt: datetime('finished_at', { mode: 'date', fsp: 3 }),
     // 초대 코드는 진행 중인 방끼리만 겹치지 않으면 된다 (끝난 방의 코드는 다시 쓸 수 있다)

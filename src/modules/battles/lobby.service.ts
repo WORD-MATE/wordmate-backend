@@ -92,12 +92,12 @@ export class LobbyService implements OnModuleInit {
 
   /**
    * 방장이 나가면 가장 먼저 들어온 참가자가 방장이 된다. 모두 나가면 방을 닫고,
-   * 교사용 방에서 진행자가 나가면 방을 닫는다. 카운트다운 중에 인원이 모자라면 취소한다
+   * 교사용 방에서 진행자가 나가면 방을 닫는다. 카운트다운 중에 인원이 모자라면 취소한다.
+   * 진행 중에도 나갈 수 있다 (나간 사람은 LEFT, 남은 문항은 0점)
    */
   async leave(userId: string, roomId: string): Promise<void> {
     const events = await this.db.transaction(async (tx) => {
       const { room, participant } = await this.membership(tx, roomId, userId);
-      this.assertLobby(room);
       const before = await this.members(tx, room);
 
       if (room.type === 'CLASS' && room.hostUserId === userId) {
@@ -108,7 +108,7 @@ export class LobbyService implements OnModuleInit {
 
       await tx
         .update(battleRoomParticipants)
-        .set({ state: 'LEFT', active: false, leftAt: new Date() })
+        .set({ state: 'LEFT', active: false, isHost: false, leftAt: new Date() })
         .where(this.participantIs(roomId, userId));
       const events: Event[] = [
         { userIds: before, type: 'PARTICIPANT_STATE', payload: { roomId, userId, state: 'LEFT' } },
@@ -120,7 +120,8 @@ export class LobbyService implements OnModuleInit {
         return events;
       }
       const stillHere = before.filter((id) => id !== userId);
-      if (participant.isHost && remaining[0]) {
+      // 참가자의 is_host가 아니라 방의 방장 기준으로 판단한다 (나갔다 들어온 사람의 옛 표시에 끌려가지 않게)
+      if (room.hostUserId === userId && remaining[0]) {
         const next = remaining[0].userId;
         await tx
           .update(battleRoomParticipants)
@@ -130,7 +131,10 @@ export class LobbyService implements OnModuleInit {
         events.push({ userIds: stillHere, type: 'HOST_CHANGED', payload: { hostUserId: next } });
       }
       if (room.status === 'COUNTDOWN' && remaining.length < MIN_START_PARTICIPANTS) {
-        await tx.update(battleRooms).set({ status: 'WAITING' }).where(eq(battleRooms.id, roomId));
+        await tx
+          .update(battleRooms)
+          .set({ status: 'WAITING', countdownEndsAt: null })
+          .where(eq(battleRooms.id, roomId));
         events.push({
           userIds: stillHere,
           type: 'COUNTDOWN_CANCELLED',
@@ -155,7 +159,7 @@ export class LobbyService implements OnModuleInit {
       if (!target || targetId === userId) throw LobbyErrors.invalidKickTarget();
       await tx
         .update(battleRoomParticipants)
-        .set({ state: 'KICKED', active: false, leftAt: new Date() })
+        .set({ state: 'KICKED', active: false, isHost: false, leftAt: new Date() })
         .where(this.participantIs(roomId, targetId));
       const remaining = (await this.members(tx, room)).filter((id) => id !== targetId);
       return [
@@ -176,11 +180,16 @@ export class LobbyService implements OnModuleInit {
       const { room } = await this.membership(tx, roomId, userId);
       if (room.hostUserId !== userId) throw LobbyErrors.notHost();
       if (room.status !== 'WAITING') throw RoomErrors.alreadyStarted();
+      // 만료 시각이 지났으면 곧 닫힐 방이라 시작하지 않는다
+      if (room.expiresAt <= new Date()) throw RoomErrors.notFound();
       if ((await this.activeParticipants(tx, roomId)).length < MIN_START_PARTICIPANTS) {
         throw LobbyErrors.notEnough();
       }
-      await tx.update(battleRooms).set({ status: 'COUNTDOWN' }).where(eq(battleRooms.id, roomId));
       const startsAt = new Date(Date.now() + COUNTDOWN_MS);
+      await tx
+        .update(battleRooms)
+        .set({ status: 'COUNTDOWN', countdownEndsAt: startsAt })
+        .where(eq(battleRooms.id, roomId));
       return { startsAt, members: await this.members(tx, room) };
     });
     try {
@@ -189,7 +198,7 @@ export class LobbyService implements OnModuleInit {
       // 예약하지 못하면 카운트다운이 끝나지 않으므로 대기실로 되돌린다
       await this.db
         .update(battleRooms)
-        .set({ status: 'WAITING' })
+        .set({ status: 'WAITING', countdownEndsAt: null })
         .where(and(eq(battleRooms.id, roomId), eq(battleRooms.status, 'COUNTDOWN')));
       throw error;
     }
@@ -206,7 +215,7 @@ export class LobbyService implements OnModuleInit {
    * 카운트다운이 끝나면 지연 작업이 부른다. 그사이 취소됐거나 인원이 모자라면 대기실로 돌린다.
    * 문항 진행은 이 뒤에 붙는다
    */
-  async begin(roomId: string): Promise<boolean> {
+  async begin(roomId: string, countdownEndsAt: Date): Promise<boolean> {
     const outcome = await this.db.transaction(async (tx) => {
       const [room] = await tx
         .select()
@@ -214,14 +223,19 @@ export class LobbyService implements OnModuleInit {
         .where(eq(battleRooms.id, roomId))
         .for('update');
       if (room?.status !== 'COUNTDOWN') return null;
+      // 취소 뒤 다시 시작했다면 예전 카운트다운의 작업이므로 무시한다
+      if (room.countdownEndsAt?.getTime() !== countdownEndsAt.getTime()) return null;
       const members = await this.members(tx, room);
       if ((await this.activeParticipants(tx, roomId)).length < MIN_START_PARTICIPANTS) {
-        await tx.update(battleRooms).set({ status: 'WAITING' }).where(eq(battleRooms.id, roomId));
+        await tx
+          .update(battleRooms)
+          .set({ status: 'WAITING', countdownEndsAt: null })
+          .where(eq(battleRooms.id, roomId));
         return { started: false, members };
       }
       await tx
         .update(battleRooms)
-        .set({ status: 'IN_PROGRESS', startedAt: new Date() })
+        .set({ status: 'IN_PROGRESS', startedAt: new Date(), countdownEndsAt: null })
         .where(eq(battleRooms.id, roomId));
       return { started: true, members };
     });
@@ -263,11 +277,14 @@ export class LobbyService implements OnModuleInit {
     ]);
   }
 
-  /** 모든 인스턴스에서 연결이 끊겼으면 대기실의 참가 상태를 DISCONNECTED로 (방에서는 나가지 않는다) */
+  /**
+   * 모든 인스턴스에서 연결이 끊겼으면 대기실의 참가 상태를 DISCONNECTED로 (방에서는 나가지 않는다).
+   * 그사이 다시 접속해 구독했을 수 있으므로 방을 잠근 뒤 접속 상태와 참가 상태를 다시 확인한다
+   */
   async markDisconnected(userId: string): Promise<void> {
     if (await this.realtime.isOnline(userId)) return;
     const rows = await this.db
-      .select({ room: battleRooms })
+      .select({ roomId: battleRoomParticipants.roomId })
       .from(battleRoomParticipants)
       .innerJoin(battleRooms, eq(battleRooms.id, battleRoomParticipants.roomId))
       .where(
@@ -279,12 +296,29 @@ export class LobbyService implements OnModuleInit {
         ),
       );
     const events: Event[] = [];
-    for (const { room } of rows) {
-      await this.db
-        .update(battleRoomParticipants)
-        .set({ state: 'DISCONNECTED' })
-        .where(and(this.participantIs(room.id, userId), eq(battleRoomParticipants.active, true)));
-      events.push(this.toOthers(room, await this.members(this.db, room), userId, 'DISCONNECTED'));
+    for (const { roomId } of rows) {
+      const event = await this.db.transaction(async (tx) => {
+        const [room] = await tx
+          .select()
+          .from(battleRooms)
+          .where(eq(battleRooms.id, roomId))
+          .for('update');
+        if (!room || !(LOBBY_STATUSES as readonly string[]).includes(room.status)) return null;
+        if (await this.realtime.isOnline(userId)) return null;
+        const [result] = await tx
+          .update(battleRoomParticipants)
+          .set({ state: 'DISCONNECTED' })
+          .where(
+            and(
+              this.participantIs(roomId, userId),
+              eq(battleRoomParticipants.active, true),
+              eq(battleRoomParticipants.state, 'CONNECTED'),
+            ),
+          );
+        if (result.affectedRows === 0) return null;
+        return this.toOthers(room, await this.members(tx, room), userId, 'DISCONNECTED');
+      });
+      if (event) events.push(event);
     }
     await this.publish(events);
   }
@@ -306,12 +340,6 @@ export class LobbyService implements OnModuleInit {
       .where(and(this.participantIs(roomId, userId), eq(battleRoomParticipants.active, true)));
     if (!participant && room.hostUserId !== userId) throw LobbyErrors.notMember();
     return { room, participant: participant ?? null };
-  }
-
-  private assertLobby(room: BattleRoom): void {
-    if (!(LOBBY_STATUSES as readonly string[]).includes(room.status)) {
-      throw RoomErrors.alreadyStarted();
-    }
   }
 
   private participantIs(roomId: string, userId: string) {
