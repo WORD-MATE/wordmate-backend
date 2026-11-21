@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
@@ -8,7 +8,7 @@ import { CommonErrors } from '../../common/errors/app-exception.js';
 import { decodeCursor, encodeCursor } from '../../common/pagination.js';
 import { kstDate } from '../../common/time/kst.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
-import { type User, users } from '../../infra/db/schema/index.js';
+import { rankingSeasons, rankingSnapshots, type User, users } from '../../infra/db/schema/index.js';
 import { VALKEY } from '../../infra/valkey/valkey.module.js';
 import { toUserSummary } from '../users/user-summary.js';
 import type {
@@ -19,6 +19,7 @@ import type {
   RankingQuery,
 } from './ranking.schemas.js';
 import {
+  periodKey,
   previousPeriodDate,
   rankKey,
   scopeKeyFor,
@@ -38,7 +39,7 @@ type CachedTop = { updatedAt: string; available: boolean; entries: RankingEntry[
 type Standing = { rank: number; xp: number; gapToNext: number | null; total: number };
 
 /** 목록에 보이는 사용자: 활동 중인 학생, 랭킹 공개 */
-const listable = (user: User) =>
+export const listable = (user: User) =>
   user.role === 'STUDENT' && user.status === 'ACTIVE' && user.rankingPublic;
 
 @Injectable()
@@ -82,8 +83,8 @@ export class RankingQueryService {
     if (!current) return empty;
 
     const previousDate = previousPeriodDate(query.period, today);
-    const previous = previousDate
-      ? await this.standingOf(viewer, query.period, query.scope, previousDate)
+    const previousRank = previousDate
+      ? await this.previousRank(viewer, query.period, query.scope, previousDate)
       : null;
     const inTop = current.rank <= TOP_LIMIT;
     return {
@@ -91,7 +92,7 @@ export class RankingQueryService {
       topPercent: inTop ? null : topPercentOf(current.rank, current.total),
       xp: current.xp,
       gapToNext: current.gapToNext,
-      change: previous ? previous.rank - current.rank : null,
+      change: previousRank === null ? null : previousRank - current.rank,
       rankingPublic: viewer.rankingPublic,
     };
   }
@@ -191,6 +192,42 @@ export class RankingQueryService {
   /** 친구 기능이 생기면 여기서 친구 id를 돌려준다 */
   private async friendIds(_userId: string): Promise<string[]> {
     return [];
+  }
+
+  /**
+   * 직전 시즌을 마감했으면 그 스냅샷의 순위(마감 시점 기준이라 그 뒤 공개 설정·정지가 바뀌어도 그대로),
+   * 아직 마감 전이면 지난 기간 ZSET에서 지금 계산한다. 지난 기간에 XP가 없었으면 null
+   */
+  private async previousRank(
+    viewer: Viewer,
+    period: RankPeriod,
+    scope: RankScope,
+    previousDate: string,
+  ): Promise<number | null> {
+    const scopeKey = scope === 'FRIENDS' ? null : scopeKeyFor(scope, viewer);
+    if (scopeKey && period !== 'ALL') {
+      const [snapshot] = await this.db
+        .select({ seasonId: rankingSeasons.id, rank: rankingSnapshots.rank })
+        .from(rankingSeasons)
+        .leftJoin(
+          rankingSnapshots,
+          and(
+            eq(rankingSnapshots.seasonId, rankingSeasons.id),
+            eq(rankingSnapshots.scope, scopeKey),
+            eq(rankingSnapshots.userId, viewer.id),
+          ),
+        )
+        .where(
+          and(
+            eq(rankingSeasons.period, period),
+            eq(rankingSeasons.periodKey, periodKey(period, previousDate)),
+            eq(rankingSeasons.status, 'CONFIRMED'),
+          ),
+        );
+      if (snapshot) return snapshot.rank;
+    }
+    const standing = await this.standingOf(viewer, period, scope, previousDate);
+    return standing?.rank ?? null;
   }
 
   /** XP가 0이면 null */
