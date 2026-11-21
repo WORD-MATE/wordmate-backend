@@ -30,7 +30,12 @@ export type ServerMessage = {
   serverTime: string;
 };
 
-export type RealtimeContext = { userId: string; requestId: string | null };
+export type RealtimeContext = {
+  userId: string;
+  requestId: string | null;
+  /** 요청을 보낸 그 연결에만 requestId를 붙여 답한다 (같은 사용자의 다른 탭에는 가지 않음) */
+  reply: (type: string, payload: unknown) => void;
+};
 type Handler = { schema: ZodType; run: (ctx: RealtimeContext, payload: unknown) => unknown };
 
 type Connection = {
@@ -119,6 +124,8 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
 
   /** 인증된 연결을 등록한다. 인증 전에 온 메시지는 게이트웨이가 모아 두었다가 넘긴다 */
   attach(socket: WebSocket, userId: string): void {
+    // 티켓을 확인하는 사이에 끊겼으면 close 이벤트가 이미 지나갔으므로 등록하지 않는다
+    if (socket.readyState !== socket.OPEN) return;
     const connection: Connection = {
       socket,
       userId,
@@ -133,9 +140,20 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
     socket.on('pong', () => {
       connection.alive = true;
     });
-    void this.valkey
-      .set(presenceKey(userId), this.nodeId, 'EX', PRESENCE_TTL_SECONDS)
-      .catch(() => {});
+    void this.writePresence(userId).catch(() => {});
+  }
+
+  /**
+   * 접속 상태는 사용자별 해시에 인스턴스마다 연결 수로 남긴다. 폰·웹처럼 여러 인스턴스에 붙어 있을 때
+   * 한쪽이 끊겨도 다른 쪽 기록은 남는다. 연결이 없으면 필드를 지우고, 필드가 없으면 키도 사라진다
+   */
+  private async writePresence(userId: string): Promise<void> {
+    const key = presenceKey(userId);
+    const count = this.byUser.get(userId)?.size ?? 0;
+    const tx = this.valkey.multi();
+    if (count > 0) tx.hset(key, this.nodeId, count).expire(key, PRESENCE_TTL_SECONDS);
+    else tx.hdel(key, this.nodeId);
+    await tx.exec();
   }
 
   async detach(socket: WebSocket): Promise<void> {
@@ -144,13 +162,8 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
     this.connections.delete(socket);
     const sockets = this.byUser.get(connection.userId);
     sockets?.delete(socket);
-    if (sockets && sockets.size === 0) {
-      this.byUser.delete(connection.userId);
-      // 다른 인스턴스에 같은 사용자의 연결이 있을 수 있어 내 노드가 쓴 값일 때만 지운다
-      const owner = await this.valkey.get(presenceKey(connection.userId)).catch(() => null);
-      if (owner === this.nodeId)
-        await this.valkey.del(presenceKey(connection.userId)).catch(() => {});
-    }
+    if (sockets && sockets.size === 0) this.byUser.delete(connection.userId);
+    await this.writePresence(connection.userId).catch(() => {});
   }
 
   async receive(socket: WebSocket, raw: string): Promise<void> {
@@ -191,7 +204,15 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
       if (!handler) throw RealtimeErrors.unknownType(type.slice(0, 64));
       const result = handler.schema.safeParse(payload ?? {});
       if (!result.success) throw RealtimeErrors.invalidPayload();
-      await handler.run({ userId: connection.userId, requestId }, result.data);
+      const id = requestId;
+      await handler.run(
+        {
+          userId: connection.userId,
+          requestId: id,
+          reply: (replyType, replyPayload) => socket.send(message(replyType, replyPayload, id)),
+        },
+        result.data,
+      );
     } catch (error) {
       if (error instanceof AppException) {
         socket.send(message('ERROR', { code: error.code, message: error.message }, requestId));
@@ -206,12 +227,6 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
         ),
       );
     }
-  }
-
-  /** 같은 사용자의 이 인스턴스 연결에 직접 보낸다 (요청에 대한 응답용) */
-  reply(userId: string, type: string, payload: unknown, requestId: string | null = null): void {
-    for (const socket of this.byUser.get(userId) ?? [])
-      socket.send(message(type, payload, requestId));
   }
 
   private deliverLocal(raw: string): void {
@@ -232,15 +247,20 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
 
   /** ping에 답이 없는 연결은 끊고, 살아 있는 사용자의 접속 상태를 연장한다 */
   private async beat(): Promise<void> {
-    const pipeline = this.valkey.pipeline();
-    for (const [socket, connection] of this.connections) {
-      if (!connection.alive) {
+    for (const [socket, connection] of [...this.connections]) {
+      if (!connection.alive || socket.readyState !== socket.OPEN) {
         socket.terminate();
+        // 이미 닫힌 소켓이면 close 이벤트가 다시 오지 않으므로 여기서 정리한다
+        await this.detach(socket);
         continue;
       }
       connection.alive = false;
       socket.ping();
-      pipeline.set(presenceKey(connection.userId), this.nodeId, 'EX', PRESENCE_TTL_SECONDS);
+    }
+    const pipeline = this.valkey.pipeline();
+    for (const [userId, sockets] of this.byUser) {
+      pipeline.hset(presenceKey(userId), this.nodeId, sockets.size);
+      pipeline.expire(presenceKey(userId), PRESENCE_TTL_SECONDS);
     }
     await pipeline.exec().catch(() => {});
   }
