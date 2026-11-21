@@ -86,6 +86,7 @@ export class LobbyService implements OnModuleInit {
    * ROOM_RESUME도 같다. 진행 중이면 지금 문항(또는 결과)을 이어서 보낸다
    */
   async subscribe(ctx: RealtimeContext, roomId: string): Promise<void> {
+    if (await this.replyIfFinished(ctx, roomId)) return;
     const { status, events } = await this.db.transaction(async (tx) => {
       const { room, participant } = await this.membership(tx, roomId, ctx.userId);
       if (!participant || participant.state === 'CONNECTED') {
@@ -128,6 +129,22 @@ export class LobbyService implements OnModuleInit {
     if (status === 'IN_PROGRESS') await this.play.afterLeave(roomId);
   }
 
+  /** 끝난 대결의 참가자(교사용 방 진행자 포함)가 이어 받으려 하면 방 상태와 결과 id를 보낸다 */
+  private async replyIfFinished(ctx: RealtimeContext, roomId: string): Promise<boolean> {
+    const [room] = await this.db.select().from(battleRooms).where(eq(battleRooms.id, roomId));
+    if (room?.status !== 'FINISHED') return false;
+    const [participant] = await this.db
+      .select({ state: battleRoomParticipants.state })
+      .from(battleRoomParticipants)
+      .where(this.participantIs(roomId, ctx.userId));
+    const played = participant && participant.state !== 'KICKED';
+    if (!played && room.hostUserId !== ctx.userId) return false;
+    const view = await this.rooms.view(roomId);
+    ctx.reply('ROOM_STATE', { room: view });
+    if (view.battleId) ctx.reply('BATTLE_FINISHED', { battleId: view.battleId });
+    return true;
+  }
+
   /** 진행 중 끊긴 지 30초가 지나도 돌아오지 않으면 내보낸다 (그사이 돌아왔다 다시 끊겼으면 그 유예를 따른다) */
   async expireGrace(roomId: string, userId: string, disconnectedAt: Date): Promise<void> {
     const events = await this.db.transaction(async (tx) => {
@@ -140,7 +157,8 @@ export class LobbyService implements OnModuleInit {
       const [participant] = await tx
         .select()
         .from(battleRoomParticipants)
-        .where(and(this.participantIs(roomId, userId), eq(battleRoomParticipants.active, true)));
+        .where(and(this.participantIs(roomId, userId), eq(battleRoomParticipants.active, true)))
+        .for('update');
       if (
         participant?.state !== 'DISCONNECTED' ||
         participant.disconnectedAt?.getTime() !== disconnectedAt.getTime()
@@ -328,7 +346,7 @@ export class LobbyService implements OnModuleInit {
             ),
           );
       }
-      return { started: true as const, members, battleId, away, startedAt };
+      return { started: true as const, members, battleId };
     });
     if (!outcome) return false;
     if (!outcome.started) {
@@ -348,10 +366,7 @@ export class LobbyService implements OnModuleInit {
         payload: { room: await this.rooms.view(roomId) },
       },
     ]);
-    const { away, startedAt } = outcome;
-    if (away && startedAt) {
-      for (const userId of away) await this.scheduleGrace(roomId, userId, startedAt);
-    }
+    await this.scheduleGraceForAway(roomId);
     if (outcome.battleId) await this.play.startQuestion(outcome.battleId, 0);
     return true;
   }
@@ -422,6 +437,26 @@ export class LobbyService implements OnModuleInit {
     await this.publish(events);
     for (const grace of graces) {
       await this.scheduleGrace(grace.roomId, userId, grace.disconnectedAt);
+    }
+  }
+
+  /** 시작 작업이 다시 돌아도 같은 끊긴 시각이면 작업 id가 같아 한 번만 예약된다 */
+  private async scheduleGraceForAway(roomId: string): Promise<void> {
+    const away = await this.db
+      .select({
+        userId: battleRoomParticipants.userId,
+        disconnectedAt: battleRoomParticipants.disconnectedAt,
+      })
+      .from(battleRoomParticipants)
+      .where(
+        and(
+          eq(battleRoomParticipants.roomId, roomId),
+          eq(battleRoomParticipants.active, true),
+          eq(battleRoomParticipants.state, 'DISCONNECTED'),
+        ),
+      );
+    for (const { userId, disconnectedAt } of away) {
+      if (disconnectedAt) await this.scheduleGrace(roomId, userId, disconnectedAt);
     }
   }
 

@@ -11,11 +11,12 @@ export const BattleJob = {
   disconnectGrace: 'disconnect-grace',
 } as const;
 
+// 실패한 작업이 남아 있으면 같은 id로 다시 예약해도 무시돼 대결이 멈추므로 실패해도 지운다
 const PLAY_JOB = {
   attempts: 5,
   backoff: { type: 'exponential', delay: 500 },
   removeOnComplete: true,
-  removeOnFail: 100,
+  removeOnFail: true,
 } as const;
 
 const delayUntil = (at: Date) => Math.max(0, at.getTime() - Date.now());
@@ -73,11 +74,13 @@ export class BattleQueue {
   }
 
   /** 마감 시각에 문항을 끝낸다 (전원이 먼저 답해 이미 끝났으면 아무것도 하지 않는다) */
-  async scheduleQuestionEnd(battleId: string, idx: number, at: Date): Promise<void> {
+  async scheduleQuestionEnd(battleId: string, idx: number, at: Date, retry = false): Promise<void> {
+    // 마감 작업 안에서 다시 예약할 때는 돌고 있는 자기 id와 겹치면 무시되므로 다른 id를 쓴다
+    const jobId = `question-end-${battleId}-${idx}${retry ? `-${Date.now()}` : ''}`;
     await this.queue.add(
       BattleJob.endQuestion,
       { battleId, idx },
-      { ...PLAY_JOB, delay: delayUntil(at), jobId: `question-end-${battleId}-${idx}` },
+      { ...PLAY_JOB, delay: delayUntil(at), jobId },
     );
   }
 

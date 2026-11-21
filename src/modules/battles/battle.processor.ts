@@ -34,7 +34,7 @@ export class BattleProcessor extends WorkerHost {
       case BattleJob.startQuestion:
         return this.play.startQuestion(job.data.battleId as string, job.data.idx as number);
       case BattleJob.endQuestion:
-        return this.play.endQuestion(job.data.battleId as string, job.data.idx as number);
+        return this.play.endQuestion(job.data.battleId as string, job.data.idx as number, true);
       case BattleJob.disconnectGrace:
         return this.lobby.expireGrace(
           job.data.roomId as string,

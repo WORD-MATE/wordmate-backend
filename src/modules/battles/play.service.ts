@@ -111,10 +111,20 @@ export class PlayService implements OnModuleInit {
     return battle?.id ?? null;
   }
 
+  private async roomIdOf(battleId: string): Promise<string | null> {
+    const [ref] = await this.db
+      .select({ roomId: battles.roomId })
+      .from(battles)
+      .where(eq(battles.id, battleId));
+    return ref?.roomId ?? null;
+  }
+
   /** 문항을 시작하고 마감 작업을 예약한다. 마지막 문항 다음이면 대결을 끝낸다 */
   async startQuestion(battleId: string, idx: number): Promise<void> {
+    const roomId = await this.roomIdOf(battleId);
+    if (!roomId) return;
     const outcome = await this.db.transaction(async (tx) => {
-      const locked = await this.lock(tx, battleId);
+      const locked = await this.lock(tx, roomId, battleId);
       if (!locked) return null;
       const { room, battle } = locked;
       // 예약하다 실패해 작업이 다시 돌면 알림 없이 마감 작업만 다시 예약한다
@@ -149,14 +159,21 @@ export class PlayService implements OnModuleInit {
     if (outcome.deadlineAt) await this.queue.scheduleQuestionEnd(battleId, idx, outcome.deadlineAt);
   }
 
-  /** 마감 또는 전원 응답 때. 미응답을 남기고 사람마다 결과를 보낸 뒤 2초 뒤 다음 문항을 예약한다 */
-  async endQuestion(battleId: string, idx: number): Promise<void> {
-    const events = await this.db.transaction(async (tx) => {
-      const locked = await this.lock(tx, battleId);
+  /**
+   * 마감 또는 전원 응답 때. 미응답을 남기고 사람마다 결과를 보낸 뒤 2초 뒤 다음 문항을 예약한다.
+   * 마감 작업(byDeadline)이 서버 시계 차이로 일찍 돌면 끝내지 않고 마감 시각에 다시 예약한다
+   */
+  async endQuestion(battleId: string, idx: number, byDeadline = false): Promise<void> {
+    const roomId = await this.roomIdOf(battleId);
+    if (!roomId) return;
+    const outcome = await this.db.transaction(async (tx) => {
+      const locked = await this.lock(tx, roomId, battleId);
       if (!locked || locked.battle.currentIndex !== idx) return null;
       const { room, battle } = locked;
-      if (battle.phase === 'RESULT') return [];
+      if (battle.phase === 'RESULT') return { events: [] };
       if (battle.phase !== 'QUESTION') return null;
+      const deadline = battle.deadlineAt;
+      if (byDeadline && deadline && deadline.getTime() > Date.now()) return { retryAt: deadline };
 
       const players = (await activeParticipants(tx, room.id)).map((row) => row.userId);
       const answered = new Set(
@@ -183,10 +200,14 @@ export class PlayService implements OnModuleInit {
         );
       }
       await tx.update(battles).set({ phase: 'RESULT' }).where(eq(battles.id, battleId));
-      return this.resultEvents(tx, battle, players, await roomMembers(tx, room));
+      return { events: await this.resultEvents(tx, battle, players, await roomMembers(tx, room)) };
     });
-    if (!events) return;
-    await this.publish(events);
+    if (!outcome) return;
+    if (outcome.retryAt) {
+      await this.queue.scheduleQuestionEnd(battleId, idx, outcome.retryAt, true);
+      return;
+    }
+    await this.publish(outcome.events ?? []);
     await this.queue.scheduleQuestionStart(
       battleId,
       idx + 1,
@@ -201,9 +222,13 @@ export class PlayService implements OnModuleInit {
     choiceIndex: number,
     receivedAt: Date,
   ): Promise<void> {
-    const battleId = await this.db.transaction(async (tx) => {
+    const accepted = await this.db.transaction(async (tx) => {
       const [playing] = await tx
-        .select({ battleId: battles.id })
+        .select({
+          battleId: battles.id,
+          roomId: battleRooms.id,
+          state: battleRoomParticipants.state,
+        })
         .from(battleRoomParticipants)
         .innerJoin(battleRooms, eq(battleRooms.id, battleRoomParticipants.roomId))
         .innerJoin(battles, eq(battles.roomId, battleRooms.id))
@@ -253,10 +278,40 @@ export class PlayService implements OnModuleInit {
         if (isDuplicateKeyError(error)) throw PlayErrors.duplicate();
         throw error;
       }
-      return battle.id;
+      return { battleId: battle.id, roomId: playing.roomId, away: playing.state !== 'CONNECTED' };
     });
     ctx.reply('ANSWER_ACCEPTED', { questionIndex });
-    await this.endIfAllAnswered(battleId, questionIndex);
+    if (accepted.away) await this.markBack(accepted.roomId, ctx.userId);
+    await this.endIfAllAnswered(accepted.battleId, questionIndex);
+  }
+
+  /**
+   * 다시 접속해 ROOM_RESUME 없이 답하면 돌아온 것으로 본다 (끊김 유예로 내보내지 않게).
+   * 유예 작업은 참가자 행을 잠그고 상태를 다시 보므로 이 갱신과 겹쳐도 한쪽만 이긴다
+   */
+  private async markBack(roomId: string, userId: string): Promise<void> {
+    const [result] = await this.db
+      .update(battleRoomParticipants)
+      .set({ state: 'CONNECTED', disconnectedAt: null })
+      .where(
+        and(
+          eq(battleRoomParticipants.roomId, roomId),
+          eq(battleRoomParticipants.userId, userId),
+          eq(battleRoomParticipants.active, true),
+          eq(battleRoomParticipants.state, 'DISCONNECTED'),
+        ),
+      );
+    if (result.affectedRows === 0) return;
+    const [room] = await this.db.select().from(battleRooms).where(eq(battleRooms.id, roomId));
+    if (!room) return;
+    const others = (await roomMembers(this.db, room)).filter((id) => id !== userId);
+    await this.publish([
+      {
+        userIds: others,
+        type: 'PARTICIPANT_STATE',
+        payload: { roomId, userId, state: 'CONNECTED' },
+      },
+    ]);
   }
 
   /** 나가기·유예 만료로 인원이 줄면 남은 사람이 다 답했는지 다시 본다 */
@@ -315,17 +370,16 @@ export class PlayService implements OnModuleInit {
     await this.endQuestion(battleId, idx);
   }
 
-  /** 방 행을 먼저 잠근 뒤 대결 행을 잠근다 (나가기 등 방을 먼저 잠그는 경로와 순서를 맞춰 교착을 피한다) */
-  private async lock(tx: Transaction, battleId: string): Promise<Locked | null> {
-    const [ref] = await tx
-      .select({ roomId: battles.roomId })
-      .from(battles)
-      .where(eq(battles.id, battleId));
-    if (!ref) return null;
+  /**
+   * 방 행을 먼저 잠근 뒤 대결 행을 잠근다 (나가기 등 방을 먼저 잠그는 경로와 순서를 맞춰 교착을 피한다).
+   * 트랜잭션의 첫 문장이 잠금 읽기여야 그 뒤 일반 읽기(참가자·답)가 잠금을 얻은 뒤의 데이터를 본다
+   * (REPEATABLE READ는 첫 일반 읽기 때 스냅숏을 잡는다). 그래서 바뀌지 않는 room_id는 트랜잭션 밖에서 읽는다
+   */
+  private async lock(tx: Transaction, roomId: string, battleId: string): Promise<Locked | null> {
     const [room] = await tx
       .select()
       .from(battleRooms)
-      .where(eq(battleRooms.id, ref.roomId))
+      .where(eq(battleRooms.id, roomId))
       .for('update');
     if (room?.status !== 'IN_PROGRESS') return null;
     const [battle] = await tx.select().from(battles).where(eq(battles.id, battleId)).for('update');
