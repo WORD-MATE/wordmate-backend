@@ -199,8 +199,25 @@ export class LobbyService implements OnModuleInit {
       await this.db
         .update(battleRooms)
         .set({ status: 'WAITING', countdownEndsAt: null })
-        .where(and(eq(battleRooms.id, roomId), eq(battleRooms.status, 'COUNTDOWN')));
+        .where(
+          and(
+            eq(battleRooms.id, roomId),
+            eq(battleRooms.status, 'COUNTDOWN'),
+            eq(battleRooms.countdownEndsAt, result.startsAt),
+          ),
+        );
       throw error;
+    }
+    // 예약하는 사이 취소됐으면 시작 알림이 취소 알림 뒤에 도착하지 않게 보내지 않는다
+    const [now] = await this.db
+      .select({ status: battleRooms.status, countdownEndsAt: battleRooms.countdownEndsAt })
+      .from(battleRooms)
+      .where(eq(battleRooms.id, roomId));
+    if (
+      now?.status !== 'COUNTDOWN' ||
+      now.countdownEndsAt?.getTime() !== result.startsAt.getTime()
+    ) {
+      return;
     }
     await this.publish([
       {
@@ -213,7 +230,7 @@ export class LobbyService implements OnModuleInit {
 
   /**
    * 카운트다운이 끝나면 지연 작업이 부른다. 그사이 취소됐거나 인원이 모자라면 대기실로 돌린다.
-   * 문항 진행은 이 뒤에 붙는다
+   * 시작한 뒤 알림에서 실패해 작업이 다시 돌면 알림만 다시 보낸다. 문항 진행은 이 뒤에 붙는다
    */
   async begin(roomId: string, countdownEndsAt: Date): Promise<boolean> {
     const outcome = await this.db.transaction(async (tx) => {
@@ -222,10 +239,11 @@ export class LobbyService implements OnModuleInit {
         .from(battleRooms)
         .where(eq(battleRooms.id, roomId))
         .for('update');
-      if (room?.status !== 'COUNTDOWN') return null;
       // 취소 뒤 다시 시작했다면 예전 카운트다운의 작업이므로 무시한다
-      if (room.countdownEndsAt?.getTime() !== countdownEndsAt.getTime()) return null;
+      if (!room || room.countdownEndsAt?.getTime() !== countdownEndsAt.getTime()) return null;
       const members = await this.members(tx, room);
+      if (room.status === 'IN_PROGRESS') return { started: true, members };
+      if (room.status !== 'COUNTDOWN') return null;
       if ((await this.activeParticipants(tx, roomId)).length < MIN_START_PARTICIPANTS) {
         await tx
           .update(battleRooms)
@@ -235,7 +253,7 @@ export class LobbyService implements OnModuleInit {
       }
       await tx
         .update(battleRooms)
-        .set({ status: 'IN_PROGRESS', startedAt: new Date(), countdownEndsAt: null })
+        .set({ status: 'IN_PROGRESS', startedAt: new Date() })
         .where(eq(battleRooms.id, roomId));
       return { started: true, members };
     });

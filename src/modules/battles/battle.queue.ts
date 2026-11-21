@@ -40,8 +40,8 @@ export class BattleQueue {
       {
         delay: Math.max(0, at.getTime() - Date.now()),
         jobId: `start-battle-${roomId}-${at.getTime()}`,
-        attempts: 3,
-        backoff: { type: 'fixed', delay: 500 },
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 500 },
         removeOnComplete: true,
         removeOnFail: 100,
       },

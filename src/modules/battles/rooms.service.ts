@@ -293,20 +293,13 @@ export class RoomsService {
         )
         .for('update');
       if (!room) return null;
-      const active = await tx
-        .select({ userId: battleRoomParticipants.userId })
-        .from(battleRoomParticipants)
-        .where(
-          and(eq(battleRoomParticipants.roomId, roomId), eq(battleRoomParticipants.active, true)),
-        );
+      const members = await this.activeMembers(tx, roomId, room.hostUserId);
       await tx.update(battleRooms).set({ status: 'EXPIRED' }).where(eq(battleRooms.id, roomId));
       await tx
         .update(battleRoomParticipants)
         .set({ active: false })
         .where(eq(battleRoomParticipants.roomId, roomId));
-      const ids = new Set(active.map((row) => row.userId));
-      if (room.hostUserId) ids.add(room.hostUserId);
-      return [...ids];
+      return members;
     });
     if (!targets) return false;
     await this.realtime.sendToUsers(targets, 'ROOM_CLOSED', { reason: 'EXPIRED' }).catch(() => {});
@@ -320,13 +313,26 @@ export class RoomsService {
   async expireOrReschedule(roomId: string): Promise<boolean> {
     if (await this.expire(roomId)) return true;
     const [room] = await this.db
-      .select({ status: battleRooms.status, expiresAt: battleRooms.expiresAt })
+      .select({
+        status: battleRooms.status,
+        expiresAt: battleRooms.expiresAt,
+        countdownEndsAt: battleRooms.countdownEndsAt,
+      })
       .from(battleRooms)
       .where(eq(battleRooms.id, roomId));
     const now = Date.now();
     if (room?.status === 'WAITING' && room.expiresAt.getTime() > now) {
       await this.queue.scheduleExpiry(roomId, room.expiresAt, true);
     } else if (room?.status === 'COUNTDOWN') {
+      // 시작 작업이 유실돼 멈춘 카운트다운이면 대기실로 돌린 뒤 대기실 방처럼 만료를 처리한다
+      const stalledBefore = new Date(now - COUNTDOWN_STALL_MS);
+      if (
+        room.countdownEndsAt &&
+        room.countdownEndsAt <= stalledBefore &&
+        (await this.recoverCountdown(roomId, stalledBefore))
+      ) {
+        return this.expireOrReschedule(roomId);
+      }
       await this.queue.scheduleExpiry(roomId, new Date(now + EXPIRY_RECHECK_MS), true);
     }
     return false;
@@ -520,20 +526,55 @@ export class RoomsService {
       );
     for (const room of stalled) {
       if (room.status === 'COUNTDOWN') {
-        await this.db
-          .update(battleRooms)
-          .set({ status: 'WAITING', countdownEndsAt: null })
-          .where(
-            and(
-              eq(battleRooms.id, room.id),
-              eq(battleRooms.status, 'COUNTDOWN'),
-              lte(battleRooms.countdownEndsAt, new Date(now - COUNTDOWN_STALL_MS)),
-            ),
-          );
+        await this.recoverCountdown(room.id, new Date(now - COUNTDOWN_STALL_MS));
       } else {
         await this.closeStaleInProgress(room.id, new Date(now - MAX_BATTLE_MS));
       }
     }
+  }
+
+  /** 멈춘 카운트다운을 대기실로 돌리고 방 사람들에게 `COUNTDOWN_CANCELLED { START_FAILED }`를 보낸다 */
+  private async recoverCountdown(roomId: string, endedBefore: Date): Promise<boolean> {
+    const targets = await this.db.transaction(async (tx) => {
+      const [room] = await tx
+        .select({ hostUserId: battleRooms.hostUserId })
+        .from(battleRooms)
+        .where(
+          and(
+            eq(battleRooms.id, roomId),
+            eq(battleRooms.status, 'COUNTDOWN'),
+            lte(battleRooms.countdownEndsAt, endedBefore),
+          ),
+        )
+        .for('update');
+      if (!room) return null;
+      await tx
+        .update(battleRooms)
+        .set({ status: 'WAITING', countdownEndsAt: null })
+        .where(eq(battleRooms.id, roomId));
+      return this.activeMembers(tx, roomId, room.hostUserId);
+    });
+    if (!targets) return false;
+    await this.realtime
+      .sendToUsers(targets, 'COUNTDOWN_CANCELLED', { reason: 'START_FAILED' })
+      .catch(() => {});
+    return true;
+  }
+
+  private async activeMembers(
+    tx: Transaction,
+    roomId: string,
+    hostUserId: string | null,
+  ): Promise<string[]> {
+    const active = await tx
+      .select({ userId: battleRoomParticipants.userId })
+      .from(battleRoomParticipants)
+      .where(
+        and(eq(battleRoomParticipants.roomId, roomId), eq(battleRoomParticipants.active, true)),
+      );
+    const ids = new Set(active.map((row) => row.userId));
+    if (hostUserId) ids.add(hostUserId);
+    return [...ids];
   }
 
   private async closeStaleInProgress(roomId: string, startedBefore: Date): Promise<void> {
@@ -588,16 +629,18 @@ export class RoomsService {
     for (const room of stale) {
       await this.closeStaleInProgress(room.id, new Date(now - MAX_BATTLE_MS));
     }
-    await this.db
-      .update(battleRooms)
-      .set({ status: 'WAITING', countdownEndsAt: null })
+    const stalledBefore = new Date(now - COUNTDOWN_STALL_MS);
+    const stalled = await this.db
+      .select({ id: battleRooms.id })
+      .from(battleRooms)
       .where(
         and(
           eq(battleRooms.hostUserId, hostUserId),
           eq(battleRooms.status, 'COUNTDOWN'),
-          lte(battleRooms.countdownEndsAt, new Date(now - COUNTDOWN_STALL_MS)),
+          lte(battleRooms.countdownEndsAt, stalledBefore),
         ),
       );
+    for (const room of stalled) await this.recoverCountdown(room.id, stalledBefore);
   }
 
   private async expireOverdue(): Promise<void> {
