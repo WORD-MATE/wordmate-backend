@@ -12,7 +12,7 @@ x-app: &app
   environment:
     NODE_ENV: production
     # 부하 테스트 계정 스크립트(dist/load-users.js)를 개발 서버에서만 허용한다
-    LOAD_TEST_ALLOWED: 'true'
+    LOAD_TEST_ALLOWED: "true"
     DATABASE_URL: mysql://wordmate:${MYSQL_PASSWORD:?}@mysql:3306/wordmate
     VALKEY_URL: redis://valkey:6379
     # 학교 프록시(10.0.0.117)만 앱에 붙는다. 실제 IP는 학교 입구에서 172.10.104.1로 바뀌어 넘어온다
