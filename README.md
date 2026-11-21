@@ -484,6 +484,17 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
   - 세션 행을 잠그고 처리해 한 번만 끝낼 수 있습니다(409 `BATTLE_PRACTICE_ALREADY_COMPLETED`). 남의 연습·없는 연습은 404 `BATTLE_PRACTICE_NOT_FOUND`, 없는 문항 번호·같은 문항 두 번은 400.
 - `practice_sessions`에 문항(단어 id 포함)을 남기고, 기록 화면이 없으므로 매일 정리에서 7일 지난 연습을 지웁니다.
 
+### 오늘의 챌린지
+
+- 하루(KST) 한 번, 모두 같은 문제·같은 순서입니다(`daily_challenges`, 날짜가 키). 기본 단어팩 5개를 무작위로 골라 그 팩들의 단어를 섞어 한→영 4지선다 10문항, 문항당 10초. 오답 보기는 그 단어의 팩에서 고릅니다.
+  - `challenge` 큐의 job scheduler가 매일 23:50(KST)에 다음 날 문제를 미리 만들고, 없으면 그날 처음 조회할 때 만듭니다. 여러 서버가 동시에 만들어도 날짜가 키라 하나만 남고, 한 서버 안에서는 몰린 요청이 한 번만 만듭니다. 만들지 못하면 503 `CHALLENGE_UNAVAILABLE`, 1분 동안 다시 시도하지 않습니다.
+- `GET /challenges/today` (학생): `{ date, questionCount, timeLimitSec, participated, myResult: { score, correctCount, xp } | null }`.
+- `POST /challenges/today/attempt` (201): 정답 없이 문항만. 사용자당 하루 한 번(`challenge_attempts` UNIQUE(user_id, date)). 이미 끝냈으면 409 `CHALLENGE_ALREADY_DONE`, 시작만 했으면 409 `CHALLENGE_IN_PROGRESS`(`detail = { attemptId, questions }`, 시작 응답을 못 받았어도 이어서 풀 수 있게).
+- `POST /challenges/today/attempt/{attemptId}/complete` (Idempotency-Key 필수, 없으면 400): `{ score, correctCount, total, results: [{ index, correct, answerIndex }], xp }`.
+  - 점수는 연습과 같습니다. 문항별 제한 시간을 넘긴 답은 미응답이고, 시작 시각부터 `문항 수 × (제한 시간 + 1초) + 10초`가 지나 끝내면 모두 미응답이고 XP 막힌 이유는 `NOT_COMPLETED`입니다. 문항별 시간은 클라이언트가 보낸 값이라 서버는 전체 시간만 확인합니다.
+  - XP는 정답 1개당 3(`xp_ledger` 출처 `CHALLENGE`, `challenge:{date}`), 하루 500 상한 포함. 시도 행을 잠그고 처리해 한 번만 끝낼 수 있습니다(409 `CHALLENGE_ALREADY_DONE`).
+- `@Idempotent({ required: true })`: 멱등 키가 필수인 API는 키 없이 보내면 400을 돌려줍니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.

@@ -6,6 +6,7 @@ import { InfraModule } from './infra/infra.module.js';
 import { AppStatusModule } from './modules/app-status/app-status.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { BattlesModule } from './modules/battles/battles.module.js';
+import { ChallengesModule } from './modules/challenges/challenges.module.js';
 import { ClassesModule } from './modules/classes/classes.module.js';
 import { DevicesModule } from './modules/devices/devices.module.js';
 import { HealthModule } from './modules/health/health.module.js';
@@ -48,6 +49,7 @@ import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
     RealtimeModule,
     BattlesModule,
     PracticeModule,
+    ChallengesModule,
     PoliciesModule,
     UsersModule,
   ],

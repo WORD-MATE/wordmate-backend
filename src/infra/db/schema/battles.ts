@@ -233,3 +233,47 @@ export const practiceSessions = mysqlTable(
   },
   (t) => [index('practice_sessions_created_idx').on(t.createdAt)],
 );
+
+export type ChallengeQuestion = {
+  index: number;
+  wordId: string;
+  packId: string;
+  prompt: string;
+  choices: string[];
+  answerIndex: number;
+};
+
+/** 오늘의 챌린지 문제 세트. 날짜(KST)마다 하나, 모두 같은 문제·같은 순서 */
+export const dailyChallenges = mysqlTable('daily_challenges', {
+  date: date('date', { mode: 'string' }).primaryKey(),
+  questionType: mysqlEnum('question_type', QUESTION_TYPE).notNull(),
+  questionCount: int('question_count').notNull(),
+  timeLimitSec: int('time_limit_sec').notNull(),
+  questions: json('questions').$type<ChallengeQuestion[]>().notNull(),
+  createdAt: timestamps.createdAt,
+});
+
+export type DailyChallenge = typeof dailyChallenges.$inferSelect;
+
+/** 사용자당 하루 한 번 */
+export const challengeAttempts = mysqlTable(
+  'challenge_attempts',
+  {
+    id: id(),
+    userId: binaryUuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    date: date('date', { mode: 'string' })
+      .notNull()
+      .references(() => dailyChallenges.date),
+    startedAt: datetime('started_at', { mode: 'date', fsp: 3 }).notNull(),
+    completedAt: datetime('completed_at', { mode: 'date', fsp: 3 }),
+    score: int('score'),
+    correctCount: int('correct_count'),
+    answers:
+      json('answers').$type<{ index: number; choiceIndex: number | null; elapsedMs: number }[]>(),
+    xpEarned: int('xp_earned'),
+    xpBlockedReason: mysqlEnum('xp_blocked_reason', XP_BLOCK_REASON),
+  },
+  (t) => [uniqueIndex('challenge_attempts_user_date_uq').on(t.userId, t.date)],
+);
