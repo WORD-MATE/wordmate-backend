@@ -389,6 +389,28 @@ describe('대결 결과·XP·기록·다시 하기', () => {
     await leaveAll();
   }, 120_000);
 
+  it('한 문항도 답하지 않은 완주자는 순위는 받지만 XP는 없다', async () => {
+    const [a, b] = await Promise.all([makeUser(), makeUser()]);
+    const { room, battleId, byUser } = await startBattle(a as AuthUser, [
+      a as AuthUser,
+      b as AuthUser,
+    ]);
+    await playThrough(room.roomId, battleId, byUser, (userId) =>
+      userId === a?.userId ? 'correct' : 'skip',
+    );
+    expect(await resultOf(battleId, a?.userId as string)).toMatchObject({
+      outcome: 'WIN',
+      xpEarned: 30,
+    });
+    expect(await resultOf(battleId, b?.userId as string)).toMatchObject({
+      rank: 2,
+      outcome: 'LOSE',
+      xpEarned: 0,
+      xpBlockedReason: 'NOT_COMPLETED',
+    });
+    await leaveAll();
+  }, 90_000);
+
   it('기록: 최신순 커서와 요약(승률·평균 정답률은 완주한 대결만)', async () => {
     const [a, b] = await Promise.all([makeUser(), makeUser()]);
     const first = await startBattle(a as AuthUser, [a as AuthUser, b as AuthUser]);
