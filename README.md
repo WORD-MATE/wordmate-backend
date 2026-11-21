@@ -476,14 +476,22 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 - `DELETE /battles/matchmaking` (204): 이미 성사됐으면 409 `MATCH_ALREADY_FOUND`(`detail = { roomId, inviteCode }`), 기다리는 매칭이 없으면 404 `MATCH_NOT_QUEUED`. 방을 만드는 중이면 결과가 나올 때까지 잠깐(최대 3초) 기다립니다. 남아 있는 성사 기록은 그 방에 아직 있을 때만 409로 답하고, 아니면 404입니다.
 - 연결이 모두 끊기거나(다른 서버에 연결이 남아 있으면 그대로) 직접 방을 만들거나 들어가면 대기열에서 뺍니다. 성사 처리 중에 다시 요청하면 409 `MATCH_ALREADY_QUEUED`, 만료 작업이 유실돼 남은 자기 대기는 새로 줄 서면 덮습니다.
 
+### 연습 모드
+
+- `POST /practice/sessions` (학생, 201): 대결과 같은 방식(오답 보기를 만들 수 있는 단어만, 모자라면 중복 출제)으로 4지선다 문항을 만들어 정답과 함께 내려줍니다. 시간은 클라이언트가 재고 XP는 없습니다. 단어 10개 이상(400 `BATTLE_PACK_TOO_FEW_WORDS`).
+- `POST /practice/sessions/{practiceId}/complete` (200 `{ score, correctCount, total }`): 대결과 같은 점수(정답 100 + 남은 시간 비례 보너스 최대 50). 제한 시간을 넘긴 답과 보내지 않은 문항은 미응답입니다.
+  - 틀렸거나 답하지 않은 단어는 오답노트(출처 `BATTLE`)로 쌓습니다(같은 단어는 한 번). 대결 결과와 같은 `recordWrongWords`를 씁니다.
+  - 세션 행을 잠그고 처리해 한 번만 끝낼 수 있습니다(409 `BATTLE_PRACTICE_ALREADY_COMPLETED`). 남의 연습·없는 연습은 404 `BATTLE_PRACTICE_NOT_FOUND`, 없는 문항 번호·같은 문항 두 번은 400.
+- `practice_sessions`에 문항(단어 id 포함)을 남기고, 기록 화면이 없으므로 매일 정리에서 7일 지난 연습을 지웁니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.
 
-| 작업                    | 주기 (KST) | 내용                                                                                             |
-| ----------------------- | ---------- | ------------------------------------------------------------------------------------------------ |
-| `expire-study-sessions` | 매시 5분   | 만료된 `IN_PROGRESS` 학습을 `ABANDONED`로 바꿈                                                   |
-| `daily-cleanup`         | 매일 03:00 | 위 작업에 더해, 끝났거나 버린 지 7일 지난 세션(문항·답안 포함) 삭제, 삭제된 단어의 즐겨찾기 삭제 |
+| 작업                    | 주기 (KST) | 내용                                                                                                                 |
+| ----------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------- |
+| `expire-study-sessions` | 매시 5분   | 만료된 `IN_PROGRESS` 학습을 `ABANDONED`로 바꿈                                                                       |
+| `daily-cleanup`         | 매일 03:00 | 위 작업에 더해, 끝났거나 버린 지 7일 지난 세션(문항·답안 포함) 삭제, 7일 지난 연습 삭제, 삭제된 단어의 즐겨찾기 삭제 |
 
 - 학습 기록(`study_records`)은 지우지 않습니다. 사용자가 늘면 보관 기간을 다시 정합니다. 세션을 지워도 기록은 남고 `study_records.session_id`만 NULL이 됩니다.
 - 지울 행은 1000개씩 나눠 지워서 테이블을 오래 잠그지 않습니다.
