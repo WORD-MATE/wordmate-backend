@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AccessTokenService } from '../src/common/auth/access-token.service.js';
 import type { AuthUser } from '../src/common/auth/auth-user.js';
 import { type Database, DB } from '../src/infra/db/db.module.js';
-import { type NewUser, users } from '../src/infra/db/schema/index.js';
+import { classes, type NewUser, teacherClasses, users } from '../src/infra/db/schema/index.js';
 import { newId } from '../src/infra/db/uuid.js';
 import { VALKEY } from '../src/infra/valkey/valkey.module.js';
 import { RankingService } from '../src/modules/ranking/ranking.service.js';
@@ -30,6 +30,13 @@ describe('랭킹 조회', () => {
       classNo: role === 'STUDENT' ? 11 : null,
       ...overrides,
     });
+    // 담당 반이 없는 교사는 온보딩 가드에 막히므로 실제 교사처럼 반을 하나 맡긴다
+    if (role === 'TEACHER') {
+      const [someClass] = await db.select({ id: classes.id }).from(classes).limit(1);
+      await db
+        .insert(teacherClasses)
+        .values({ teacherId: userId, classId: someClass?.id as string });
+    }
     return { userId, role, isAdmin: false, deviceId: newId() };
   };
 
