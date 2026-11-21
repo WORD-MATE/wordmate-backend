@@ -69,9 +69,15 @@ describe('오늘의 챌린지', () => {
       { 'idempotency-key': key },
     );
 
-  const todaysQuestions = async () =>
-    (await db.select().from(dailyChallenges).where(eq(dailyChallenges.date, today)))[0]
-      ?.questions ?? [];
+  /** 시도한 날짜의 문제 (테스트 중 자정을 넘겨도 맞는 날짜를 본다) */
+  const questionsOf = async (attemptId: string) => {
+    const [row] = await db
+      .select({ questions: dailyChallenges.questions })
+      .from(challengeAttempts)
+      .innerJoin(dailyChallenges, eq(dailyChallenges.date, challengeAttempts.date))
+      .where(eq(challengeAttempts.id, attemptId));
+    return row?.questions ?? [];
+  };
 
   const clearChallenges = async () => {
     await db.delete(challengeAttempts).where(inArray(challengeAttempts.date, [today, tomorrow]));
@@ -116,7 +122,10 @@ describe('오늘의 챌린지', () => {
       participated: false,
       myResult: null,
     });
-    expect(await todaysQuestions()).toHaveLength(10);
+    expect(
+      (await db.select().from(dailyChallenges).where(eq(dailyChallenges.date, today)))[0]
+        ?.questions,
+    ).toHaveLength(10);
     const teacher = await makeUser({ role: 'TEACHER', isAdmin: true });
     expect((await call(teacher, 'GET', '/challenges/today')).statusCode).toBe(403);
   });
@@ -131,8 +140,12 @@ describe('오늘의 챌린지', () => {
     const other = (await call(b, 'POST', '/challenges/today/attempt')).json();
     expect(other.questions).toEqual(questions);
 
+    // 시작 응답을 못 받았어도 같은 문항으로 이어서 풀 수 있다
     const again = (await call(a, 'POST', '/challenges/today/attempt')).json();
-    expect(again).toMatchObject({ code: 'CHALLENGE_IN_PROGRESS', detail: { attemptId } });
+    expect(again).toMatchObject({
+      code: 'CHALLENGE_IN_PROGRESS',
+      detail: { attemptId, questions },
+    });
     expect((await call(a, 'GET', '/challenges/today')).json()).toMatchObject({
       participated: true,
       myResult: null,
@@ -142,7 +155,7 @@ describe('오늘의 챌린지', () => {
   it('끝내면 채점·XP, 같은 키는 같은 응답, 다시 끝내거나 다시 시작하면 409', async () => {
     const student = await makeUser();
     const { attemptId } = (await call(student, 'POST', '/challenges/today/attempt')).json();
-    const stored = await todaysQuestions();
+    const stored = await questionsOf(attemptId);
     const answerOf = (i: number) => stored[i]?.answerIndex as number;
     const answers = [
       ...[0, 1, 2, 3, 4, 5].map((i) => ({
@@ -207,22 +220,26 @@ describe('오늘의 챌린지', () => {
       .update(challengeAttempts)
       .set({ startedAt: new Date(Date.now() - 3 * 60 * 1000) })
       .where(eq(challengeAttempts.id, attemptId));
-    const stored = await todaysQuestions();
+    const stored = await questionsOf(attemptId);
     const res = await complete(
       student,
       attemptId,
       stored.map((q) => ({ index: q.index, choiceIndex: q.answerIndex, elapsedMs: 1000 })),
     );
-    expect(res.json()).toMatchObject({ score: 0, correctCount: 0, xp: { earned: 0 } });
+    expect(res.json()).toMatchObject({
+      score: 0,
+      correctCount: 0,
+      xp: { earned: 0, blockedReason: 'NOT_COMPLETED' },
+    });
   });
 
   it('매일 정해진 시각에 다음 날 문제를 미리 만든다', async () => {
-    expect(await app.get(ChallengeProcessor).process()).toBe(
-      kstDate(new Date(Date.now() + 60 * 60 * 1000)),
-    );
+    // 23:50에 돌면 다음 날이 되도록 한 시간 뒤의 날짜를 만든다. 그 날짜를 비워 두고 새로 만드는지 본다
     const date = kstDate(new Date(Date.now() + 60 * 60 * 1000));
-    expect(
-      await db.select().from(dailyChallenges).where(eq(dailyChallenges.date, date)),
-    ).toHaveLength(1);
+    await db.delete(challengeAttempts).where(eq(challengeAttempts.date, date));
+    await db.delete(dailyChallenges).where(eq(dailyChallenges.date, date));
+    expect(await app.get(ChallengeProcessor).process()).toBe(date);
+    const [created] = await db.select().from(dailyChallenges).where(eq(dailyChallenges.date, date));
+    expect(created?.questions).toHaveLength(10);
   });
 });
