@@ -1,7 +1,8 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { eq, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import WebSocket from 'ws';
 import { AccessTokenService } from '../src/common/auth/access-token.service.js';
 import type { AuthUser } from '../src/common/auth/auth-user.js';
 import { type Database, DB } from '../src/infra/db/db.module.js';
@@ -16,8 +17,9 @@ import {
 import { newId } from '../src/infra/db/uuid.js';
 import { VALKEY } from '../src/infra/valkey/valkey.module.js';
 import { MatchmakingService } from '../src/modules/battles/matchmaking.service.js';
+import { RealtimeService } from '../src/modules/realtime/realtime.service.js';
 import { createTestApp, inject } from './support/create-test-app.js';
-import { connectAs, type WsClient } from './support/ws-client.js';
+import { connectAs, type WsClient, wsBaseOf } from './support/ws-client.js';
 
 describe('빠른 1:1 매칭', () => {
   let app: NestFastifyApplication;
@@ -128,6 +130,31 @@ describe('빠른 1:1 매칭', () => {
     );
     const teacher = await makeUser({ role: 'TEACHER', isAdmin: true });
     expect((await call(teacher, 'POST', '/battles/matchmaking')).statusCode).toBe(403);
+  });
+
+  it('연결이 열리자마자 요청해도 접속 확인을 잠깐 기다려 대기열에 넣는다', async () => {
+    const user = await makeUser();
+    const headers = { authorization: `Bearer ${await app.get(AccessTokenService).sign(user)}` };
+    const { ticket } = (
+      await inject(app, { method: 'POST', url: '/realtime/ticket', headers })
+    ).json();
+    // 서버가 티켓을 늦게 확인하는 상황을 만든다 (그동안 매칭 요청이 먼저 도착)
+    const realtime = app.get(RealtimeService);
+    const redeem = realtime.redeemTicket.bind(realtime);
+    const spy = vi.spyOn(realtime, 'redeemTicket').mockImplementation(async (value) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return redeem(value);
+    });
+    const socket = new WebSocket(`${wsBaseOf(app)}?ticket=${ticket}`);
+    socket.on('error', () => {});
+    try {
+      const res = await inject(app, { method: 'POST', url: '/battles/matchmaking', headers });
+      expect(res.statusCode).toBe(202);
+      expect(await valkey.zscore('mm:queue', user.userId)).not.toBeNull();
+    } finally {
+      spy.mockRestore();
+      socket.terminate();
+    }
   });
 
   it('대기 → 상대가 오면 둘 다 MATCH_FOUND, 기본 설정 방에서 바로 카운트다운', async () => {
