@@ -428,8 +428,9 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
   - 그사이 인원이 2명 아래가 되면 `COUNTDOWN_CANCELLED { NOT_ENOUGH_PARTICIPANTS }`와 함께 대기실로 돌아갑니다.
   - 예약에 실패하면 카운트다운이 끝나지 않으므로 대기실로 되돌립니다.
   - 끝나는 시각을 `countdown_ends_at`에 저장하고 작업에도 담아, 취소 뒤 다시 시작했을 때 예전 작업이 새 카운트다운을 일찍 끝내지 않게 합니다.
-  - 카운트다운 중에 만료 작업이 돌면 지우지 않고 1분 뒤 다시 확인합니다.
-- 멈춘 방 정리: 참가·방 만들기(교사는 진행 중인 방 기준) 때, 카운트다운이 끝나고 30초가 지나도 시작되지 않은 방은 대기실로 돌리고, 30분 넘게 진행 중인 방은 `ROOM_CLOSED { EXPIRED }`로 닫습니다. 예약이 유실돼도 사용자가 방에 갇히지 않게 하기 위해서입니다.
+  - 카운트다운 중에 만료 작업이 돌면 지우지 않고 1분 뒤 다시 확인합니다. 그때 시작 작업이 유실돼 멈춰 있으면 대기실로 돌립니다.
+  - 예약하는 사이 취소됐으면 `COUNTDOWN_STARTED`를 보내지 않습니다(취소 알림 뒤에 시작 알림이 도착하지 않게). 시작한 뒤 알림에 실패해 작업이 다시 돌면 `ROOM_STATE`만 다시 보냅니다.
+- 멈춘 방 정리: 참가·방 만들기(교사는 진행 중인 방 기준) 때, 카운트다운이 끝나고 30초가 지나도 시작되지 않은 방은 `COUNTDOWN_CANCELLED { START_FAILED }`와 함께 대기실로 돌리고, 30분 넘게 진행 중인 방은 `ROOM_CLOSED { EXPIRED }`로 닫습니다. 예약이 유실돼도 사용자가 방에 갇히지 않게 하기 위해서입니다.
 - `REACTION_SEND { roomId, reaction }`: 3초에 한 번(Valkey `react:rl:{roomId}:{userId}`), 보낸 사람을 뺀 방 사람들에게 `REACTION_RECEIVED`를 보냅니다.
 - 상태를 바꾸는 메시지는 방 행을 잠근 트랜잭션에서 처리하고, 알림은 커밋한 뒤에 보냅니다. 에러 코드는 `ROOM_NOT_MEMBER`, `ROOM_NOT_HOST`, `ROOM_NOT_ENOUGH_PARTICIPANTS`, `ROOM_KICK_TARGET_INVALID`, `ROOM_ALREADY_STARTED`, `ROOM_NOT_FOUND`입니다.
 
