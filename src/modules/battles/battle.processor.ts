@@ -2,6 +2,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
 import { BATTLE_QUEUE, BattleJob } from './battle.queue.js';
 import { LobbyService } from './lobby.service.js';
+import { MatchmakingService } from './matchmaking.service.js';
 import { PlayService } from './play.service.js';
 import { RoomsService } from './rooms.service.js';
 
@@ -12,6 +13,7 @@ type BattleJobData = {
   idx?: number;
   countdownEndsAt?: string;
   disconnectedAt?: string;
+  queuedAt?: number;
 };
 
 // 방마다 문항 작업이 몰리므로 여러 개를 동시에 처리한다 (판정은 받은 시각 기준이라 작업이 늦어도 점수는 그대로)
@@ -21,6 +23,7 @@ export class BattleProcessor extends WorkerHost {
     private readonly rooms: RoomsService,
     private readonly lobby: LobbyService,
     private readonly play: PlayService,
+    private readonly matchmaking: MatchmakingService,
   ) {
     super();
   }
@@ -41,6 +44,8 @@ export class BattleProcessor extends WorkerHost {
           job.data.userId as string,
           new Date(job.data.disconnectedAt ?? 0),
         );
+      case BattleJob.matchTimeout:
+        return this.matchmaking.expire(job.data.userId as string, job.data.queuedAt as number);
       default:
         throw new Error(`알 수 없는 대결 작업: ${job.name}`);
     }

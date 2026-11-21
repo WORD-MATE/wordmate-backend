@@ -9,18 +9,23 @@ import { BattleFinishService } from './battle-finish.service.js';
 import { BattleResultsService } from './battle-results.service.js';
 import { BattlesController } from './battles.controller.js';
 import { LobbyService } from './lobby.service.js';
+import { MatchQueue } from './match-queue.js';
+import { MatchmakingController } from './matchmaking.controller.js';
+import { MatchmakingService } from './matchmaking.service.js';
 import { PlayService } from './play.service.js';
 import { ClassRoomsController, RoomsController } from './rooms.controller.js';
 import { RoomsService } from './rooms.service.js';
 
 @Module({
   imports: [BullModule.registerQueue({ name: BATTLE_QUEUE }), PacksModule, XpModule, RankingModule],
-  controllers: [BattlesController, RoomsController, ClassRoomsController],
+  controllers: [BattlesController, MatchmakingController, RoomsController, ClassRoomsController],
   providers: [
     BattleFinishService,
     BattleResultsService,
     RoomsService,
     LobbyService,
+    MatchQueue,
+    MatchmakingService,
     PlayService,
     BattleQueue,
     BattleProcessor,
