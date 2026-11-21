@@ -447,8 +447,10 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
   - `ranking`은 남아 있는 참가자의 `[{ userId, rank, score }]`이고, 누적 점수 높은 순, 같으면 총 풀이 시간이 짧은 순입니다(미응답 문항은 제한 시간 전체로 셉니다). 둘 다 같으면 같은 순위입니다.
   - 2초 뒤 다음 문항, 마지막 문항 다음에는 방을 `FINISHED`로 바꾸고 `BATTLE_FINISHED { battleId }`를 보냅니다. 방의 `battleId`는 대결이 시작되면 채워집니다.
 - 한 번만 진행: 문항 시작·종료는 방 행 → 대결 행 순서로 잠근 트랜잭션에서 하고, 현재 문항·단계와 맞지 않는 작업은 아무것도 하지 않습니다. 서버가 여러 대이거나 작업이 다시 돌아도 문항이 두 번 시작·종료되지 않습니다. 답은 대결 행을 공유 잠금으로 읽어 문항 종료와 순서를 지킵니다.
-- 끊김: 진행 중 연결이 모두 끊기면 `DISCONNECTED`로 표시하고 30초 뒤 유예 작업이 `LEFT`로 내보냅니다(남은 문항은 미응답). 그사이 돌아왔다 다시 끊겼으면 끊긴 시각(`disconnected_at`)이 달라 옛 유예는 무시합니다. 대기실에서 이미 끊겨 있던 참가자는 시작 시각부터 셉니다.
-- `ROOM_RESUME { roomId }`: `ROOM_SUBSCRIBE`와 같고, 진행 중이면 지금 문항의 `QUESTION_STARTED`(이미 답했으면 `ANSWER_ACCEPTED`도) 또는 결과 표시 중이면 내 `QUESTION_ENDED`를 다시 보냅니다.
+  - 트랜잭션의 첫 문장을 잠금 읽기로 해서, 잠금을 기다리는 사이 들어온 답·나가기도 참가자·답 조회에 보이게 합니다(REPEATABLE READ 스냅숏).
+  - 마감 작업이 서버 시계 차이로 일찍 돌면 끝내지 않고 마감 시각에 다시 예약합니다. 실패한 작업은 지워서 같은 id로 다시 예약할 수 있게 합니다.
+- 끊김: 진행 중 연결이 모두 끊기면 `DISCONNECTED`로 표시하고 30초 뒤 유예 작업이 `LEFT`로 내보냅니다(남은 문항은 미응답). 그사이 돌아왔다 다시 끊겼으면 끊긴 시각(`disconnected_at`)이 달라 옛 유예는 무시합니다. 대기실에서 이미 끊겨 있던 참가자는 시작 시각부터 셉니다. 다시 접속해 `ROOM_RESUME` 없이 답해도 돌아온 것으로 봅니다(`CONNECTED`).
+- `ROOM_RESUME { roomId }`: `ROOM_SUBSCRIBE`와 같고, 진행 중이면 지금 문항의 `QUESTION_STARTED`(이미 답했으면 `ANSWER_ACCEPTED`도) 또는 결과 표시 중이면 내 `QUESTION_ENDED`를 다시 보냅니다. 대결이 끝난 뒤면 `ROOM_STATE`와 `BATTLE_FINISHED { battleId }`를 보냅니다.
 - 진행 중 나가거나 유예가 지나면 남은 사람이 모두 답했는지 다시 보고 바로 다음으로 넘어갑니다. 학생이 모두 나가면 교사용 방이라도 닫고 진행자에게 `ROOM_CLOSED { EMPTY }`를 보냅니다.
 
 ## 정리 작업
