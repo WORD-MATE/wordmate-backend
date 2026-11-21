@@ -161,12 +161,14 @@ export class PlayService implements OnModuleInit {
       };
     });
     if (!outcome) return;
-    if (outcome.xp && outcome.finishedAt) {
-      for (const { userId, earned } of outcome.xp) {
-        await this.ranking.addXp(userId, earned, outcome.finishedAt);
-      }
-    }
     await this.publish(outcome.events);
+    // 랭킹 반영은 알림 뒤에 (Valkey가 느려도 끝났다는 알림이 늦지 않게, 실패는 addXp가 삼킨다)
+    const { xp, finishedAt } = outcome;
+    if (xp && finishedAt) {
+      await Promise.all(
+        xp.map(({ userId, earned }) => this.ranking.addXp(userId, earned, finishedAt)),
+      );
+    }
     if (outcome.deadlineAt) await this.queue.scheduleQuestionEnd(battleId, idx, outcome.deadlineAt);
   }
 

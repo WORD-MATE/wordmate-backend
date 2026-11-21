@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, or, sql } from 'drizzle-orm';
 import { kstDate } from '../../common/time/kst.js';
 import type { Transaction } from '../../infra/db/db.module.js';
 import {
@@ -10,6 +10,7 @@ import {
   battleQuestions,
   battleResults,
   battleRoomParticipants,
+  users,
   wrongNotes,
 } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
@@ -32,7 +33,15 @@ export class BattleFinishService {
   ): Promise<XpEarned[]> {
     const players = await this.players(tx, room.id, battle.startedAt);
     if (players.length === 0) return [];
-    const ids = players.map((player) => player.userId);
+    const ids = players.map((player) => player.userId).sort();
+    // 사용자 행을 먼저 같은 순서로 배타 잠금한다. 쌍 횟수·결과를 넣을 때 외래 키 검사로 공유 잠금을 잡은 뒤
+    // XP 지급에서 배타 잠금으로 올리면, 그사이 같은 사용자를 잠그려는 다른 트랜잭션과 교착될 수 있다
+    await tx
+      .select({ id: users.id })
+      .from(users)
+      .where(inArray(users.id, ids))
+      .orderBy(asc(users.id))
+      .for('update');
     const limitMs = battle.timeLimitSec * 1000;
     const totals = await tx
       .select({
@@ -41,6 +50,7 @@ export class BattleFinishService {
         correct: sql<number>`CAST(SUM(${battleAnswers.correct}) AS SIGNED)`,
         timeMs: sql<number>`CAST(SUM(COALESCE(${battleAnswers.elapsedMs}, ${limitMs})) AS SIGNED)`,
         answered: sql<number>`CAST(COUNT(*) AS SIGNED)`,
+        responded: sql<number>`CAST(COUNT(${battleAnswers.choiceIndex}) AS SIGNED)`,
       })
       .from(battleAnswers)
       .where(and(eq(battleAnswers.battleId, battle.id), inArray(battleAnswers.userId, ids)))
@@ -67,7 +77,11 @@ export class BattleFinishService {
     const rows = [];
     // 사용자 행을 같은 순서로 잠근다
     for (const result of [...results].sort((a, b) => a.userId.localeCompare(b.userId))) {
-      const xp = battleXpOf(result.outcome, limited.has(result.userId));
+      // 한 문항도 답하지 않은 완주자는 자리만 지킨 것으로 보고 XP를 주지 않는다 (순위·결과는 그대로)
+      const idle = Number(totalOf.get(result.userId)?.responded ?? 0) === 0;
+      const xp = idle
+        ? { amount: 0, blockedReason: 'NOT_COMPLETED' as const }
+        : battleXpOf(result.outcome, limited.has(result.userId));
       let xpEarned = 0;
       let blockedReason = xp.blockedReason;
       if (xp.amount > 0) {
@@ -99,7 +113,10 @@ export class BattleFinishService {
     return earned;
   }
 
-  /** 시작할 때 방에 있던 참가자 (대기실에서 나간 사람·강퇴된 사람 제외). 진행 중 나간 사람은 LEFT로 남는다 */
+  /**
+   * 대결에 참가한 사람: 끝날 때 방에 남아 있는 사람 + 시작한 뒤에 나간 사람.
+   * 진행 중에는 새로 들어올 수 없어 시각 비교 없이 남은 사람을 그대로 쓴다 (서버 시계 차이에 흔들리지 않게)
+   */
   private players(tx: Transaction, roomId: string, startedAt: Date) {
     return tx
       .select({ userId: battleRoomParticipants.userId, state: battleRoomParticipants.state })
@@ -107,9 +124,13 @@ export class BattleFinishService {
       .where(
         and(
           eq(battleRoomParticipants.roomId, roomId),
-          ne(battleRoomParticipants.state, 'KICKED'),
-          lte(battleRoomParticipants.joinedAt, startedAt),
-          or(isNull(battleRoomParticipants.leftAt), gte(battleRoomParticipants.leftAt, startedAt)),
+          or(
+            eq(battleRoomParticipants.active, true),
+            and(
+              eq(battleRoomParticipants.state, 'LEFT'),
+              gte(battleRoomParticipants.leftAt, startedAt),
+            ),
+          ),
         ),
       );
   }

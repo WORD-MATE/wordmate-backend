@@ -58,7 +58,7 @@ export class BattleResultsService {
         asc(battleResults.totalTimeMs),
       );
     const mine = results.find((r) => r.result.userId === user.userId)?.result;
-    if (!mine && room.hostUserId !== user.userId) {
+    if (!mine && !(room.type === 'CLASS' && room.hostUserId === user.userId)) {
       throw CommonErrors.forbidden('참가하지 않은 대결입니다.');
     }
 

@@ -140,11 +140,11 @@ export class RoomsService {
       timeLimitSec: room.timeLimitSec as CreateRoom['timeLimitSec'],
       maxParticipants: room.maxParticipants,
     };
-    const pack = await this.packs.findById(room.packId);
     if (room.type === 'CLASS') {
       if (room.hostUserId !== user.userId || !room.classId) {
         throw CommonErrors.forbidden('교사용 방은 진행한 교사만 다시 할 수 있습니다.');
       }
+      const pack = await this.packs.findById(room.packId);
       return this.createForClass(user, room.classId, body, { pack, battleId });
     }
     const [played] = await this.db
@@ -153,6 +153,7 @@ export class RoomsService {
       .where(and(eq(battleResults.battleId, battleId), eq(battleResults.userId, user.userId)));
     if (!played) throw CommonErrors.forbidden('참가하지 않은 대결입니다.');
     if (user.role !== 'STUDENT') throw CommonErrors.forbidden();
+    const pack = await this.packs.findById(room.packId);
     return this.create(user, body, { pack, battleId });
   }
 
