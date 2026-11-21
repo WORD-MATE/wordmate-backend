@@ -1,7 +1,7 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { eq, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { AccessTokenService } from '../src/common/auth/access-token.service.js';
 import type { AuthUser } from '../src/common/auth/auth-user.js';
@@ -17,6 +17,7 @@ import {
 import { newId } from '../src/infra/db/uuid.js';
 import { VALKEY } from '../src/infra/valkey/valkey.module.js';
 import { MatchmakingService } from '../src/modules/battles/matchmaking.service.js';
+import { RealtimeService } from '../src/modules/realtime/realtime.service.js';
 import { createTestApp, inject } from './support/create-test-app.js';
 import { connectAs, type WsClient, wsBaseOf } from './support/ws-client.js';
 
@@ -137,14 +138,21 @@ describe('빠른 1:1 매칭', () => {
     const { ticket } = (
       await inject(app, { method: 'POST', url: '/realtime/ticket', headers })
     ).json();
+    // 서버가 티켓을 늦게 확인하는 상황을 만든다 (그동안 매칭 요청이 먼저 도착)
+    const realtime = app.get(RealtimeService);
+    const redeem = realtime.redeemTicket.bind(realtime);
+    const spy = vi.spyOn(realtime, 'redeemTicket').mockImplementation(async (value) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return redeem(value);
+    });
     const socket = new WebSocket(`${wsBaseOf(app)}?ticket=${ticket}`);
     socket.on('error', () => {});
     try {
-      // 열리기를 기다리지 않고 바로 요청한다 (서버가 아직 티켓을 확인하기 전)
       const res = await inject(app, { method: 'POST', url: '/battles/matchmaking', headers });
       expect(res.statusCode).toBe(202);
       expect(await valkey.zscore('mm:queue', user.userId)).not.toBeNull();
     } finally {
+      spy.mockRestore();
       socket.terminate();
     }
   });
