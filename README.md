@@ -39,21 +39,22 @@ pnpm dev
 
 ## 명령어
 
-| 명령                  | 설명                                                       |
-| --------------------- | ---------------------------------------------------------- |
-| `pnpm dev`            | 개발 서버 (변경 감지)                                      |
-| `pnpm build`          | 빌드 (`dist/`)                                             |
-| `pnpm start`          | 빌드 결과 실행                                             |
-| `pnpm test`           | 단위 테스트                                                |
-| `pnpm test:e2e`       | 통합 테스트 (Docker 필요, MySQL·Valkey 컨테이너 자동 실행) |
-| `pnpm typecheck`      | 타입 검사                                                  |
-| `pnpm lint`           | 린트·포맷 검사                                             |
-| `pnpm format`         | 린트·포맷 자동 수정                                        |
-| `pnpm db:generate`    | 스키마 변경으로 마이그레이션 생성 (`drizzle/`)             |
-| `pnpm db:migrate`     | 마이그레이션 적용                                          |
-| `pnpm db:seed <파일>` | 기본 단어팩 시드 반영 (아래 "기본 단어팩 시드" 참고)       |
-| `pnpm db:studio`      | Drizzle Studio (DB 브라우저)                               |
-| `pnpm jwt:keygen`     | JWT 서명용 Ed25519 키 생성                                 |
+| 명령                   | 설명                                                         |
+| ---------------------- | ------------------------------------------------------------ |
+| `pnpm dev`             | 개발 서버 (변경 감지)                                        |
+| `pnpm build`           | 빌드 (`dist/`)                                               |
+| `pnpm start`           | 빌드 결과 실행                                               |
+| `pnpm test`            | 단위 테스트                                                  |
+| `pnpm test:e2e`        | 통합 테스트 (Docker 필요, MySQL·Valkey 컨테이너 자동 실행)   |
+| `pnpm typecheck`       | 타입 검사                                                    |
+| `pnpm lint`            | 린트·포맷 검사                                               |
+| `pnpm format`          | 린트·포맷 자동 수정                                          |
+| `pnpm db:generate`     | 스키마 변경으로 마이그레이션 생성 (`drizzle/`)               |
+| `pnpm db:migrate`      | 마이그레이션 적용                                            |
+| `pnpm db:seed <파일>`  | 기본 단어팩 시드 반영 (아래 "기본 단어팩 시드" 참고)         |
+| `pnpm ranking:rebuild` | XP 원장에서 이번 주·이번 달·전체 랭킹 재구성 (Valkey 복구용) |
+| `pnpm db:studio`       | Drizzle Studio (DB 브라우저)                                 |
+| `pnpm jwt:keygen`      | JWT 서명용 Ed25519 키 생성                                   |
 
 ## 프로젝트 구조
 
@@ -355,6 +356,18 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
   - 삭제된 단어의 오답은 다시 풀 수 없어 목록에서 뺍니다. 팩만 삭제됐으면 `pack=null`로 보여줍니다.
 - `POST /wrong-notes/delete`(영구 삭제)와 `POST /wrong-notes/graduate`(수동 졸업)는 한 번에 500개까지 받고, 남의 id는 조용히 무시합니다.
 - 오답노트로 다시 풀기(`source=WRONG_NOTE`)는 `ACTIVE` 오답이 있는 단어를 최근에 틀린 순으로 한 번씩만 냅니다. 팩이 삭제돼도 단어가 남아 있으면 낼 수 있습니다. 정답 XP는 방식과 상관없이 +1입니다.
+
+## 랭킹
+
+- XP를 주면 같은 트랜잭션에서 `users.total_xp`를 올리고, 커밋된 뒤 `RankingService.addXp`로 Valkey ZSET에 반영합니다. 롤백된 XP가 랭킹에 남지 않게 하기 위해서이고, 새로 XP를 주는 곳도 같은 순서를 따라야 합니다.
+- 키는 `rank:{weekly|monthly|all}:{기간}:{범위}`입니다.
+  - 기간: 주간은 그 주 월요일(KST), 월간은 `YYYY-MM`, 전체는 `all`
+  - 범위: `school`, `grade:{학년}`, `class:{학년}-{반}`
+  - 지난 주간 키는 60일, 월간 키는 400일 뒤 만료됩니다(시즌 스냅샷이 남은 뒤).
+- 점수는 `XP × 10^10 + (10^10 - 1 - 도달 시각 초)`입니다. XP가 같으면 먼저 그 점수에 도달한 사용자가 위에 옵니다. 여러 키를 Lua 스크립트 하나로 원자적으로 갱신합니다.
+- 교사는 넣지 않고, 학년·반이 없는 학생은 학교 범위에만 들어갑니다. 학년·반이 바뀌면 그 뒤에 얻은 XP부터 새 학년·반에 쌓입니다.
+- 랭킹 비공개 사용자도 ZSET에는 넣고(본인 순위 계산용), 목록에서 거릅니다.
+- Valkey가 날아가면 `pnpm ranking:rebuild`(서버는 `docker compose run --rm migrate dist/ranking-rebuild.js`)로 원장에서 다시 만듭니다. 학년·반은 지금 값으로 넣습니다.
 
 ## 정리 작업
 
