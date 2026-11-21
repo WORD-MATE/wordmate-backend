@@ -83,9 +83,24 @@ function tokenOf(index) {
   return tokens[index].token;
 }
 
+/** 실패하면 멈춰 기다리지 않도록 코드를 남기고 바로 끝낸다 */
+function failed(step, res) {
+  let code = String(res.status);
+  try {
+    code = res.json().code || code;
+  } catch {
+    // 본문이 JSON이 아니면 상태 코드만 남긴다
+  }
+  console.warn(`${step} 실패: ${res.status} ${code}`);
+  serverErrors.add(1, { code });
+}
+
 function ticketUrl(token) {
   const res = http.post(`${BASE_URL}/realtime/ticket`, null, params(token));
-  if (!check(res, { 'ticket 200': (r) => r.status === 200 })) return null;
+  if (!check(res, { 'ticket 200': (r) => r.status === 200 })) {
+    failed('ticket', res);
+    return null;
+  }
   const body = res.json();
   return `${__ENV.WS_URL || body.wsUrl}?ticket=${body.ticket}`;
 }
@@ -130,9 +145,11 @@ function play(token, { onOpen, onMessage }) {
         check(res, { 'result 200': (r) => r.status === 200 });
         battlesFinished.add(1);
         socket.close();
-      } else if (type === 'ROOM_CLOSED') {
+      } else if (type === 'ROOM_CLOSED' || type === 'COUNTDOWN_CANCELLED') {
+        console.warn(`${type} ${payload.reason}`);
         socket.close();
       } else if (type === 'ERROR') {
+        console.warn(`ERROR ${payload.code}`);
         serverErrors.add(1, { code: payload.code });
       }
       onMessage(message, send, socket);
@@ -146,10 +163,13 @@ function quickMatch() {
   const token = tokenOf(__VU - 1);
   let queuedAt = 0;
   play(token, {
-    onOpen: () => {
+    onOpen: (_send, socket) => {
       queuedAt = Date.now();
       const res = http.post(`${BASE_URL}/battles/matchmaking`, null, params(token));
-      check(res, { 'matchmaking 202': (r) => r.status === 202 });
+      if (!check(res, { 'matchmaking 202': (r) => r.status === 202 })) {
+        failed('matchmaking', res);
+        socket.close();
+      }
     },
     onMessage: ({ type, payload }, send, socket) => {
       if (type === 'MATCH_FOUND') {
@@ -199,7 +219,10 @@ function classRoom(data) {
   const token = tokenOf(index);
   if (!isHost) {
     const res = http.post(`${BASE_URL}/battles/rooms/${room.inviteCode}/join`, null, params(token));
-    if (!check(res, { 'join 200': (r) => r.status === 200 })) return;
+    if (!check(res, { 'join 200': (r) => r.status === 200 })) {
+      failed('join', res);
+      return;
+    }
   }
   let started = false;
   // 구독 때 받은 참가자와 들어왔다는 알림이 겹칠 수 있으므로 사용자 id로 센다
