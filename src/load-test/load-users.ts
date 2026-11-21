@@ -121,7 +121,8 @@ export async function cleanupLoadUsers(db: Database, valkey: Redis): Promise<num
 
   let cursor = '0';
   do {
-    const [next, keys] = await valkey.scan(cursor, 'MATCH', 'rank:*', 'COUNT', 200);
+    // rank: 아래에는 랭킹 외의 키(해시·문자열)도 있으므로 ZSET만 고른다
+    const [next, keys] = await valkey.scan(cursor, 'MATCH', 'rank:*', 'COUNT', 200, 'TYPE', 'zset');
     for (const key of keys) await valkey.zrem(key, ...ids);
     cursor = next;
   } while (cursor !== '0');
