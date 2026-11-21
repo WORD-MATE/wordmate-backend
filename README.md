@@ -468,7 +468,7 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 
 ### 빠른 1:1 매칭
 
-- `POST /battles/matchmaking` (학생, 202 `{ queuedAt, timeoutAt }`): WebSocket에 접속해 있어야 합니다(409 `MATCH_WS_NOT_CONNECTED`). 다른 방에 있으면 409 `ROOM_ALREADY_JOINED`, 이미 기다리는 중이면 409 `MATCH_ALREADY_QUEUED`.
+- `POST /battles/matchmaking` (학생, 202 `{ queuedAt, timeoutAt }`): WebSocket에 접속해 있어야 합니다(409 `MATCH_WS_NOT_CONNECTED`). 연결이 열린 직후에는 서버가 티켓을 확인하는 중이라 최대 2초까지 접속 등록을 기다린 뒤 판단합니다. 다른 방에 있으면 409 `ROOM_ALREADY_JOINED`, 이미 기다리는 중이면 409 `MATCH_ALREADY_QUEUED`.
 - 대기열은 Valkey(`mm:queue` ZSET 점수 = 누적 XP, `mm:queued` 대기 시각)입니다. 들어오는 순간 기다리는 사람 가운데 누적 XP가 가장 가까운 상대(같으면 먼저 기다린 사람)와 짝짓고, 없으면 기다립니다. 차단 관계는 차단 기능이 생기면 제외합니다.
 - 대기열에서 빼기와 성사를 Lua 스크립트 하나에서 처리해, 취소와 성사가 겹치면 먼저 도착한 쪽만 이깁니다.
 - 성사: 먼저 기다린 사람이 방장인 `QUICK_MATCH` 방(추천순 맨 앞 기본 단어팩, 한→영 4지선다, 10문항, 10초, 2명)을 만들고 두 사람에게 `MATCH_FOUND { roomId, inviteCode }`를 보낸 뒤 바로 카운트다운을 시작합니다. 기다리던 상대의 연결이 끊겼거나 그사이 다른 방에 들어갔으면 상대를 빼고 다음 대기자를 봅니다.
