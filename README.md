@@ -434,6 +434,23 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 - `REACTION_SEND { roomId, reaction }`: 3초에 한 번(Valkey `react:rl:{roomId}:{userId}`), 보낸 사람을 뺀 방 사람들에게 `REACTION_RECEIVED`를 보냅니다.
 - 상태를 바꾸는 메시지는 방 행을 잠근 트랜잭션에서 처리하고, 알림은 커밋한 뒤에 보냅니다. 에러 코드는 `ROOM_NOT_MEMBER`, `ROOM_NOT_HOST`, `ROOM_NOT_ENOUGH_PARTICIPANTS`, `ROOM_KICK_TARGET_INVALID`, `ROOM_ALREADY_STARTED`, `ROOM_NOT_FOUND`입니다.
 
+### 문항 진행 (WebSocket)
+
+- 시작: 카운트다운이 끝나 진행 중으로 바꾸는 트랜잭션에서 `battles`·`battle_questions`에 문항과 보기를 만들어 고정합니다.
+  - 오답 보기를 만들 수 있는 단어만 섞어 내고, 단어가 문항 수보다 적으면 한 바퀴씩 다시 섞어 중복 출제합니다(바퀴가 바뀔 때 같은 단어가 연달아 나오지 않게).
+  - 단어가 지워져 보기를 만들 수 없으면 `COUNTDOWN_CANCELLED { QUESTIONS_UNAVAILABLE }`로 대기실로 돌아갑니다.
+- `QUESTION_STARTED { questionIndex, total, prompt, choices, deadlineAt }` → `ANSWER_SUBMIT { questionIndex, choiceIndex }` → 낸 사람에게만 `ANSWER_ACCEPTED { questionIndex }`.
+- 판정은 서버가 받은 시각 기준이고, `deadlineAt`이 지나면 받지 않습니다. 에러 코드: `ANSWER_CLOSED`(마감·다른 문항), `ANSWER_ALREADY_SUBMITTED`, `BATTLE_NOT_IN_PROGRESS`(진행 중인 대결의 참가자가 아님, 교사 진행자 포함).
+- 점수: 정답 100 + 남은 시간 비례 보너스 `round(50 × 남은 시간 / 제한 시간)`, 오답·미응답 0.
+- 문항 종료: 마감 시각(BullMQ 지연 작업) 또는 남은 참가자가 모두 답했을 때. 답하지 않은 참가자는 `battle_answers`에 `choice_index` NULL로 남깁니다.
+  - 사람마다 `QUESTION_ENDED { questionIndex, answerIndex, myResult, ranking }`을 보냅니다. `myResult`는 `{ choiceIndex, correct, score, totalScore, rank }`, 진행자(교사)는 `null`입니다.
+  - `ranking`은 남아 있는 참가자의 `[{ userId, rank, score }]`이고, 누적 점수 높은 순, 같으면 총 풀이 시간이 짧은 순입니다(미응답 문항은 제한 시간 전체로 셉니다). 둘 다 같으면 같은 순위입니다.
+  - 2초 뒤 다음 문항, 마지막 문항 다음에는 방을 `FINISHED`로 바꾸고 `BATTLE_FINISHED { battleId }`를 보냅니다. 방의 `battleId`는 대결이 시작되면 채워집니다.
+- 한 번만 진행: 문항 시작·종료는 방 행 → 대결 행 순서로 잠근 트랜잭션에서 하고, 현재 문항·단계와 맞지 않는 작업은 아무것도 하지 않습니다. 서버가 여러 대이거나 작업이 다시 돌아도 문항이 두 번 시작·종료되지 않습니다. 답은 대결 행을 공유 잠금으로 읽어 문항 종료와 순서를 지킵니다.
+- 끊김: 진행 중 연결이 모두 끊기면 `DISCONNECTED`로 표시하고 30초 뒤 유예 작업이 `LEFT`로 내보냅니다(남은 문항은 미응답). 그사이 돌아왔다 다시 끊겼으면 끊긴 시각(`disconnected_at`)이 달라 옛 유예는 무시합니다. 대기실에서 이미 끊겨 있던 참가자는 시작 시각부터 셉니다.
+- `ROOM_RESUME { roomId }`: `ROOM_SUBSCRIBE`와 같고, 진행 중이면 지금 문항의 `QUESTION_STARTED`(이미 답했으면 `ANSWER_ACCEPTED`도) 또는 결과 표시 중이면 내 `QUESTION_ENDED`를 다시 보냅니다.
+- 진행 중 나가거나 유예가 지나면 남은 사람이 모두 답했는지 다시 보고 바로 다음으로 넘어갑니다. 학생이 모두 나가면 교사용 방이라도 닫고 진행자에게 `ROOM_CLOSED { EMPTY }`를 보냅니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.
