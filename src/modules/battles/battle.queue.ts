@@ -12,14 +12,17 @@ export class BattleQueue {
   constructor(@InjectQueue(BATTLE_QUEUE) private readonly queue: Queue) {}
 
   /** 실패해도 방 만들기는 막지 않는다 (조회·참가 때 만료 시각을 보고 닫는다) */
-  async scheduleExpiry(roomId: string, at: Date): Promise<void> {
+  async scheduleExpiry(roomId: string, at: Date, retry = false): Promise<void> {
     await this.queue
       .add(
         BattleJob.expireRoom,
         { roomId },
         {
           delay: Math.max(0, at.getTime() - Date.now()),
-          jobId: `expire-room-${roomId}`,
+          // 다시 예약할 때는 지금 돌고 있는 작업과 id가 겹치면 무시되므로 다른 id를 쓴다
+          jobId: retry ? `expire-room-${roomId}-${Date.now()}` : `expire-room-${roomId}`,
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 1000 },
           removeOnComplete: true,
           removeOnFail: 100,
         },

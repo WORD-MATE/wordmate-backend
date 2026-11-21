@@ -66,6 +66,12 @@ export const RoomErrors = {
   alreadyStarted: () =>
     new AppException('ROOM_ALREADY_STARTED', '이미 시작한 대결입니다.', HttpStatus.CONFLICT),
   full: () => new AppException('ROOM_FULL', '대결방이 가득 찼습니다.', HttpStatus.CONFLICT),
+  codeUnavailable: () =>
+    new AppException(
+      'ROOM_CODE_UNAVAILABLE',
+      '초대 코드를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.',
+      HttpStatus.SERVICE_UNAVAILABLE,
+    ),
   attemptsExceeded: () =>
     new AppException(
       'ROOM_CODE_ATTEMPTS_EXCEEDED',
@@ -113,40 +119,56 @@ export class RoomsService {
     const pack = await this.packs.findVisible(user, body.packId);
     if (pack.wordCount < MIN_BATTLE_WORDS) throw RoomErrors.packTooFewWords();
     await this.expireOverdue();
-    const [hosting] = await this.db
-      .select({ inviteCode: battleRooms.inviteCode })
-      .from(battleRooms)
-      .where(
-        and(
-          eq(battleRooms.hostUserId, user.userId),
-          inArray(battleRooms.status, [...ACTIVE_STATUSES]),
-        ),
-      );
-    if (hosting) throw RoomErrors.alreadyJoined(hosting.inviteCode);
     const roomId = await this.insertRoom(body, pack, {
       type: 'CLASS',
       hostUserId: user.userId,
       classId,
       hostParticipates: false,
+      // 교사 행을 잠가 동시에 두 번 만들어도 진행 중인 반 방이 하나만 되게 한다
+      beforeInsert: async (tx) => {
+        await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.id, user.userId))
+          .for('update');
+        const [hosting] = await tx
+          .select({ inviteCode: battleRooms.inviteCode })
+          .from(battleRooms)
+          .where(
+            and(
+              eq(battleRooms.hostUserId, user.userId),
+              inArray(battleRooms.status, [...ACTIVE_STATUSES]),
+            ),
+          );
+        if (hosting) throw RoomErrors.alreadyJoined(hosting.inviteCode);
+      },
     });
     return this.view(roomId);
   }
 
-  async get(inviteCode: string): Promise<Room> {
+  /** 조회도 코드를 찔러보는 데 쓸 수 있으므로 참가와 같은 연속 실패 횟수를 센다 */
+  async get(user: AuthUser, inviteCode: string): Promise<Room> {
+    if (!INVITE_CODE_PATTERN.test(inviteCode)) {
+      await this.countFailure(user.userId);
+      throw RoomErrors.invalidCode();
+    }
     const room = await this.findByCode(inviteCode);
-    if (!room) throw RoomErrors.notFound();
+    if (!room) {
+      await this.countFailure(user.userId);
+      throw RoomErrors.notFound();
+    }
     await this.expireIfOverdue(room);
     return this.view(room.id);
   }
 
-  async isJoinBlocked(userId: string): Promise<boolean> {
+  async isCodeBlocked(userId: string): Promise<boolean> {
     const fails = await this.valkey.get(joinFailKey(userId)).catch(() => null);
     return Number(fails ?? 0) >= JOIN_FAIL_LIMIT;
   }
 
   /**
-   * 코드를 잘못 넣은 것(형식·없는 방)만 연속 실패로 센다. 방을 잠가 정원 확인과 참가를 한 번에 처리하고,
-   * 다른 방에 이미 있으면 활성 참가자 유니크 제약으로 막는다
+   * 코드를 잘못 넣은 것(형식·없는 방·끝난 방)만 연속 실패로 세고, 참가에 성공해야 다시 센다.
+   * 방을 잠가 정원 확인과 참가를 한 번에 처리하고, 다른 방에 이미 있으면 활성 참가자 유니크 제약으로 막는다
    */
   async join(user: AuthUser, inviteCode: string): Promise<Room> {
     if (!INVITE_CODE_PATTERN.test(inviteCode)) {
@@ -158,7 +180,6 @@ export class RoomsService {
       await this.countFailure(user.userId);
       throw RoomErrors.notFound();
     }
-    await this.valkey.del(joinFailKey(user.userId)).catch(() => {});
     await this.expireIfOverdue(found);
     await this.releaseExpired(user.userId);
 
@@ -230,8 +251,12 @@ export class RoomsService {
       if (isDuplicateKeyError(error, ACTIVE_USER_INDEX)) {
         throw RoomErrors.alreadyJoined(await this.activeCodeOf(user.userId));
       }
+      if (error instanceof AppException && error.code === 'ROOM_NOT_FOUND') {
+        await this.countFailure(user.userId);
+      }
       throw error;
     }
+    await this.valkey.del(joinFailKey(user.userId)).catch(() => {});
 
     const room = await this.view(found.id);
     if (joined) {
@@ -241,27 +266,56 @@ export class RoomsService {
     return room;
   }
 
-  /** 30분 안에 시작하지 않은 방을 닫는다 (지연 작업과 조회 시점 양쪽에서 부른다) */
+  /**
+   * 30분 안에 시작하지 않은 방을 닫는다 (지연 작업과 조회 시점 양쪽에서 부른다).
+   * 방 상태와 참가자 비우기를 한 트랜잭션으로 처리한다. 따로 하면 그 사이에 실패했을 때
+   * 참가자가 끝난 방에 묶여 다른 방에 들어갈 수 없게 된다. 알림은 커밋한 뒤에 보낸다
+   */
   async expire(roomId: string): Promise<boolean> {
-    const [result] = await this.db
-      .update(battleRooms)
-      .set({ status: 'EXPIRED' })
-      .where(
-        and(
-          eq(battleRooms.id, roomId),
-          eq(battleRooms.status, 'WAITING'),
-          lte(battleRooms.expiresAt, new Date()),
-        ),
-      );
-    if (result.affectedRows === 0) return false;
-    // 참가자를 비우기 전에 알릴 대상을 읽어 둔다
-    const room = await this.view(roomId);
-    await this.db
-      .update(battleRoomParticipants)
-      .set({ active: false })
-      .where(eq(battleRoomParticipants.roomId, roomId));
-    await this.notify(room, 'ROOM_CLOSED', { reason: 'EXPIRED' });
+    const targets = await this.db.transaction(async (tx) => {
+      const [room] = await tx
+        .select({ hostUserId: battleRooms.hostUserId })
+        .from(battleRooms)
+        .where(
+          and(
+            eq(battleRooms.id, roomId),
+            eq(battleRooms.status, 'WAITING'),
+            lte(battleRooms.expiresAt, new Date()),
+          ),
+        )
+        .for('update');
+      if (!room) return null;
+      const active = await tx
+        .select({ userId: battleRoomParticipants.userId })
+        .from(battleRoomParticipants)
+        .where(
+          and(eq(battleRoomParticipants.roomId, roomId), eq(battleRoomParticipants.active, true)),
+        );
+      await tx.update(battleRooms).set({ status: 'EXPIRED' }).where(eq(battleRooms.id, roomId));
+      await tx
+        .update(battleRoomParticipants)
+        .set({ active: false })
+        .where(eq(battleRoomParticipants.roomId, roomId));
+      const ids = new Set(active.map((row) => row.userId));
+      if (room.hostUserId) ids.add(room.hostUserId);
+      return [...ids];
+    });
+    if (!targets) return false;
+    await this.realtime.sendToUsers(targets, 'ROOM_CLOSED', { reason: 'EXPIRED' }).catch(() => {});
     return true;
+  }
+
+  /** 지연 작업용: 서버 시계 차이로 아직 만료 시각 전이면 다시 예약한다 */
+  async expireOrReschedule(roomId: string): Promise<boolean> {
+    if (await this.expire(roomId)) return true;
+    const [room] = await this.db
+      .select({ status: battleRooms.status, expiresAt: battleRooms.expiresAt })
+      .from(battleRooms)
+      .where(eq(battleRooms.id, roomId));
+    if (room?.status === 'WAITING' && room.expiresAt > new Date()) {
+      await this.queue.scheduleExpiry(roomId, room.expiresAt, true);
+    }
+    return false;
   }
 
   async view(roomId: string): Promise<Room> {
@@ -312,6 +366,7 @@ export class RoomsService {
       hostUserId: string;
       classId: string | null;
       hostParticipates: boolean;
+      beforeInsert?: (tx: Transaction) => Promise<void>;
     },
   ): Promise<string> {
     const roomId = newId();
@@ -320,6 +375,7 @@ export class RoomsService {
     for (let attempt = 0; ; attempt++) {
       try {
         await this.db.transaction(async (tx) => {
+          await options.beforeInsert?.(tx);
           await tx.insert(battleRooms).values({
             id: roomId,
             inviteCode: generateCode(),
@@ -346,7 +402,10 @@ export class RoomsService {
         });
         break;
       } catch (error) {
-        if (attempt < 3 && isDuplicateKeyError(error, ACTIVE_CODE_INDEX)) continue;
+        if (isDuplicateKeyError(error, ACTIVE_CODE_INDEX)) {
+          if (attempt < 4) continue;
+          throw RoomErrors.codeUnavailable();
+        }
         if (isDuplicateKeyError(error, ACTIVE_USER_INDEX)) {
           throw RoomErrors.alreadyJoined(await this.activeCodeOf(options.hostUserId));
         }
@@ -373,8 +432,36 @@ export class RoomsService {
     if (room.status === 'WAITING' && room.expiresAt <= new Date()) await this.expire(room.id);
   }
 
-  /** 지연 작업이 늦어져도 만료된 방이 사용자를 붙잡지 않게 참가 전에 정리한다 */
+  /**
+   * 지연 작업이 늦어져도 만료된 방이 사용자를 붙잡지 않게 참가 전에 정리한다.
+   * 이미 끝난 방에 활성으로 남은 참가 기록도 풀어 준다
+   */
   private async releaseExpired(userId: string): Promise<void> {
+    const ended = await this.db
+      .select({ roomId: battleRoomParticipants.roomId })
+      .from(battleRoomParticipants)
+      .innerJoin(battleRooms, eq(battleRooms.id, battleRoomParticipants.roomId))
+      .where(
+        and(
+          eq(battleRoomParticipants.userId, userId),
+          eq(battleRoomParticipants.active, true),
+          inArray(battleRooms.status, ['FINISHED', 'EXPIRED']),
+        ),
+      );
+    if (ended.length > 0) {
+      await this.db
+        .update(battleRoomParticipants)
+        .set({ active: false })
+        .where(
+          and(
+            eq(battleRoomParticipants.userId, userId),
+            inArray(
+              battleRoomParticipants.roomId,
+              ended.map((row) => row.roomId),
+            ),
+          ),
+        );
+    }
     const overdue = await this.db
       .select({ id: battleRooms.id })
       .from(battleRoomParticipants)

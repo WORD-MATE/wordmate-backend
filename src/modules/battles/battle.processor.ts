@@ -11,6 +11,6 @@ export class BattleProcessor extends WorkerHost {
 
   async process(job: Job<{ roomId: string }>): Promise<boolean> {
     if (job.name !== BattleJob.expireRoom) throw new Error(`알 수 없는 대결 작업: ${job.name}`);
-    return this.rooms.expire(job.data.roomId);
+    return this.rooms.expireOrReschedule(job.data.roomId);
   }
 }

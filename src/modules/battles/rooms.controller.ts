@@ -34,13 +34,21 @@ export class RoomsController {
 
   @ApiOperation({
     summary: '대결방 조회 (초대 링크)',
-    description:
-      '상태에 따라 대기실·진행·결과 화면으로 분기. 그 코드로 진행 중인 방이 없으면 가장 최근 방',
+    description: `상태에 따라 대기실·진행·결과 화면으로 분기. 그 코드로 진행 중인 방이 없으면 가장 최근 방. 잘못된 코드는 참가와 같이 연속 실패로 세고 ${JOIN_FAIL_LIMIT}번이면 ${JOIN_FAIL_WINDOW_SECONDS}초 제한`,
   })
   @Get(':inviteCode')
   @ZodResponse(Room)
-  get(@Param('inviteCode') inviteCode: string) {
-    return this.rooms.get(inviteCode);
+  async get(
+    @Param('inviteCode') inviteCode: string,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const user = currentUser(request);
+    if (await this.rooms.isCodeBlocked(user.userId)) {
+      reply.header('Retry-After', String(JOIN_FAIL_WINDOW_SECONDS));
+      throw RoomErrors.attemptsExceeded();
+    }
+    return this.rooms.get(user, inviteCode);
   }
 
   @ApiOperation({
@@ -57,7 +65,7 @@ export class RoomsController {
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const user = currentUser(request);
-    if (await this.rooms.isJoinBlocked(user.userId)) {
+    if (await this.rooms.isCodeBlocked(user.userId)) {
       reply.header('Retry-After', String(JOIN_FAIL_WINDOW_SECONDS));
       throw RoomErrors.attemptsExceeded();
     }
