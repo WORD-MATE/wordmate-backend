@@ -367,6 +367,8 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 - 점수는 `XP × 10^10 + (10^10 - 1 - 도달 시각 초)`입니다. XP가 같으면 먼저 그 점수에 도달한 사용자가 위에 옵니다. 여러 키를 Lua 스크립트 하나로 원자적으로 갱신합니다.
 - 교사는 넣지 않고, 학년·반이 없는 학생은 학교 범위에만 들어갑니다. 학년·반이 바뀌면 그 뒤에 얻은 XP부터 새 학년·반에 쌓입니다.
 - 랭킹 비공개 사용자도 ZSET에는 넣고(본인 순위 계산용), 목록에서 거릅니다.
+- `PATCH /users/me/privacy`(학생만)는 공개 설정과 함께 `ranking_onboarded`를 true로 바꿉니다. 랭킹 첫 진입 안내와 설정 화면이 같이 씁니다. ZSET은 건드리지 않습니다.
+- `GET /users/me/xp-history`(학생만)는 XP 원장을 최신순으로 보여줍니다. 하루 상한에 걸려 0이 된 지급도 `blockedReason`과 함께 보여주고, 관리자 조정은 음수입니다.
 - Valkey가 날아가면 `pnpm ranking:rebuild`(서버는 `docker compose run --rm migrate dist/ranking-rebuild.js`)로 원장에서 다시 만듭니다. 학년·반은 지금 값으로 넣습니다.
 
 ## 정리 작업
