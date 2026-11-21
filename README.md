@@ -466,6 +466,16 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 - `GET /battles/history` (학생): 최신순 커서, 요약 `{ total, winRate, avgAccuracy }`. 승률은 1위 횟수 / 완주한 대결 수, 평균 정답률은 완주한 대결만(둘 다 0~1, 완주한 대결이 없으면 `null`). 기록은 지우지 않습니다.
 - `POST /battles/{battleId}/rematch`: 같은 설정으로 새 방(`source_battle_id`), 요청한 사람이 방장. 함께 한 대결이면 다른 사람의 내 단어팩도 그대로 씁니다(지워졌으면 404). 교사용 방은 진행한 교사만 교사용 반 방으로 만듭니다. 초대 알림은 알림 기능에서 붙입니다.
 
+### 빠른 1:1 매칭
+
+- `POST /battles/matchmaking` (학생, 202 `{ queuedAt, timeoutAt }`): WebSocket에 접속해 있어야 합니다(409 `MATCH_WS_NOT_CONNECTED`). 다른 방에 있으면 409 `ROOM_ALREADY_JOINED`, 이미 기다리는 중이면 409 `MATCH_ALREADY_QUEUED`.
+- 대기열은 Valkey(`mm:queue` ZSET 점수 = 누적 XP, `mm:queued` 대기 시각)입니다. 들어오는 순간 기다리는 사람 가운데 누적 XP가 가장 가까운 상대(같으면 먼저 기다린 사람)와 짝짓고, 없으면 기다립니다. 차단 관계는 차단 기능이 생기면 제외합니다.
+- 대기열에서 빼기와 성사를 Lua 스크립트 하나에서 처리해, 취소와 성사가 겹치면 먼저 도착한 쪽만 이깁니다.
+- 성사: 먼저 기다린 사람이 방장인 `QUICK_MATCH` 방(추천순 맨 앞 기본 단어팩, 한→영 4지선다, 10문항, 10초, 2명)을 만들고 두 사람에게 `MATCH_FOUND { roomId, inviteCode }`를 보낸 뒤 바로 카운트다운을 시작합니다. 기다리던 상대의 연결이 끊겼거나 그사이 다른 방에 들어갔으면 상대를 빼고 다음 대기자를 봅니다.
+- 60초 동안 상대가 없으면 지연 작업이 빼고 `MATCH_TIMEOUT {}`을 보냅니다. 작업이 유실돼도 만료된 대기자는 짝지을 때 걸러집니다.
+- `DELETE /battles/matchmaking` (204): 이미 성사됐으면 409 `MATCH_ALREADY_FOUND`(`detail = { roomId, inviteCode }`), 기다리는 매칭이 없으면 404 `MATCH_NOT_QUEUED`. 방을 만드는 중이면 결과가 나올 때까지 잠깐(최대 3초) 기다립니다. 남아 있는 성사 기록은 그 방에 아직 있을 때만 409로 답하고, 아니면 404입니다.
+- 연결이 모두 끊기거나(다른 서버에 연결이 남아 있으면 그대로) 직접 방을 만들거나 들어가면 대기열에서 뺍니다. 성사 처리 중에 다시 요청하면 409 `MATCH_ALREADY_QUEUED`, 만료 작업이 유실돼 남은 자기 대기는 새로 줄 서면 덮습니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.

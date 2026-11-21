@@ -9,6 +9,7 @@ export const BattleJob = {
   startQuestion: 'start-question',
   endQuestion: 'end-question',
   disconnectGrace: 'disconnect-grace',
+  matchTimeout: 'match-timeout',
 } as const;
 
 // 실패한 작업이 남아 있으면 같은 id로 다시 예약해도 무시돼 대결이 멈추므로 실패해도 지운다
@@ -99,6 +100,15 @@ export class BattleQueue {
         delay: delayUntil(at),
         jobId: `disconnect-grace-${roomId}-${userId}-${disconnectedAt.getTime()}`,
       },
+    );
+  }
+
+  /** 빠른 매칭 대기 만료. 대기 시각을 id에 넣어 다시 줄을 선 경우와 구분한다 */
+  async scheduleMatchTimeout(userId: string, queuedAt: number, at: Date): Promise<void> {
+    await this.queue.add(
+      BattleJob.matchTimeout,
+      { userId, queuedAt },
+      { ...PLAY_JOB, delay: delayUntil(at), jobId: `match-timeout-${userId}-${queuedAt}` },
     );
   }
 }
