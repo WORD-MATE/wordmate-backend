@@ -515,18 +515,22 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 ### 실행
 
 1. 개발 서버에서 계정과 토큰을 만듭니다(토큰은 30분 유효, 파일은 소유자만 읽을 수 있고 화면에 출력하지 않습니다).
+
    ```bash
    docker exec <앱 컨테이너> node dist/load-users.js create 200 /tmp/tokens.json --confirm-dev
    docker cp <앱 컨테이너>:/tmp/tokens.json ./tokens.json
    ```
 2. 서버와 다른 PC(같은 학교 네트워크)에서 k6를 돌립니다. 같은 서버에서 돌리면 k6가 CPU를 나눠 써서 결과가 흐려집니다.
+
    ```bash
    k6 run -e BASE_URL=https://<개발 서버> -e TOKENS=tokens.json -e SCENARIO=match -e VUS=200 load/battle.js
    k6 run -e BASE_URL=https://<개발 서버> -e TOKENS=tokens.json -e SCENARIO=room -e ROOMS=6 load/battle.js
    ```
+
    `WS_URL`로 WebSocket 주소를, `CLIENT_VERSION`으로 앱 버전 헤더를 바꿀 수 있습니다(기본 `99.0.0`). 토큰이 만료되면 `tokens` 명령으로 다시 발급합니다.
 3. 도는 동안 서버 지표를 남깁니다: `docker stats`(CPU·메모리), `valkey-cli info stats`·`info memory`, MySQL `SHOW GLOBAL STATUS LIKE 'Threads_running'`·느린 쿼리 로그, 앱 로그의 에러.
 4. 끝나면 계정과 대결·XP·랭킹 기록을 지웁니다.
+
    ```bash
    docker exec <앱 컨테이너> node dist/load-users.js cleanup --confirm-dev
    ```
