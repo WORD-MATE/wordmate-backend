@@ -24,7 +24,15 @@ local user, xp, now, timeout = ARGV[1], tonumber(ARGV[2]), tonumber(ARGV[3]), to
 local prefix, ttl, limit = ARGV[5], ARGV[6], tonumber(ARGV[7])
 local blocked = {}
 for i = 8, #ARGV do blocked[ARGV[i]] = true end
-if redis.call('ZSCORE', queue, user) then return {'ALREADY'} end
+-- 방을 만드는 중인 성사가 있으면 그 결과를 기다린다 (두 번 누르거나 두 기기에서 요청한 경우)
+if redis.call('GET', prefix .. user) == '${PENDING}' then return {'ALREADY'} end
+if redis.call('ZSCORE', queue, user) then
+  -- 만료 작업이 유실돼 남은 자기 대기는 지우고 새로 줄 선다
+  local mine = tonumber(redis.call('HGET', queued, user) or '0')
+  if mine + timeout > now then return {'ALREADY'} end
+  redis.call('ZREM', queue, user)
+  redis.call('HDEL', queued, user)
+end
 local best, bestGap, bestAt
 local function consider(list)
   for i = 1, #list, 2 do

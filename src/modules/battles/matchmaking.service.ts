@@ -22,6 +22,7 @@ export const QUICK_MATCH_SETTINGS = {
 /** 취소 요청이 방을 만드는 중인 성사와 겹치면 결과가 나올 때까지 잠깐 기다린다 */
 const PENDING_WAIT_MS = 3000;
 const PENDING_POLL_MS = 100;
+const PAIR_ATTEMPTS = 3;
 
 export const MatchErrors = {
   wsRequired: () =>
@@ -65,8 +66,10 @@ export class MatchmakingService implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    // 결과를 받을 연결이 없으면 대기열에 남아 있을 이유가 없다
-    this.realtime.onUserGone((userId) => this.matchQueue.remove(userId));
+    // 결과를 받을 연결이 없으면 대기열에 남아 있을 이유가 없다 (다른 서버에 연결이 남아 있으면 그대로)
+    this.realtime.onUserGone(async (userId) => {
+      if (!(await this.realtime.isOnline(userId))) await this.matchQueue.remove(userId);
+    });
   }
 
   /**
@@ -79,34 +82,47 @@ export class MatchmakingService implements OnModuleInit {
     const pack = await this.defaultPack();
     if (!pack) throw MatchErrors.unavailable();
     const xp = await this.xpOf(user.userId);
+    const excluded = await this.excluded(user.userId);
     const now = Date.now();
-    const result = await this.matchQueue.enqueue(
-      user.userId,
-      xp,
-      now,
-      await this.excluded(user.userId),
-    );
-    if (result.kind === 'ALREADY') throw MatchErrors.alreadyQueued();
     const ticket = {
       queuedAt: new Date(now).toISOString(),
       timeoutAt: new Date(now + MATCH_TIMEOUT_MS).toISOString(),
     };
-    if (result.kind === 'QUEUED') {
-      await this.scheduleTimeout(user.userId, now);
-      return ticket;
+    // 짝지은 상대를 쓸 수 없으면(연결이 끊겼거나 그사이 다른 방에 들어감) 빼고 다음 대기자를 본다
+    for (let attempt = 0; attempt < PAIR_ATTEMPTS; attempt++) {
+      const result = await this.matchQueue.enqueue(user.userId, xp, now, excluded);
+      if (result.kind === 'ALREADY') throw MatchErrors.alreadyQueued();
+      if (result.kind === 'QUEUED') {
+        await this.scheduleTimeout(user.userId, now);
+        return ticket;
+      }
+      if (await this.pair(result.opponentId, result.opponentQueuedAt, user.userId, pack)) {
+        return ticket;
+      }
     }
-    await this.pair(result.opponentId, result.opponentQueuedAt, user.userId, now, pack);
+    // 계속 실패하면 대기만 한다 (다음에 들어오는 사람과 짝지어진다)
+    await this.matchQueue.requeue(user.userId, xp, now);
+    await this.scheduleTimeout(user.userId, now);
     return ticket;
   }
 
-  /** 대기 중이면 뺀다. 성사와 겹치면 먼저 도착한 쪽 기준: 이미 성사됐으면 409 MATCH_ALREADY_FOUND */
+  /**
+   * 대기 중이면 뺀다. 성사와 겹치면 먼저 도착한 쪽 기준: 이미 성사됐으면 409 MATCH_ALREADY_FOUND.
+   * 남아 있는 성사 기록은 그 방에 아직 있을 때만 믿는다 (방이 끝났거나 성사 처리가 중간에 끊긴 경우)
+   */
   async cancel(user: AuthUser): Promise<void> {
     for (let waited = 0; ; waited += PENDING_POLL_MS) {
       const result = await this.matchQueue.cancel(user.userId);
       if (result.kind === 'CANCELLED') return;
       if (result.kind === 'NONE') throw MatchErrors.notQueued();
-      if (result.kind === 'FOUND') throw MatchErrors.alreadyFound(result);
-      if (waited >= PENDING_WAIT_MS) throw MatchErrors.alreadyFound(null);
+      if (result.kind === 'FOUND' || waited >= PENDING_WAIT_MS) {
+        const room = await this.rooms.activeRoomOf(user.userId);
+        if (room && (result.kind !== 'FOUND' || room.roomId === result.roomId)) {
+          throw MatchErrors.alreadyFound(room);
+        }
+        await this.matchQueue.clearFound([user.userId]);
+        throw MatchErrors.notQueued();
+      }
       await new Promise((resolve) => setTimeout(resolve, PENDING_POLL_MS));
     }
   }
@@ -120,15 +136,18 @@ export class MatchmakingService implements OnModuleInit {
 
   /**
    * 방을 만들고 두 사람에게 MATCH_FOUND를 보낸 뒤 바로 카운트다운을 시작한다.
-   * 기다리던 상대가 그사이 다른 방에 들어갔으면 상대는 빼고 요청한 사람을 대기열에 넣는다
+   * 기다리던 상대의 연결이 끊겼거나 그사이 다른 방에 들어갔으면 상대를 빼고 false (요청한 사람은 다시 찾는다)
    */
   private async pair(
     hostId: string,
     hostQueuedAt: number,
     guestId: string,
-    guestQueuedAt: number,
     pack: NonNullable<Awaited<ReturnType<MatchmakingService['defaultPack']>>>,
-  ): Promise<void> {
+  ): Promise<boolean> {
+    if (!(await this.realtime.isOnline(hostId))) {
+      await this.matchQueue.clearFound([hostId, guestId]);
+      return false;
+    }
     let room: { roomId: string; inviteCode: string };
     try {
       const created = await this.rooms.createQuickMatch(hostId, guestId, pack, {
@@ -142,22 +161,24 @@ export class MatchmakingService implements OnModuleInit {
         () => true,
       );
       if (hostBusy) {
-        await this.matchQueue.clearFound([hostId]);
-        await this.matchQueue.requeue(guestId, await this.xpOf(guestId), guestQueuedAt);
-        await this.scheduleTimeout(guestId, guestQueuedAt);
-        return;
+        await this.matchQueue.clearFound([hostId, guestId]);
+        return false;
       }
+      // 방을 만들다 실패하면 기다리던 상대는 원래 대기 시각으로 되돌리고 요청한 사람에게 에러를 돌려준다
       await this.matchQueue.requeue(hostId, await this.xpOf(hostId), hostQueuedAt);
+      await this.scheduleTimeout(hostId, hostQueuedAt);
       await this.matchQueue.clearFound([guestId]);
       throw error;
     }
-    await this.matchQueue.found([hostId, guestId], room);
+    // 기록에 실패해도 알림은 보낸다 (취소 요청은 방에 들어가 있는지로 다시 확인한다)
+    await this.matchQueue.found([hostId, guestId], room).catch(() => {});
     await this.realtime.sendToUsers([hostId, guestId], 'MATCH_FOUND', room).catch(() => {});
     await this.lobby
       .start(hostId, room.roomId)
       .catch((error: unknown) =>
         this.logger.warn(`빠른 매칭 시작 실패 (${room.roomId}): ${String(error)}`),
       );
+    return true;
   }
 
   /** 추천순으로 가장 앞에 있는 기본 단어팩 (단어 10개 이상) */

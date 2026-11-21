@@ -141,7 +141,21 @@ export class RoomsService {
       guests: [guestUserId],
       sourceBattleId: null,
     });
+    await this.leaveMatchQueue(hostUserId);
+    await this.leaveMatchQueue(guestUserId);
     return this.view(roomId);
+  }
+
+  /** 지금 들어가 있는 방 (끝난 방은 참가가 풀려 있어 나오지 않는다) */
+  async activeRoomOf(userId: string): Promise<{ roomId: string; inviteCode: string } | null> {
+    const [row] = await this.db
+      .select({ roomId: battleRooms.id, inviteCode: battleRooms.inviteCode })
+      .from(battleRoomParticipants)
+      .innerJoin(battleRooms, eq(battleRooms.id, battleRoomParticipants.roomId))
+      .where(
+        and(eq(battleRoomParticipants.userId, userId), eq(battleRoomParticipants.active, true)),
+      );
+    return row ?? null;
   }
 
   /** 다른 방에 있으면 409 ROOM_ALREADY_JOINED (끝났거나 만료된 방은 먼저 풀어 준다) */
