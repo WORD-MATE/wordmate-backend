@@ -1,5 +1,5 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AccessTokenService } from '../src/common/auth/access-token.service.js';
 import type { AuthUser } from '../src/common/auth/auth-user.js';
@@ -110,6 +110,7 @@ describe('대결방 생성·조회·참가', () => {
       );
     }
     await db.delete(battleRoomParticipants).where(inArray(battleRoomParticipants.userId, userIds));
+    await db.delete(teacherClasses).where(inArray(teacherClasses.teacherId, userIds));
     const owned = await db
       .select({ id: packs.id })
       .from(packs)
@@ -235,6 +236,27 @@ describe('대결방 생성·조회·참가', () => {
     const typo = await makeUser();
     for (let i = 0; i < 4; i++) await join(typo, 'NOPE01');
     expect((await join(typo, room.inviteCode)).statusCode).toBe(200);
+    // 참가에 성공해서 다시 세므로, 4번 더 틀려도 막히지 않는다 (초기화가 안 됐다면 8번째부터 429)
+    for (let i = 0; i < 4; i++) expect((await join(typo, 'NOPE01')).statusCode).toBe(404);
+    expect((await join(typo, room.inviteCode)).statusCode).toBe(200);
+
+    // 아는 옛날 코드(끝난 방)를 섞어 넣어도 초기화되지 않는다
+    const prober = await makeUser();
+    const ended = await createRoom(await makeUser());
+    await db
+      .update(battleRooms)
+      .set({ status: 'FINISHED' })
+      .where(eq(battleRooms.id, ended.roomId));
+    for (let i = 0; i < 2; i++) await join(prober, 'NOPE03');
+    expect((await join(prober, ended.inviteCode)).json().code).toBe('ROOM_NOT_FOUND');
+    for (let i = 0; i < 2; i++) await join(prober, 'NOPE03');
+    expect((await join(prober, room.inviteCode)).statusCode).toBe(429);
+
+    // 조회로 코드를 찔러봐도 같이 센다
+    const peeker = await makeUser();
+    for (let i = 0; i < 5; i++) await call(peeker, 'GET', '/battles/rooms/NOPE04');
+    expect((await call(peeker, 'GET', `/battles/rooms/${room.inviteCode}`)).statusCode).toBe(429);
+    expect((await join(peeker, room.inviteCode)).statusCode).toBe(429);
 
     const careless = await makeUser();
     for (let i = 0; i < 4; i++) expect((await join(careless, 'NOPE02')).statusCode).toBe(404);
@@ -283,9 +305,37 @@ describe('대결방 생성·조회·참가', () => {
       participants: [],
     });
     expect(sent).toHaveBeenCalledWith([lateHost.userId], 'ROOM_CLOSED', { reason: 'EXPIRED' });
-    // 만료된 방은 더 이상 사용자를 붙잡지 않는다
-    await createRoom(lateHost);
     expect((await join(await makeUser(), stale.inviteCode)).json().code).toBe('ROOM_NOT_FOUND');
+  });
+
+  it('만료되거나 끝난 방은 조회하지 않아도 사용자를 붙잡지 않는다', async () => {
+    // 만료 시각이 지났는데 지연 작업이 아직 안 돈 방: 새 방을 만들 때 정리된다
+    const overdueHost = await makeUser();
+    const overdue = await createRoom(overdueHost);
+    await db
+      .update(battleRooms)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(battleRooms.id, overdue.roomId));
+    await createRoom(overdueHost);
+    const [closed] = await db
+      .select({ status: battleRooms.status })
+      .from(battleRooms)
+      .where(eq(battleRooms.id, overdue.roomId));
+    expect(closed?.status).toBe('EXPIRED');
+
+    // 방은 끝났는데 참가 기록만 활성으로 남은 경우(예전 실패 등)도 풀어 준다
+    const stuckHost = await makeUser();
+    const stuck = await createRoom(stuckHost);
+    await db.update(battleRooms).set({ status: 'EXPIRED' }).where(eq(battleRooms.id, stuck.roomId));
+    await createRoom(stuckHost);
+    const stuckGuest = await makeUser();
+    const another = await createRoom(await makeUser());
+    await db.insert(battleRoomParticipants).values({
+      roomId: stuck.roomId,
+      userId: stuckGuest.userId,
+      joinedAt: new Date(),
+    });
+    expect((await join(stuckGuest, another.inviteCode)).statusCode).toBe(200);
   });
 
   it('교사용 반 방: 교사는 진행자, 그 반 학생만 들어온다', async () => {
@@ -321,7 +371,17 @@ describe('대결방 생성·조회·참가', () => {
     );
     expect(second.json().code).toBe('ROOM_ALREADY_JOINED');
 
-    const [otherClass] = await db.select().from(classes).where(eq(classes.grade, 3)).limit(1);
+    // 동시에 두 번 만들어도 진행 중인 반 방은 하나
+    const busy = await makeUser({ role: 'TEACHER' });
+    await db.insert(teacherClasses).values({ teacherId: busy.userId, classId });
+    const busyPack = await createPack(busy);
+    const pair = await Promise.all([
+      call(busy, 'POST', `/classes/${classId}/rooms`, settings(busyPack)),
+      call(busy, 'POST', `/classes/${classId}/rooms`, settings(busyPack)),
+    ]);
+    expect(pair.map((r) => r.statusCode).sort()).toEqual([201, 409]);
+
+    const [otherClass] = await db.select().from(classes).where(ne(classes.id, classId)).limit(1);
     const notMine = await call(
       teacher,
       'POST',
