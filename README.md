@@ -403,6 +403,16 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 - 티켓 확인 전에 도착한 메시지는 모아 두었다가 처리하고, 한 연결의 메시지는 받은 순서대로 하나씩 처리합니다.
 - 서버가 30초마다 ping을 보내고 다음 ping까지 pong이 없으면 끊습니다. 접속 상태는 `ws:online:{userId}` 해시에 인스턴스별 연결 수로 남습니다(90초, ping마다 연장). 폰·웹처럼 여러 인스턴스에 붙은 사용자는 한쪽이 끊겨도 접속 중으로 남습니다.
 
+## 대결방
+
+- 대기 중인 방은 MySQL(`battle_rooms`, `battle_room_participants`)에 둡니다. 참가는 방 행을 잠가(`FOR UPDATE`) 정원 확인과 참가를 한 번에 처리합니다.
+- 사용자당 활성 방 하나는 참가자의 생성 컬럼 `active_user = IF(active, user_id, NULL)` 유니크로 막습니다. 생성·참가·매칭·다시 하기가 모두 같은 제약을 씁니다. 초대 코드(영문 대문자·숫자 6자리)는 진행 중인 방끼리만 겹치지 않게 `active_code` 유니크로 막습니다.
+- 30분 안에 시작하지 않은 방은 BullMQ `battle` 큐의 지연 작업(`expire-room`)으로 닫고 `ROOM_CLOSED { reason: EXPIRED }`를 보냅니다. 작업이 늦어져도 조회·참가·생성 때 만료 시각을 보고 닫습니다.
+- 참가하면 방에 있던 사람(교사용 방은 진행자 포함)에게 `PARTICIPANT_JOINED`를 보냅니다.
+- 초대 코드를 연달아 5번 잘못 넣으면(형식 오류·없는 방) 1분 동안 429 `ROOM_CODE_ATTEMPTS_EXCEEDED`(`Retry-After: 60`)입니다. 성공하면 다시 셉니다.
+- 교사용 반 방(`POST /classes/{classId}/rooms`)의 교사는 진행자라 참가자·인원에 들어가지 않고, 진행 중인 반 방은 교사당 하나입니다. 그 반 학생만 들어올 수 있습니다.
+- `Room.battleId`는 대결이 끝난 뒤 결과 조회용으로 채웁니다(대결 진행 작업에서).
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.
