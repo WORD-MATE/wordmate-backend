@@ -1,5 +1,5 @@
 // 실시간 대결 부하 테스트 (k6). 사용법은 README의 "부하 테스트" 참고.
-//   k6 run -e BASE_URL=https://... -e TOKENS=tokens.json -e SCENARIO=match load/battle.js
+//   k6 run -e BASE_URL=https://... -e TOKENS=$PWD/tokens.json -e SCENARIO=match load/battle.js
 //   SCENARIO=match: 빠른 1:1 매칭으로 짝지어 끝까지 (VUS명, ITERATIONS판씩)
 //   SCENARIO=room : ROOM_SIZE명씩 방을 만들어 동시에 시작 (반 전체 대결)
 import { check, fail, sleep } from 'k6';
@@ -19,21 +19,27 @@ const THINK_MIN_MS = 500;
 const THINK_MAX_MS = 4000;
 const BATTLE_TIMEOUT_MS = 5 * 60 * 1000;
 const START_FALLBACK_MS = 60 * 1000;
+// 앱 버전 검사를 통과하도록 웹 클라이언트로 보낸다 (최소 버전보다 낮으면 426)
+const CLIENT_VERSION = __ENV.CLIENT_VERSION || '99.0.0';
 
-const tokens = new SharedArray('tokens', () => JSON.parse(open(__ENV.TOKENS || 'tokens.json')));
+// 상대 경로는 이 스크립트(load/) 기준이므로 절대 경로를 넘기는 것이 안전하다
+const tokens = new SharedArray('tokens', () => JSON.parse(open(__ENV.TOKENS || '../tokens.json')));
 
 const matchWait = new Trend('match_wait_ms', true);
 const answerAck = new Trend('answer_ack_ms', true);
-const questionDelay = new Trend('question_delivery_ms', true);
+const questionDelay = new Trend('question_start_delay_ms', true);
 const battlesFinished = new Counter('battles_finished');
 const matchTimeouts = new Counter('match_timeouts');
 const serverErrors = new Counter('server_errors');
 
 const thresholds = {
   answer_ack_ms: ['p(95)<300'],
-  question_delivery_ms: ['p(95)<500'],
+  question_start_delay_ms: ['p(95)<500'],
   server_errors: ['count<10'],
   http_req_failed: ['rate<0.01'],
+  // 한 판도 끝나지 않으면(WebSocket 경로가 막힌 경우 등) 지연 지표가 비어 통과해 버리므로 막는다
+  battles_finished: ['count>0'],
+  checks: ['rate>0.99'],
 };
 
 export const options =
@@ -62,15 +68,13 @@ export const options =
         thresholds: { ...thresholds, match_wait_ms: ['p(95)<5000'] },
       };
 
-// 앱 버전 검사를 통과하도록 웹 클라이언트로 보낸다 (최소 버전보다 낮으면 426)
-const CLIENT_VERSION = __ENV.CLIENT_VERSION || '99.0.0';
-
-const auth = (token) => ({
+/** 본문이 없는 요청에 Content-Type을 붙이면 서버(Fastify)가 400으로 거절하므로 본문이 있을 때만 붙인다 */
+const params = (token, hasBody = false) => ({
   headers: {
     Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
     'X-Client-Platform': 'WEB',
     'X-Client-Version': CLIENT_VERSION,
+    ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
   },
 });
 
@@ -80,7 +84,7 @@ function tokenOf(index) {
 }
 
 function ticketUrl(token) {
-  const res = http.post(`${BASE_URL}/realtime/ticket`, null, auth(token));
+  const res = http.post(`${BASE_URL}/realtime/ticket`, null, params(token));
   if (!check(res, { 'ticket 200': (r) => r.status === 200 })) return null;
   const body = res.json();
   return `${__ENV.WS_URL || body.wsUrl}?ticket=${body.ticket}`;
@@ -94,14 +98,22 @@ function play(token, { onOpen, onMessage }) {
   const url = ticketUrl(token);
   if (!url) return;
   const sentAt = {};
+  const seen = new Set();
+  let timeLimitMs = 10_000;
   ws.connect(url, {}, (socket) => {
     const send = (type, payload) => socket.send(JSON.stringify({ type, requestId: null, payload }));
     socket.on('open', () => onOpen(send, socket));
     socket.on('message', (raw) => {
       const message = JSON.parse(raw);
       const { type, payload } = message;
-      if (type === 'QUESTION_STARTED') {
-        questionDelay.add(Date.now() - Date.parse(message.serverTime));
+      if (type === 'ROOM_STATE') {
+        timeLimitMs = payload.room.settings.timeLimitSec * 1000;
+      } else if (type === 'QUESTION_STARTED') {
+        // 구독이 카운트다운보다 늦으면 같은 문항을 이어 받기로 한 번 더 받으므로 한 번만 답한다
+        if (seen.has(payload.questionIndex)) return;
+        seen.add(payload.questionIndex);
+        // 서버가 문항을 시작한 시각(마감 - 제한 시간)부터 받기까지. 작업 지연까지 포함된다 (시계가 맞아야 의미 있음)
+        questionDelay.add(Date.now() - (Date.parse(payload.deadlineAt) - timeLimitMs));
         const think = THINK_MIN_MS + Math.random() * (THINK_MAX_MS - THINK_MIN_MS);
         socket.setTimeout(() => {
           sentAt[payload.questionIndex] = Date.now();
@@ -114,7 +126,7 @@ function play(token, { onOpen, onMessage }) {
         const at = sentAt[payload.questionIndex];
         if (at) answerAck.add(Date.now() - at);
       } else if (type === 'BATTLE_FINISHED') {
-        const res = http.get(`${BASE_URL}/battles/${payload.battleId}/result`, auth(token));
+        const res = http.get(`${BASE_URL}/battles/${payload.battleId}/result`, params(token));
         check(res, { 'result 200': (r) => r.status === 200 });
         battlesFinished.add(1);
         socket.close();
@@ -136,7 +148,7 @@ function quickMatch() {
   play(token, {
     onOpen: () => {
       queuedAt = Date.now();
-      const res = http.post(`${BASE_URL}/battles/matchmaking`, null, auth(token));
+      const res = http.post(`${BASE_URL}/battles/matchmaking`, null, params(token));
       check(res, { 'matchmaking 202': (r) => r.status === 202 });
     },
     onMessage: ({ type, payload }, send, socket) => {
@@ -156,7 +168,7 @@ function quickMatch() {
 export function setup() {
   if (SCENARIO !== 'room') return {};
   const any = tokenOf(0);
-  const packs = http.get(`${BASE_URL}/packs?type=DEFAULT&size=50`, auth(any)).json();
+  const packs = http.get(`${BASE_URL}/packs?type=DEFAULT&size=50`, params(any)).json();
   const pack = (packs.items || []).find((p) => p.wordCount >= 10);
   if (!pack) fail('단어 10개 이상인 기본 단어팩이 없습니다');
   const rooms = [];
@@ -170,9 +182,11 @@ export function setup() {
         timeLimitSec: 10,
         maxParticipants: ROOM_SIZE,
       }),
-      auth(tokenOf(r * ROOM_SIZE)),
+      params(tokenOf(r * ROOM_SIZE), true),
     );
-    if (res.status !== 201) fail(`방 만들기 실패 (${res.status} ${res.body})`);
+    if (res.status !== 201) {
+      fail(`방 만들기 실패 (${res.status} ${res.body}). 지난 실행이 남았으면 cleanup 뒤 다시 실행`);
+    }
     rooms.push(res.json());
   }
   return { rooms };
@@ -184,11 +198,12 @@ function classRoom(data) {
   const isHost = index % ROOM_SIZE === 0;
   const token = tokenOf(index);
   if (!isHost) {
-    const res = http.post(`${BASE_URL}/battles/rooms/${room.inviteCode}/join`, null, auth(token));
-    check(res, { 'join 200': (r) => r.status === 200 });
+    const res = http.post(`${BASE_URL}/battles/rooms/${room.inviteCode}/join`, null, params(token));
+    if (!check(res, { 'join 200': (r) => r.status === 200 })) return;
   }
   let started = false;
-  let joined = 0;
+  // 구독 때 받은 참가자와 들어왔다는 알림이 겹칠 수 있으므로 사용자 id로 센다
+  const joined = new Set();
   const start = (send) => {
     if (started) return;
     started = true;
@@ -202,10 +217,12 @@ function classRoom(data) {
     },
     onMessage: ({ type, payload }, send) => {
       if (!isHost || started) return;
-      if (type === 'ROOM_STATE') joined = payload.room.participants.length;
-      if (type === 'PARTICIPANT_JOINED') joined += 1;
+      if (type === 'ROOM_STATE') {
+        for (const p of payload.room.participants) joined.add(p.user.userId);
+      }
+      if (type === 'PARTICIPANT_JOINED') joined.add(payload.participant.user.userId);
       // 모두 들어오면 방장이 시작한다
-      if (joined >= ROOM_SIZE) start(send);
+      if (joined.size >= ROOM_SIZE) start(send);
     },
   });
 }
