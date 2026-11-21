@@ -35,3 +35,10 @@ export const SubmitAgreements = z.object({
 export const NextStepResponse = z.object({ nextStep: z.enum(NEXT_STEP) }).meta({
   id: 'NextStepResponse',
 });
+
+export const UpdatePrivacy = z.object({ rankingPublic: z.boolean() }).meta({ id: 'UpdatePrivacy' });
+
+export const PrivacySettings = z
+  .object({ rankingPublic: z.boolean(), rankingOnboarded: z.boolean() })
+  .meta({ id: 'PrivacySettings' });
+export type PrivacySettings = z.infer<typeof PrivacySettings>;
