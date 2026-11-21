@@ -67,6 +67,7 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RealtimeService.name);
   private readonly nodeId = randomUUID();
   private readonly handlers = new Map<string, Handler>();
+  private readonly goneListeners: ((userId: string) => Promise<void>)[] = [];
   private readonly connections = new Map<WebSocket, Connection>();
   private readonly byUser = new Map<string, Set<WebSocket>>();
   private subscriber: Redis | null = null;
@@ -164,6 +165,21 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
     sockets?.delete(socket);
     if (sockets && sockets.size === 0) this.byUser.delete(connection.userId);
     await this.writePresence(connection.userId).catch(() => {});
+    if (!this.byUser.has(connection.userId)) {
+      for (const listener of this.goneListeners) {
+        await listener(connection.userId).catch((error: unknown) =>
+          this.logger.error(`연결 종료 처리 실패: ${String(error)}`),
+        );
+      }
+    }
+  }
+
+  /**
+   * 이 인스턴스에서 사용자의 마지막 연결이 끊기면 부른다. 다른 인스턴스에 붙어 있을 수 있으므로
+   * 처리기에서 isOnline()으로 정말 나갔는지 확인한다
+   */
+  onUserGone(listener: (userId: string) => Promise<void>): void {
+    this.goneListeners.push(listener);
   }
 
   async receive(socket: WebSocket, raw: string): Promise<void> {
