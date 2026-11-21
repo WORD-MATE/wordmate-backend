@@ -1,0 +1,1 @@
+CREATE INDEX `xp_ledger_user_created_idx` ON `xp_ledger` (`user_id`,`created_at`,`id`);

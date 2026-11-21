@@ -31,5 +31,6 @@ export const xpLedger = mysqlTable(
   (t) => [
     uniqueIndex('xp_ledger_ref_uq').on(t.userId, t.source, t.refKey),
     index('xp_ledger_user_date_idx').on(t.userId, t.date),
+    index('xp_ledger_user_created_idx').on(t.userId, t.createdAt, t.id),
   ],
 );
