@@ -27,6 +27,7 @@ import { toUserSummary } from '../users/user-summary.js';
 import { BattleQueue } from './battle.queue.js';
 import { type CreateRoom, INVITE_CODE_PATTERN, type Room } from './battle.schemas.js';
 import { BattleErrors } from './battle-results.service.js';
+import { MatchQueue } from './match-queue.js';
 
 type Rematch = { pack: Pack; battleId: string };
 
@@ -104,6 +105,7 @@ export class RoomsService {
     private readonly realtime: RealtimeService,
     private readonly queue: BattleQueue,
     private readonly config: ConfigService<Env, true>,
+    private readonly matchQueue: MatchQueue,
   ) {}
 
   /** 만든 사람이 방장이자 첫 참가자 */
@@ -118,7 +120,49 @@ export class RoomsService {
       hostParticipates: true,
       sourceBattleId: rematch?.battleId ?? null,
     });
+    await this.leaveMatchQueue(user.userId);
     return this.view(roomId);
+  }
+
+  /** 빠른 매칭으로 짝지은 두 사람의 방. 먼저 기다린 사람이 방장 */
+  async createQuickMatch(
+    hostUserId: string,
+    guestUserId: string,
+    pack: Pack,
+    body: CreateRoom,
+  ): Promise<Room> {
+    await this.releaseExpired(hostUserId);
+    await this.releaseExpired(guestUserId);
+    const roomId = await this.insertRoom(body, pack, {
+      type: 'QUICK_MATCH',
+      hostUserId,
+      classId: null,
+      hostParticipates: true,
+      guests: [guestUserId],
+      sourceBattleId: null,
+    });
+    await this.leaveMatchQueue(hostUserId);
+    await this.leaveMatchQueue(guestUserId);
+    return this.view(roomId);
+  }
+
+  /** 지금 들어가 있는 방 (끝난 방은 참가가 풀려 있어 나오지 않는다) */
+  async activeRoomOf(userId: string): Promise<{ roomId: string; inviteCode: string } | null> {
+    const [row] = await this.db
+      .select({ roomId: battleRooms.id, inviteCode: battleRooms.inviteCode })
+      .from(battleRoomParticipants)
+      .innerJoin(battleRooms, eq(battleRooms.id, battleRoomParticipants.roomId))
+      .where(
+        and(eq(battleRoomParticipants.userId, userId), eq(battleRoomParticipants.active, true)),
+      );
+    return row ?? null;
+  }
+
+  /** 다른 방에 있으면 409 ROOM_ALREADY_JOINED (끝났거나 만료된 방은 먼저 풀어 준다) */
+  async assertFree(userId: string): Promise<void> {
+    await this.releaseExpired(userId);
+    const code = await this.activeCodeOf(userId);
+    if (code) throw RoomErrors.alreadyJoined(code);
   }
 
   /**
@@ -320,7 +364,13 @@ export class RoomsService {
       const participant = room.participants.find((p) => p.user.userId === user.userId);
       await this.notify(room, 'PARTICIPANT_JOINED', { participant }, user.userId);
     }
+    await this.leaveMatchQueue(user.userId);
     return room;
+  }
+
+  /** 빠른 매칭을 기다리다 직접 방에 들어가면 대기열에서 뺀다 (실패해도 대기 만료가 정리한다) */
+  private async leaveMatchQueue(userId: string): Promise<void> {
+    await this.matchQueue.remove(userId).catch(() => {});
   }
 
   /**
@@ -439,6 +489,7 @@ export class RoomsService {
       hostUserId: string;
       classId: string | null;
       hostParticipates: boolean;
+      guests?: string[];
       sourceBattleId: string | null;
       beforeInsert?: (tx: Transaction) => Promise<void>;
     },
@@ -474,6 +525,11 @@ export class RoomsService {
               joinedAt: now,
             });
           }
+          for (const guest of options.guests ?? []) {
+            await tx
+              .insert(battleRoomParticipants)
+              .values({ roomId, userId: guest, isHost: false, joinedAt: now });
+          }
         });
         break;
       } catch (error) {
@@ -482,7 +538,10 @@ export class RoomsService {
           throw RoomErrors.codeUnavailable();
         }
         if (isDuplicateKeyError(error, ACTIVE_USER_INDEX)) {
-          throw RoomErrors.alreadyJoined(await this.activeCodeOf(options.hostUserId));
+          const codes = await Promise.all(
+            [options.hostUserId, ...(options.guests ?? [])].map((id) => this.activeCodeOf(id)),
+          );
+          throw RoomErrors.alreadyJoined(codes.find(Boolean) ?? null);
         }
         throw error;
       }
