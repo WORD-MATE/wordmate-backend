@@ -11,5 +11,6 @@ import { StudySessionsService } from './study-sessions.service.js';
   imports: [PacksModule, RankingModule, XpModule],
   controllers: [StudyController, StudyReviewController],
   providers: [StudySessionsService, StudyAnswersService, StudyCompleteService],
+  exports: [StudySessionsService],
 })
 export class StudyModule {}
