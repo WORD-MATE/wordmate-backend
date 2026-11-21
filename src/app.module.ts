@@ -5,6 +5,7 @@ import { validateEnv } from './config/env.js';
 import { InfraModule } from './infra/infra.module.js';
 import { AppStatusModule } from './modules/app-status/app-status.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { BattlesModule } from './modules/battles/battles.module.js';
 import { ClassesModule } from './modules/classes/classes.module.js';
 import { DevicesModule } from './modules/devices/devices.module.js';
 import { HealthModule } from './modules/health/health.module.js';
@@ -44,6 +45,7 @@ import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
     RankingModule,
     HomeModule,
     RealtimeModule,
+    BattlesModule,
     PoliciesModule,
     UsersModule,
   ],
