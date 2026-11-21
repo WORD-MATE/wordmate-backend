@@ -1,14 +1,21 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { AppException, CommonErrors } from '../../common/errors/app-exception.js';
 import { kstDate } from '../../common/time/kst.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import { isDuplicateKeyError } from '../../infra/db/errors.js';
-import { challengeAttempts, dailyChallenges, packs, words } from '../../infra/db/schema/index.js';
+import {
+  type ChallengeQuestion,
+  challengeAttempts,
+  type DailyChallenge,
+  dailyChallenges,
+  packs,
+  words,
+} from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
 import { RankingService } from '../ranking/ranking.service.js';
-import type { QuizWord } from '../study/question-builder.js';
+import { CHOICE_COUNT, type QuizWord, shuffled } from '../study/question-builder.js';
 import { XpService } from '../xp/xp.service.js';
 import {
   CHALLENGE_SETTINGS,
@@ -24,8 +31,10 @@ import type {
   CompleteChallenge,
 } from './challenges.schemas.js';
 
-/** 문제를 만들 후보 단어 수 (보기를 만들 수 없는 단어를 건너뛰어도 모자라지 않게) */
-const CANDIDATE_WORDS = 50;
+/** 문제를 고를 기본 단어팩 수 */
+const SOURCE_PACKS = 5;
+/** 문제를 만들지 못했을 때 다시 시도하지 않는 시간 */
+const FAILURE_BACKOFF_MS = 60 * 1000;
 
 export const ChallengeErrors = {
   alreadyDone: () =>
@@ -34,10 +43,14 @@ export const ChallengeErrors = {
       '오늘의 챌린지는 이미 했습니다.',
       HttpStatus.CONFLICT,
     ),
-  inProgress: (attemptId: string) =>
-    new AppException('CHALLENGE_IN_PROGRESS', '진행 중인 챌린지가 있습니다.', HttpStatus.CONFLICT, {
-      attemptId,
-    }),
+  /** 시작 응답을 못 받은 경우에도 이어서 풀 수 있게 문항을 같이 돌려준다 */
+  inProgress: (attempt: ChallengeAttempt) =>
+    new AppException(
+      'CHALLENGE_IN_PROGRESS',
+      '진행 중인 챌린지가 있습니다.',
+      HttpStatus.CONFLICT,
+      attempt,
+    ),
   attemptNotFound: () =>
     new AppException(
       'CHALLENGE_ATTEMPT_NOT_FOUND',
@@ -54,6 +67,9 @@ export const ChallengeErrors = {
 
 @Injectable()
 export class ChallengesService {
+  private readonly generating = new Map<string, Promise<DailyChallenge | null>>();
+  private readonly failedUntil = new Map<string, number>();
+
   constructor(
     @Inject(DB) private readonly db: Database,
     private readonly xp: XpService,
@@ -95,15 +111,15 @@ export class ChallengesService {
         .from(challengeAttempts)
         .where(and(eq(challengeAttempts.userId, user.userId), eq(challengeAttempts.date, date)));
       if (!existing || existing.completedAt) throw ChallengeErrors.alreadyDone();
-      throw ChallengeErrors.inProgress(existing.id);
+      throw ChallengeErrors.inProgress(this.attemptOf(existing.id, challenge.questions));
     }
+    return this.attemptOf(attemptId, challenge.questions);
+  }
+
+  private attemptOf(attemptId: string, questions: ChallengeQuestion[]): ChallengeAttempt {
     return {
       attemptId,
-      questions: challenge.questions.map(({ index, prompt, choices }) => ({
-        index,
-        prompt,
-        choices,
-      })),
+      questions: questions.map(({ index, prompt, choices }) => ({ index, prompt, choices })),
     };
   }
 
@@ -138,11 +154,12 @@ export class ChallengesService {
         challenge.questionCount,
         challenge.timeLimitSec,
       );
+      const inTime = now <= deadline;
       const scored = scoreChallenge(
         challenge.questions,
         body.answers,
         challenge.timeLimitSec * 1000,
-        now <= deadline,
+        inTime,
       );
       const grant = await this.xp.grant(
         tx,
@@ -156,7 +173,11 @@ export class ChallengesService {
         ],
         now,
       );
-      const blockedReason = grant.capped ? ('DAILY_CAP' as const) : null;
+      const blockedReason = !inTime
+        ? ('NOT_COMPLETED' as const)
+        : grant.capped
+          ? ('DAILY_CAP' as const)
+          : null;
       await tx
         .update(challengeAttempts)
         .set({
@@ -180,10 +201,28 @@ export class ChallengesService {
     return result;
   }
 
-  /** 그날 문제가 없으면 만든다. 여러 서버가 동시에 만들어도 날짜가 키라 하나만 남는다 */
+  /**
+   * 그날 문제가 없으면 만든다. 여러 서버가 동시에 만들어도 날짜가 키라 하나만 남는다.
+   * 자정에 요청이 몰려도 한 서버 안에서는 한 번만 만들고, 만들지 못했으면 잠시 다시 시도하지 않는다
+   */
   async ensure(date: string) {
     const existing = await this.find(date);
     if (existing) return existing;
+    if ((this.failedUntil.get(date) ?? 0) > Date.now()) throw ChallengeErrors.unavailable();
+    let running = this.generating.get(date);
+    if (!running) {
+      running = this.create(date).finally(() => this.generating.delete(date));
+      this.generating.set(date, running);
+    }
+    const created = await running;
+    if (!created) {
+      this.failedUntil.set(date, Date.now() + FAILURE_BACKOFF_MS);
+      throw ChallengeErrors.unavailable();
+    }
+    return created;
+  }
+
+  private async create(date: string) {
     const questions = await this.generate();
     if (questions) {
       await this.db
@@ -191,9 +230,7 @@ export class ChallengesService {
         .ignore()
         .values({ date, ...CHALLENGE_SETTINGS, questions });
     }
-    const created = await this.find(date);
-    if (!created) throw ChallengeErrors.unavailable();
-    return created;
+    return this.find(date);
   }
 
   private async find(date: string) {
@@ -204,30 +241,41 @@ export class ChallengesService {
     return challenge ?? null;
   }
 
-  /** 기본 단어팩 전체에서 무작위로 고르고, 오답 보기는 그 단어의 팩에서 고른다 */
+  /**
+   * 기본 단어팩 몇 개를 무작위로 골라 그 팩들의 단어를 섞어 낸다. 오답 보기는 그 단어의 팩에서 고른다
+   * (단어 전체를 섞지 않고 팩 몇 개만 읽어 부담을 줄인다)
+   */
   private async generate() {
-    const columns = {
-      id: words.id,
-      packId: words.packId,
-      english: words.english,
-      meanings: words.meanings,
-      derivatives: words.derivatives,
-    };
-    const candidates: QuizWord[] = await this.db
-      .select(columns)
-      .from(words)
-      .innerJoin(packs, eq(packs.id, words.packId))
-      .where(and(eq(packs.type, 'DEFAULT'), isNull(packs.deletedAt), isNull(words.deletedAt)))
+    const chosen = await this.db
+      .select({ id: packs.id })
+      .from(packs)
+      .where(
+        and(eq(packs.type, 'DEFAULT'), isNull(packs.deletedAt), gte(packs.wordCount, CHOICE_COUNT)),
+      )
       .orderBy(sql`RAND()`)
-      .limit(CANDIDATE_WORDS);
-    if (candidates.length === 0) return null;
-    const packIds = [...new Set(candidates.map((word) => word.packId))];
-    const pool = await this.db
-      .select(columns)
+      .limit(SOURCE_PACKS);
+    if (chosen.length === 0) return null;
+    const pool: QuizWord[] = await this.db
+      .select({
+        id: words.id,
+        packId: words.packId,
+        english: words.english,
+        meanings: words.meanings,
+        derivatives: words.derivatives,
+      })
       .from(words)
-      .where(and(inArray(words.packId, packIds), isNull(words.deletedAt)));
+      .where(
+        and(
+          inArray(
+            words.packId,
+            chosen.map((pack) => pack.id),
+          ),
+          isNull(words.deletedAt),
+        ),
+      );
     const byPack = new Map<string, QuizWord[]>();
     for (const word of pool) byPack.set(word.packId, [...(byPack.get(word.packId) ?? []), word]);
+    const candidates = shuffled(pool);
     const direction = CHALLENGE_SETTINGS.questionType.startsWith('EN_TO_KO')
       ? 'EN_TO_KO'
       : 'KO_TO_EN';

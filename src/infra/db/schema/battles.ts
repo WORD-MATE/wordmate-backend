@@ -253,6 +253,8 @@ export const dailyChallenges = mysqlTable('daily_challenges', {
   createdAt: timestamps.createdAt,
 });
 
+export type DailyChallenge = typeof dailyChallenges.$inferSelect;
+
 /** 사용자당 하루 한 번 */
 export const challengeAttempts = mysqlTable(
   'challenge_attempts',
