@@ -1,4 +1,4 @@
-import { and, inArray, like, lte, or } from 'drizzle-orm';
+import { and, asc, inArray, like, lte, or } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { AccessTokenService } from '../common/auth/access-token.service.js';
 import type { Database } from '../infra/db/db.module.js';
@@ -12,6 +12,7 @@ import {
   packs,
   policies,
   practiceSessions,
+  studyRecords,
   studySessions,
   userAgreements,
   users,
@@ -57,10 +58,13 @@ export async function createLoadUsers(
       })),
     );
   const ids = await loadUserIds(db);
-  const effective = await db
-    .select({ type: policies.type, version: policies.version })
+  // 약관 종류마다 지금 시행 중인 버전(시행일이 가장 늦은 것)에만 동의한다
+  const all = await db
+    .select({ type: policies.type, version: policies.version, effectiveAt: policies.effectiveAt })
     .from(policies)
-    .where(lte(policies.effectiveAt, new Date()));
+    .where(lte(policies.effectiveAt, new Date()))
+    .orderBy(asc(policies.effectiveAt));
+  const effective = [...new Map(all.map((policy) => [policy.type, policy])).values()];
   await db.delete(userAgreements).where(inArray(userAgreements.userId, ids));
   const agreedAt = new Date();
   const rows = ids.flatMap((userId) =>
@@ -98,6 +102,16 @@ export async function issueLoadTokens(
 export async function cleanupLoadUsers(db: Database, valkey: Redis): Promise<number> {
   const ids = await loadUserIds(db);
   if (ids.length === 0) return 0;
+  // 계정을 지우면 id를 다시 찾을 수 없으므로 Valkey부터 정리한다
+  let cursor = '0';
+  do {
+    // rank: 아래에는 랭킹 외의 키(해시·문자열)도 있으므로 ZSET만 고른다
+    const [next, keys] = await valkey.scan(cursor, 'MATCH', 'rank:*', 'COUNT', 200, 'TYPE', 'zset');
+    for (const key of keys) await valkey.zrem(key, ...ids);
+    cursor = next;
+  } while (cursor !== '0');
+  await valkey.zrem('mm:queue', ...ids);
+  await valkey.hdel('mm:queued', ...ids);
   await db.delete(battleRooms).where(inArray(battleRooms.hostUserId, ids));
   await db.delete(battleResults).where(inArray(battleResults.userId, ids));
   await db.delete(battleAnswers).where(inArray(battleAnswers.userId, ids));
@@ -108,6 +122,7 @@ export async function cleanupLoadUsers(db: Database, valkey: Redis): Promise<num
   await db.delete(challengeAttempts).where(inArray(challengeAttempts.userId, ids));
   await db.delete(practiceSessions).where(inArray(practiceSessions.userId, ids));
   await db.delete(studySessions).where(inArray(studySessions.userId, ids));
+  await db.delete(studyRecords).where(inArray(studyRecords.userId, ids));
   const owned = (
     await db.select({ id: packs.id }).from(packs).where(inArray(packs.ownerUserId, ids))
   ).map((row) => row.id);
@@ -119,14 +134,5 @@ export async function cleanupLoadUsers(db: Database, valkey: Redis): Promise<num
     .delete(users)
     .where(and(inArray(users.id, ids), like(users.datagsmId, `${LOAD_USER_MARK}%`)));
 
-  let cursor = '0';
-  do {
-    // rank: 아래에는 랭킹 외의 키(해시·문자열)도 있으므로 ZSET만 고른다
-    const [next, keys] = await valkey.scan(cursor, 'MATCH', 'rank:*', 'COUNT', 200, 'TYPE', 'zset');
-    for (const key of keys) await valkey.zrem(key, ...ids);
-    cursor = next;
-  } while (cursor !== '0');
-  await valkey.zrem('mm:queue', ...ids);
-  await valkey.hdel('mm:queued', ...ids);
   return ids.length;
 }

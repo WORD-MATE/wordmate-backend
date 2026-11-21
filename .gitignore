@@ -32,3 +32,6 @@ Thumbs.db
 
 # Claude Code 로컬 설정
 .claude/settings.local.json
+
+# 부하 테스트 토큰
+tokens.json

@@ -15,6 +15,7 @@ import {
 
 /*
  * 부하 테스트용 학생 계정 (개발 서버 전용). datagsm_id가 loadtest:로 시작하는 계정만 다룬다.
+ * 개발 서버 compose에만 있는 LOAD_TEST_ALLOWED=true와 --confirm-dev가 둘 다 있어야 돈다.
  *   node dist/load-users.js create <수> <토큰 파일> --confirm-dev   계정 만들기(약관 동의 포함) + 토큰 발급
  *   node dist/load-users.js tokens <토큰 파일> --confirm-dev       토큰만 다시 발급 (토큰은 30분 유효)
  *   node dist/load-users.js cleanup --confirm-dev                  계정과 대결·XP·랭킹 기록 지우기
@@ -23,8 +24,11 @@ import {
 loadEnvFiles();
 const args = process.argv.slice(2);
 const [command, ...rest] = args.filter((arg) => !arg.startsWith('--'));
-if (!args.includes('--confirm-dev')) {
-  console.error('개발 서버에서만 쓰는 명령입니다. 확인했으면 --confirm-dev 를 붙이세요.');
+// 개발 서버 compose에만 LOAD_TEST_ALLOWED=true가 있다. 상용 서버에서 잘못 실행해도 계정을 만들거나 지우지 않게 한다
+if (process.env.LOAD_TEST_ALLOWED !== 'true' || !args.includes('--confirm-dev')) {
+  console.error(
+    '개발 서버(LOAD_TEST_ALLOWED=true)에서만 쓰는 명령입니다. 확인했으면 --confirm-dev 를 붙이세요.',
+  );
   process.exit(1);
 }
 const usage = (): never => {
