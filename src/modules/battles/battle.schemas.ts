@@ -1,5 +1,7 @@
 import { z } from 'zod';
-import { PARTICIPANT_STATE, ROOM_STATUS, ROOM_TYPE } from '../../common/enums.js';
+import { BATTLE_OUTCOME, PARTICIPANT_STATE, ROOM_STATUS, ROOM_TYPE } from '../../common/enums.js';
+import { CursorQuery, cursorPage } from '../../common/pagination.js';
+import { XpResult } from '../study/study.schemas.js';
 import { UserSummary } from '../users/user-summary.js';
 
 export const BATTLE_QUESTION_TYPES = ['EN_TO_KO_CHOICE', 'KO_TO_EN_CHOICE'] as const;
@@ -56,3 +58,80 @@ export const Room = z
   })
   .meta({ id: 'Room' });
 export type Room = z.infer<typeof Room>;
+
+export const BattleResult = z
+  .object({
+    battleId: z.string(),
+    roomType: z.enum(ROOM_TYPE),
+    finishedAt: z.iso.datetime(),
+    settings: Room.shape.settings,
+    ranking: z
+      .array(
+        z.object({
+          rank: z.number().int().nullable().describe('중도 이탈은 null (맨 아래)'),
+          user: UserSummary,
+          score: z.number().int(),
+          correctCount: z.number().int(),
+          totalTimeMs: z.number().int(),
+          outcome: z.enum(BATTLE_OUTCOME),
+        }),
+      )
+      .describe('순위순, 같으면 총 풀이 시간 짧은 순'),
+    me: z
+      .object({
+        rank: z.number().int().nullable(),
+        score: z.number().int(),
+        outcome: z.enum(BATTLE_OUTCOME),
+        xp: XpResult,
+      })
+      .nullable()
+      .describe('참가하지 않은 진행자(교사)는 null'),
+    questions: z.array(
+      z.object({
+        index: z.number().int(),
+        word: z.object({
+          wordId: z.string(),
+          english: z.string(),
+          meanings: z.array(z.string()),
+          example: z.string().nullable(),
+        }),
+        choices: z.array(z.string()),
+        answerIndex: z.number().int(),
+        myChoiceIndex: z.number().int().nullable().describe('미응답이면 null'),
+        correct: z.boolean().nullable().describe('진행자(교사)는 null'),
+      }),
+    ),
+  })
+  .meta({ id: 'BattleResult' });
+export type BattleResult = z.infer<typeof BattleResult>;
+
+export const BattleHistoryQuery = CursorQuery;
+export type BattleHistoryQuery = z.infer<typeof BattleHistoryQuery>;
+
+export const BattleHistoryItem = z.object({
+  battleId: z.string(),
+  finishedAt: z.iso.datetime(),
+  packName: z.string(),
+  participantCount: z.number().int(),
+  rank: z.number().int().nullable().describe('중도 이탈은 null'),
+  score: z.number().int(),
+  outcome: z.enum(BATTLE_OUTCOME),
+});
+export type BattleHistoryItem = z.infer<typeof BattleHistoryItem>;
+
+export const BattleHistory = cursorPage(BattleHistoryItem)
+  .extend({
+    summary: z.object({
+      total: z.number().int(),
+      winRate: z
+        .number()
+        .nullable()
+        .describe('1위 횟수 / 완주한 대결 수 (0~1), 완주한 대결이 없으면 null'),
+      avgAccuracy: z
+        .number()
+        .nullable()
+        .describe('완주한 대결의 평균 정답률 (0~1), 완주한 대결이 없으면 null'),
+    }),
+  })
+  .meta({ id: 'BattleHistory' });
+export type BattleHistory = z.infer<typeof BattleHistory>;

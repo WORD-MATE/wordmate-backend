@@ -10,10 +10,12 @@ import { type Database, DB, type Transaction } from '../../infra/db/db.module.js
 import { isDuplicateKeyError } from '../../infra/db/errors.js';
 import {
   type BattleRoom,
+  battleResults,
   battleRoomParticipants,
   battleRooms,
   battles,
   classes,
+  type Pack,
   teacherClasses,
   users,
 } from '../../infra/db/schema/index.js';
@@ -24,6 +26,9 @@ import { RealtimeService } from '../realtime/realtime.service.js';
 import { toUserSummary } from '../users/user-summary.js';
 import { BattleQueue } from './battle.queue.js';
 import { type CreateRoom, INVITE_CODE_PATTERN, type Room } from './battle.schemas.js';
+import { BattleErrors } from './battle-results.service.js';
+
+type Rematch = { pack: Pack; battleId: string };
 
 export const ROOM_TTL_MS = 30 * 60 * 1000;
 /** 문항 30개 × (15초 + 결과 2초)보다 넉넉히. 이보다 오래 진행 중이면 멈춘 방으로 보고 닫는다 */
@@ -102,8 +107,8 @@ export class RoomsService {
   ) {}
 
   /** 만든 사람이 방장이자 첫 참가자 */
-  async create(user: AuthUser, body: CreateRoom): Promise<Room> {
-    const pack = await this.packs.findVisible(user, body.packId);
+  async create(user: AuthUser, body: CreateRoom, rematch?: Rematch): Promise<Room> {
+    const pack = rematch?.pack ?? (await this.packs.findVisible(user, body.packId));
     if (pack.wordCount < MIN_BATTLE_WORDS) throw RoomErrors.packTooFewWords();
     await this.releaseExpired(user.userId);
     const roomId = await this.insertRoom(body, pack, {
@@ -111,18 +116,59 @@ export class RoomsService {
       hostUserId: user.userId,
       classId: null,
       hostParticipates: true,
+      sourceBattleId: rematch?.battleId ?? null,
     });
     return this.view(roomId);
   }
 
+  /**
+   * 같은 설정으로 새 방. 요청한 사람이 방장이고, 교사용 방은 그 교사만 (교사용 반 방으로).
+   * 다른 사람의 내 단어팩으로 한 대결도 같은 팩으로 다시 할 수 있다 (팩이 지워졌으면 404)
+   */
+  async rematch(user: AuthUser, battleId: string): Promise<Room> {
+    const [row] = await this.db
+      .select({ room: battleRooms, phase: battles.phase })
+      .from(battles)
+      .innerJoin(battleRooms, eq(battleRooms.id, battles.roomId))
+      .where(eq(battles.id, battleId));
+    if (row?.phase !== 'FINISHED') throw BattleErrors.notFound();
+    const { room } = row;
+    const body: CreateRoom = {
+      packId: room.packId,
+      questionType: room.questionType as CreateRoom['questionType'],
+      questionCount: room.questionCount as CreateRoom['questionCount'],
+      timeLimitSec: room.timeLimitSec as CreateRoom['timeLimitSec'],
+      maxParticipants: room.maxParticipants,
+    };
+    const pack = await this.packs.findById(room.packId);
+    if (room.type === 'CLASS') {
+      if (room.hostUserId !== user.userId || !room.classId) {
+        throw CommonErrors.forbidden('교사용 방은 진행한 교사만 다시 할 수 있습니다.');
+      }
+      return this.createForClass(user, room.classId, body, { pack, battleId });
+    }
+    const [played] = await this.db
+      .select({ userId: battleResults.userId })
+      .from(battleResults)
+      .where(and(eq(battleResults.battleId, battleId), eq(battleResults.userId, user.userId)));
+    if (!played) throw CommonErrors.forbidden('참가하지 않은 대결입니다.');
+    if (user.role !== 'STUDENT') throw CommonErrors.forbidden();
+    return this.create(user, body, { pack, battleId });
+  }
+
   /** 교사는 진행자라 참가자 목록·인원에 들어가지 않는다. 진행 중인 반 방은 교사당 하나 */
-  async createForClass(user: AuthUser, classId: string, body: CreateRoom): Promise<Room> {
+  async createForClass(
+    user: AuthUser,
+    classId: string,
+    body: CreateRoom,
+    rematch?: Rematch,
+  ): Promise<Room> {
     const [owned] = await this.db
       .select({ classId: teacherClasses.classId })
       .from(teacherClasses)
       .where(and(eq(teacherClasses.teacherId, user.userId), eq(teacherClasses.classId, classId)));
     if (!owned) throw CommonErrors.forbidden('담당 반이 아닙니다.');
-    const pack = await this.packs.findVisible(user, body.packId);
+    const pack = rematch?.pack ?? (await this.packs.findVisible(user, body.packId));
     if (pack.wordCount < MIN_BATTLE_WORDS) throw RoomErrors.packTooFewWords();
     await this.expireOverdue();
     await this.recoverStalledHostedBy(user.userId);
@@ -131,6 +177,7 @@ export class RoomsService {
       hostUserId: user.userId,
       classId,
       hostParticipates: false,
+      sourceBattleId: rematch?.battleId ?? null,
       // 교사 행을 잠가 동시에 두 번 만들어도 진행 중인 반 방이 하나만 되게 한다
       beforeInsert: async (tx) => {
         await tx
@@ -391,6 +438,7 @@ export class RoomsService {
       hostUserId: string;
       classId: string | null;
       hostParticipates: boolean;
+      sourceBattleId: string | null;
       beforeInsert?: (tx: Transaction) => Promise<void>;
     },
   ): Promise<string> {
@@ -414,6 +462,7 @@ export class RoomsService {
             timeLimitSec: body.timeLimitSec,
             maxParticipants: body.maxParticipants,
             duplicateQuestions: pack.wordCount < body.questionCount,
+            sourceBattleId: options.sourceBattleId,
             expiresAt,
           });
           if (options.hostParticipates) {
