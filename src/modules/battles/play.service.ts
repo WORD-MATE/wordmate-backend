@@ -15,9 +15,11 @@ import {
   words,
 } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
+import { RankingService } from '../ranking/ranking.service.js';
 import { type RealtimeContext, RealtimeService } from '../realtime/realtime.service.js';
 import { CHOICE_COUNT } from '../study/question-builder.js';
 import { BattleQueue } from './battle.queue.js';
+import { BattleFinishService, type XpEarned } from './battle-finish.service.js';
 import { buildBattleQuestions, rankPlayers, scoreOf } from './battle-rules.js';
 import { activeParticipants, roomMembers } from './room-members.js';
 
@@ -57,6 +59,8 @@ export class PlayService implements OnModuleInit {
     @Inject(DB) private readonly db: Database,
     private readonly realtime: RealtimeService,
     private readonly queue: BattleQueue,
+    private readonly finisher: BattleFinishService,
+    private readonly ranking: RankingService,
   ) {}
 
   onModuleInit(): void {
@@ -133,8 +137,10 @@ export class PlayService implements OnModuleInit {
       }
       if (battle.currentIndex !== idx - 1) return null;
       if (battle.phase !== 'READY' && battle.phase !== 'RESULT') return null;
-      if (idx >= battle.questionCount)
-        return { deadlineAt: null, events: [await this.finish(tx, locked)] };
+      if (idx >= battle.questionCount) {
+        const { event, xp, finishedAt } = await this.finish(tx, locked);
+        return { deadlineAt: null, events: [event], xp, finishedAt };
+      }
 
       const startedAt = new Date();
       const deadlineAt = new Date(startedAt.getTime() + battle.timeLimitSec * 1000);
@@ -156,6 +162,13 @@ export class PlayService implements OnModuleInit {
     });
     if (!outcome) return;
     await this.publish(outcome.events);
+    // 랭킹 반영은 알림 뒤에 (Valkey가 느려도 끝났다는 알림이 늦지 않게, 실패는 addXp가 삼킨다)
+    const { xp, finishedAt } = outcome;
+    if (xp && finishedAt) {
+      await Promise.all(
+        xp.map(({ userId, earned }) => this.ranking.addXp(userId, earned, finishedAt)),
+      );
+    }
     if (outcome.deadlineAt) await this.queue.scheduleQuestionEnd(battleId, idx, outcome.deadlineAt);
   }
 
@@ -387,10 +400,14 @@ export class PlayService implements OnModuleInit {
     return { room, battle };
   }
 
-  /** 결과 확정·XP는 결과 기능에서 이 자리에 붙는다 */
-  private async finish(tx: Transaction, { room, battle }: Locked): Promise<Event> {
+  /** 결과·XP·오답노트를 확정하고 방을 끝낸다. 랭킹 반영은 커밋한 뒤에 */
+  private async finish(
+    tx: Transaction,
+    { room, battle }: Locked,
+  ): Promise<{ event: Event; xp: XpEarned[]; finishedAt: Date }> {
     const finishedAt = new Date();
     const members = await roomMembers(tx, room);
+    const xp = await this.finisher.finalize(tx, room, battle, finishedAt);
     await tx
       .update(battles)
       .set({ phase: 'FINISHED', finishedAt })
@@ -403,7 +420,11 @@ export class PlayService implements OnModuleInit {
       .update(battleRoomParticipants)
       .set({ active: false })
       .where(eq(battleRoomParticipants.roomId, room.id));
-    return { userIds: members, type: 'BATTLE_FINISHED', payload: { battleId: battle.id } };
+    return {
+      event: { userIds: members, type: 'BATTLE_FINISHED', payload: { battleId: battle.id } },
+      xp,
+      finishedAt,
+    };
   }
 
   private async questionPayload(executor: Database | Transaction, battle: Battle) {

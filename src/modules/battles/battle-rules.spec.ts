@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { QuizWord } from '../study/question-builder.js';
-import { buildBattleQuestions, rankPlayers, scoreOf } from './battle-rules.js';
+import {
+  battleXpOf,
+  buildBattleQuestions,
+  decideOutcomes,
+  rankPlayers,
+  scoreOf,
+} from './battle-rules.js';
 
 const word = (n: number, meanings = [`뜻${n}`]): QuizWord => ({
   id: `w${n}`,
@@ -75,5 +81,54 @@ describe('rankPlayers', () => {
       ['a', 4],
       ['e', 5],
     ]);
+  });
+});
+
+describe('decideOutcomes', () => {
+  const player = (userId: string, score: number, completed = true, totalTimeMs = 1000) => ({
+    userId,
+    score,
+    totalTimeMs,
+    completed,
+  });
+  const outcomes = (results: ReturnType<typeof decideOutcomes>) =>
+    results.map((r) => [r.userId, r.rank, r.outcome]);
+
+  it('1위 WIN, 나머지 완주자 LOSE, 중도 이탈은 순위 없이 LEFT로 맨 아래', () => {
+    expect(
+      outcomes(decideOutcomes([player('a', 100), player('b', 300), player('c', 500, false)])),
+    ).toEqual([
+      ['b', 1, 'WIN'],
+      ['a', 2, 'LOSE'],
+      ['c', null, 'LEFT'],
+    ]);
+  });
+
+  it('1위가 점수·시간 모두 같으면 DRAW', () => {
+    expect(
+      outcomes(decideOutcomes([player('a', 300), player('b', 300), player('c', 100)])),
+    ).toEqual([
+      ['a', 1, 'DRAW'],
+      ['b', 1, 'DRAW'],
+      ['c', 3, 'LOSE'],
+    ]);
+  });
+
+  it('둘 이상 시작했는데 혼자 완주하면 WIN_BY_FORFEIT', () => {
+    expect(outcomes(decideOutcomes([player('a', 0), player('b', 900, false)]))).toEqual([
+      ['a', 1, 'WIN_BY_FORFEIT'],
+      ['b', null, 'LEFT'],
+    ]);
+  });
+});
+
+describe('battleXpOf', () => {
+  it('승 30·무 15·패 5, 이탈·부전승·같은 상대 한도는 0', () => {
+    expect(battleXpOf('WIN', false)).toEqual({ amount: 30, blockedReason: null });
+    expect(battleXpOf('DRAW', false)).toEqual({ amount: 15, blockedReason: null });
+    expect(battleXpOf('LOSE', false)).toEqual({ amount: 5, blockedReason: null });
+    expect(battleXpOf('LEFT', false)).toEqual({ amount: 0, blockedReason: 'NOT_COMPLETED' });
+    expect(battleXpOf('WIN_BY_FORFEIT', false)).toEqual({ amount: 0, blockedReason: 'FORFEIT' });
+    expect(battleXpOf('WIN', true)).toEqual({ amount: 0, blockedReason: 'REPEAT_LIMIT' });
   });
 });

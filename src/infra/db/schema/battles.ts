@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   char,
+  date,
   datetime,
   index,
   int,
@@ -13,11 +14,13 @@ import {
   varchar,
 } from 'drizzle-orm/mysql-core';
 import {
+  BATTLE_OUTCOME,
   BATTLE_PHASE,
   PARTICIPANT_STATE,
   QUESTION_TYPE,
   ROOM_STATUS,
   ROOM_TYPE,
+  XP_BLOCK_REASON,
 } from '../../../common/enums.js';
 import { id, timestamps } from '../columns.js';
 import { binaryUuid } from '../uuid.js';
@@ -161,4 +164,47 @@ export const battleAnswers = mysqlTable(
     primaryKey({ columns: [t.battleId, t.idx, t.userId] }),
     index('battle_answers_user_idx').on(t.userId),
   ],
+);
+
+/** 대결이 끝날 때 확정한 참가자별 결과. 기록·결과 화면이 여기서 읽는다 */
+export const battleResults = mysqlTable(
+  'battle_results',
+  {
+    battleId: binaryUuid('battle_id')
+      .notNull()
+      .references(() => battles.id, { onDelete: 'cascade' }),
+    userId: binaryUuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    // 중도 이탈은 NULL
+    rank: int('rank'),
+    score: int('score').notNull(),
+    correctCount: int('correct_count').notNull(),
+    totalTimeMs: int('total_time_ms').notNull(),
+    outcome: mysqlEnum('outcome', BATTLE_OUTCOME).notNull(),
+    xpEarned: int('xp_earned').notNull(),
+    xpBlockedReason: mysqlEnum('xp_blocked_reason', XP_BLOCK_REASON),
+    // 기록 목록 정렬·커서용으로 대결 종료 시각을 함께 둔다
+    finishedAt: datetime('finished_at', { mode: 'date', fsp: 3 }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.battleId, t.userId] }),
+    index('battle_results_history_idx').on(t.userId, t.finishedAt, t.battleId),
+  ],
+);
+
+/** 같은 상대와 하루(KST)에 완주한 대결 수. 하루 3번까지만 XP를 준다 */
+export const battleDailyPairs = mysqlTable(
+  'battle_daily_pairs',
+  {
+    date: date('date', { mode: 'string' }).notNull(),
+    userId: binaryUuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    opponentId: binaryUuid('opponent_id')
+      .notNull()
+      .references(() => users.id),
+    count: int('count').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.date, t.userId, t.opponentId] })],
 );

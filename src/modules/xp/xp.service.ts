@@ -34,10 +34,13 @@ export class XpService {
   ): Promise<XpGrantResult> {
     const date = kstDate(now);
     await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update');
+    // 잠금 읽기로 합계를 구한다. 일반 읽기는 트랜잭션의 첫 일반 읽기 때 잡힌 스냅숏을 봐서,
+    // 그 뒤 다른 곳에서 커밋한 지급이 빠져 하루 상한을 넘을 수 있다
     const [row] = await tx
       .select({ total: sum(xpLedger.amount) })
       .from(xpLedger)
-      .where(and(eq(xpLedger.userId, userId), eq(xpLedger.date, date)));
+      .where(and(eq(xpLedger.userId, userId), eq(xpLedger.date, date)))
+      .for('share');
     let todayTotal = Number(row?.total ?? 0);
 
     const granted: (number | null)[] = [];
