@@ -407,10 +407,12 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 
 - 대기 중인 방은 MySQL(`battle_rooms`, `battle_room_participants`)에 둡니다. 참가는 방 행을 잠가(`FOR UPDATE`) 정원 확인과 참가를 한 번에 처리합니다.
 - 사용자당 활성 방 하나는 참가자의 생성 컬럼 `active_user = IF(active, user_id, NULL)` 유니크로 막습니다. 생성·참가·매칭·다시 하기가 모두 같은 제약을 씁니다. 초대 코드(영문 대문자·숫자 6자리)는 진행 중인 방끼리만 겹치지 않게 `active_code` 유니크로 막습니다.
-- 30분 안에 시작하지 않은 방은 BullMQ `battle` 큐의 지연 작업(`expire-room`)으로 닫고 `ROOM_CLOSED { reason: EXPIRED }`를 보냅니다. 작업이 늦어져도 조회·참가·생성 때 만료 시각을 보고 닫습니다.
+- 30분 안에 시작하지 않은 방은 BullMQ `battle` 큐의 지연 작업(`expire-room`, 실패하면 5번까지 재시도)으로 닫고 `ROOM_CLOSED { reason: EXPIRED }`를 보냅니다.
+  - 방 상태와 참가자 비우기는 한 트랜잭션입니다. 나눠 하면 그 사이에 실패했을 때 참가자가 끝난 방에 묶입니다.
+  - 작업이 늦어져도 조회·참가·생성 때 만료 시각을 보고 닫습니다. 끝난 방에 활성으로 남은 참가 기록도 참가·생성 때 풀어 줍니다.
 - 참가하면 방에 있던 사람(교사용 방은 진행자 포함)에게 `PARTICIPANT_JOINED`를 보냅니다.
-- 초대 코드를 연달아 5번 잘못 넣으면(형식 오류·없는 방) 1분 동안 429 `ROOM_CODE_ATTEMPTS_EXCEEDED`(`Retry-After: 60`)입니다. 성공하면 다시 셉니다.
-- 교사용 반 방(`POST /classes/{classId}/rooms`)의 교사는 진행자라 참가자·인원에 들어가지 않고, 진행 중인 반 방은 교사당 하나입니다. 그 반 학생만 들어올 수 있습니다.
+- 초대 코드를 연달아 5번 잘못 넣으면(형식 오류·없는 방·끝난 방) 1분 동안 429 `ROOM_CODE_ATTEMPTS_EXCEEDED`(`Retry-After: 60`)입니다. 조회(`GET`)와 참가가 같은 횟수를 쓰고, 참가에 성공해야 다시 셉니다(아는 옛날 코드로 초기화할 수 없게).
+- 교사용 반 방(`POST /classes/{classId}/rooms`)의 교사는 진행자라 참가자·인원에 들어가지 않고, 진행 중인 반 방은 교사당 하나입니다(교사 행을 잠가 동시에 만들어도 하나만). 그 반 학생만 들어올 수 있습니다.
 - `Room.battleId`는 대결이 끝난 뒤 결과 조회용으로 채웁니다(대결 진행 작업에서).
 
 ## 정리 작업
