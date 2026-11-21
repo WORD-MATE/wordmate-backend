@@ -376,6 +376,14 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 - `GET /users/me/xp-history`(학생만)는 XP 원장을 최신순으로 보여줍니다. 하루 상한에 걸려 0이 된 지급도 `blockedReason`과 함께 보여주고, 관리자 조정은 음수입니다.
 - Valkey가 날아가면 `pnpm ranking:rebuild`(서버는 `docker compose run --rm migrate dist/ranking-rebuild.js`)로 원장에서 다시 만듭니다. 학년·반은 지금 값으로 넣습니다.
 
+## 홈
+
+- `GET /home`은 복습 수, 이어할 학습, 스트릭, 이번 주 학교 순위, 추천 단어팩을 한 번에 내려주는 묶음 API입니다. 각 칸은 기존 서비스(`StudySessionsService`, `RecordsService`, `RankingQueryService`, `PacksService`)를 병렬로 부릅니다.
+- 한 칸이 실패해도 나머지는 내려주고, 실패한 칸은 null(추천 팩은 빈 배열)로 두고 로그를 남깁니다.
+- 이어할 학습이 팩 학습이 아니면 `packName`에 학습 종류 이름(즐겨찾기·오답노트·틀린 단어·오늘의 복습)을 넣습니다.
+- 추천 단어팩은 학습 기록이 하나도 없는 사용자에게만 기본 단어팩 추천순 5개를 줍니다. 교사는 주간 순위가 null입니다.
+- 오늘의 문장(`morning`)과 미션(`missions`)은 기능이 생기기 전까지 null입니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.
