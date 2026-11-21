@@ -310,6 +310,11 @@ describe('대결 대기실', () => {
     );
     const recovered = await roomRow(stalled.room.roomId);
     expect(recovered).toMatchObject({ status: 'WAITING', countdownEndsAt: null });
+    for (const client of [stalled.host, ...stalled.guests]) {
+      expect((await client.waitFor('COUNTDOWN_CANCELLED')).payload).toEqual({
+        reason: 'START_FAILED',
+      });
+    }
 
     await db
       .update(battleRooms)
