@@ -501,6 +501,7 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 
 - `SCENARIO=match`: 사용자마다 티켓 → WebSocket 접속 → 빠른 매칭 → 문항마다 0.5~4초 생각한 뒤 아무 보기나 답 → `BATTLE_FINISHED` 뒤 결과 조회. `VUS`명이 `ITERATIONS`판씩 합니다.
 - `SCENARIO=room`: `ROOM_SIZE`명씩 `ROOMS`개 방을 미리 만들고, 모두 들어오면 방장이 시작합니다(반 전체 대결). 다 모이지 않아도 1분 뒤 시작합니다.
+- 요청이 실패하거나 카운트다운이 취소되면 기다리지 않고 원인(상태·에러 코드)을 `console.warn`으로 남기고 그 판을 끝냅니다.
 - 기록하는 지표: `answer_ack_ms`(답 → `ANSWER_ACCEPTED`), `question_start_delay_ms`(서버가 문항을 시작한 시각 → 받은 시각, 작업 지연 포함, 부하 PC와 서버 시계가 맞아야 의미 있음), `match_wait_ms`, `battles_finished`, `match_timeouts`, `server_errors`(코드별).
 
 ### 목표
@@ -514,6 +515,7 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 
 ### 실행
 
+0. 빠른 매칭·반 대결은 단어 10개 이상인 기본 단어팩이 있어야 합니다. 없으면 매칭이 503 `MATCH_UNAVAILABLE`로 실패합니다. 먼저 `기본 단어팩 시드`로 넣어 둡니다.
 1. 개발 서버에서 계정과 토큰을 만듭니다(토큰은 30분 유효, 파일은 소유자만 읽을 수 있고 화면에 출력하지 않습니다).
 
    ```bash
