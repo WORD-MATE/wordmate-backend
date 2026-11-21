@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Req, Res } from '@nestjs/common';
+import { Controller, Get, HttpCode, Param, Post, Req, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -49,6 +49,7 @@ export class RoomsController {
   })
   @Auth('STUDENT')
   @Post(':inviteCode/join')
+  @HttpCode(200)
   @ZodResponse(Room)
   async join(
     @Param('inviteCode') inviteCode: string,
