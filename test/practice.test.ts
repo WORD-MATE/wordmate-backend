@@ -95,8 +95,9 @@ describe('연습 모드', () => {
     expect(body.questions.map((q) => q.index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
     for (const q of body.questions) {
       expect(q.choices).toHaveLength(4);
-      expect(q.choices[q.answerIndex]).toMatch(/^연습\d$/);
       expect(q.prompt).toMatch(/^practice\d$/);
+      // 정답 보기는 문제 단어의 뜻 (practiceN → 연습N)
+      expect(q.choices[q.answerIndex]).toBe(q.prompt.replace('practice', '연습'));
     }
 
     const small = await createPack(student, 5);
