@@ -456,10 +456,10 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 ### 결과·XP·기록·다시 하기
 
 - 확정: 마지막 문항 다음, 방을 `FINISHED`로 바꾸는 트랜잭션에서 `battle_results`에 참가자별 순위·점수·정답 수·총 풀이 시간·결과·XP를 남기고, 커밋한 뒤 랭킹에 반영하고 `BATTLE_FINISHED`를 보냅니다.
-  - 참가자: 시작할 때 방에 있던 사람(대기실에서 나간 사람·강퇴된 사람 제외). 진행 중 나간 사람은 `LEFT`(순위 없음, 남은 문항은 0점·제한 시간 전체)로 남습니다.
+  - 참가자: 끝날 때 방에 남은 사람 + 시작한 뒤 나간 사람. 진행 중 나간 사람은 `LEFT`(순위 없음, 남은 문항은 0점·제한 시간 전체)로 남습니다.
   - 결과: 완주자끼리 점수, 같으면 총 풀이 시간 순. 1위 `WIN`, 1위가 여럿이면 `DRAW`, 나머지 `LOSE`. 둘 이상 시작했는데 혼자 완주하면 `WIN_BY_FORFEIT`.
 - XP: 승 30, 무 15, 패 5 (`xp_ledger` 출처 `BATTLE`, `battle:{battleId}`). 하루 500 상한 포함.
-  - 막는 경우: 중도 이탈 `NOT_COMPLETED`, 부전승 `FORFEIT`, 같은 상대와 하루(KST) 4번째 완주부터 `REPEAT_LIMIT`, 상한 `DAILY_CAP`(일부만 받을 수도 있음).
+  - 막는 경우: 중도 이탈과 한 문항도 답하지 않은 완주자 `NOT_COMPLETED`(순위·결과는 그대로), 부전승 `FORFEIT`, 같은 상대와 하루(KST) 4번째 완주부터 `REPEAT_LIMIT`, 상한 `DAILY_CAP`(일부만 받을 수도 있음).
   - 같은 상대 횟수는 `battle_daily_pairs`에 완주자 쌍마다 셉니다. 여럿이 한 대결은 처음 만나는(오늘 3번 미만인) 상대가 하나라도 있으면 줍니다.
 - 오답노트: 틀렸거나 답하지 않은 단어를 (단어, 문제 유형)별로 출처 `BATTLE`로 쌓습니다. 같은 대결에 같은 단어가 여러 번 나와도 한 번만 셉니다.
 - `GET /battles/{battleId}/result`: 순위(이탈자는 맨 아래)·내 XP(`todayTotal`은 조회 시점)·문항별 내 답. 참가자(이탈자 포함)와 교사용 방 진행자만(403), 끝나지 않았으면 404 `BATTLE_NOT_FOUND`. 진행자는 `me`·`correct`가 `null`입니다.
