@@ -10,6 +10,7 @@ export * from './packs.js';
 export * from './policies.js';
 export * from './ranking.js';
 export * from './reports.js';
+export * from './sanctions.js';
 export * from './social.js';
 export * from './study.js';
 export * from './users.js';

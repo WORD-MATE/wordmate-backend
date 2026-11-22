@@ -22,6 +22,8 @@ export const AUDIT_ACTION = [
   'ADMIN_GRANT',
   'ADMIN_REVOKE',
   'XP_ADJUST',
+  'SANCTION_APPLY',
+  'USER_UNSUSPEND',
 ] as const;
 export type AuditAction = Values<typeof AUDIT_ACTION>;
 

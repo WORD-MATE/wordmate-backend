@@ -3,6 +3,7 @@ import { ACCOUNT_STATUS, ROLE } from '../../common/enums.js';
 import { PageQuery, page } from '../../common/pagination.js';
 import { ClassSummary, LevelInfo } from '../users/me.schema.js';
 import { UserSummary } from '../users/user-summary.js';
+import { SanctionItem } from './admin-sanctions.schemas.js';
 
 const flag = z.enum(['true', 'false']).transform((value) => value === 'true');
 
@@ -43,6 +44,7 @@ export const AdminUserDetail = AdminUserItem.extend({
     leftCount: z.number().int(),
   }),
   reportCount: z.number().int().describe('받은 신고 수'),
+  sanctions: z.array(SanctionItem).describe('최신순'),
 }).meta({ id: 'AdminUserDetail' });
 export type AdminUserDetail = z.infer<typeof AdminUserDetail>;
 

@@ -2,7 +2,9 @@ import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/com
 import { Reflector } from '@nestjs/core';
 import type { FastifyRequest } from 'fastify';
 import { AccessTokenService } from './access-token.service.js';
+import { AccountBlockService } from './account-block.service.js';
 import { AUTH_KEY, type Authority } from './auth.decorator.js';
+import { AuthErrors } from './auth-errors.js';
 
 export const ACCESS_TOKEN_COOKIE = '__Host-at';
 
@@ -12,6 +14,7 @@ export class AuthenticationGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly tokens: AccessTokenService,
+    private readonly blocks: AccountBlockService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -20,7 +23,10 @@ export class AuthenticationGuard implements CanActivate {
     if (!token) return true;
 
     try {
-      request.user = await this.tokens.verify(token);
+      const user = await this.tokens.verify(token);
+      // 정지 직후에도 이미 받은 액세스 토큰으로 쓰지 못하게 한다
+      if (await this.blocks.isBlocked(user.userId)) throw AuthErrors.accountSuspended(null, null);
+      request.user = user;
     } catch (error) {
       const authorities = this.reflector.getAllAndOverride<Authority[] | undefined>(AUTH_KEY, [
         context.getHandler(),

@@ -9,6 +9,7 @@ import {
 import type { Redis } from 'ioredis';
 import type { WebSocket } from 'ws';
 import type { ZodType, z } from 'zod';
+import { AccountBlockService } from '../../common/auth/account-block.service.js';
 import { AppException } from '../../common/errors/app-exception.js';
 import { VALKEY } from '../../infra/valkey/valkey.module.js';
 
@@ -21,6 +22,8 @@ const RATE_LIMIT = 30;
 const DELIVER_CHANNEL = 'rt:deliver';
 
 export const ticketKey = (ticket: string) => `ws:ticket:${ticket}`;
+/** 정지된 계정의 연결을 끊을 때 */
+export const ACCOUNT_SUSPENDED_CLOSE_CODE = 4403;
 export const presenceKey = (userId: string) => `ws:online:${userId}`;
 
 export type ServerMessage = {
@@ -73,7 +76,10 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   private subscriber: Redis | null = null;
   private heartbeat: NodeJS.Timeout | null = null;
 
-  constructor(@Inject(VALKEY) private readonly valkey: Redis) {}
+  constructor(
+    @Inject(VALKEY) private readonly valkey: Redis,
+    private readonly blocks: AccountBlockService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     this.subscriber = this.valkey.duplicate();
@@ -111,7 +117,9 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   /** 티켓은 1회용이라 꺼내면서 지운다 */
   async redeemTicket(ticket: string | null): Promise<string | null> {
     if (!ticket || !/^[0-9a-f]{64}$/.test(ticket)) return null;
-    return this.valkey.getdel(ticketKey(ticket));
+    const userId = await this.valkey.getdel(ticketKey(ticket));
+    if (userId && (await this.blocks.isBlocked(userId))) return null;
+    return userId;
   }
 
   /** 이 인스턴스의 연결을 먼저 본다 (다시 접속한 직후에는 Valkey 기록이 아직 안 써졌을 수 있다) */
@@ -187,6 +195,11 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   async receive(socket: WebSocket, raw: string): Promise<void> {
     const connection = this.connections.get(socket);
     if (!connection) return;
+    // 정지되면 이미 열린 연결도 다음 메시지에서 끊는다
+    if (await this.blocks.isBlocked(connection.userId)) {
+      socket.close(ACCOUNT_SUSPENDED_CLOSE_CODE, 'account suspended');
+      return;
+    }
     let requestId: string | null = null;
     try {
       const now = Date.now();
