@@ -1,4 +1,5 @@
 export * from './audit-logs.js';
+export * from './badges.js';
 export * from './battles.js';
 export * from './classes.js';
 export * from './devices.js';
