@@ -1,4 +1,4 @@
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, count, desc, eq, gt, inArray, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
@@ -8,6 +8,7 @@ import { decodeCursor, toCursorPage } from '../../common/pagination.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import { notificationSettings, notifications, users } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
+import { PushService } from '../push/push.service.js';
 import { AgreementService } from '../users/agreement.service.js';
 import {
   CATEGORY_OF,
@@ -65,9 +66,12 @@ const COLUMN_OF = {
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     @Inject(DB) private readonly db: Database,
     private readonly agreements: AgreementService,
+    private readonly push: PushService,
   ) {}
 
   /**
@@ -93,6 +97,10 @@ export class NotificationsService {
       await this.db.insert(notifications).values(rows);
       stored.push(...rows);
     }
+    // 푸시를 넣지 못해도 알림은 이미 저장돼 있으므로 기록만 한다
+    await this.push
+      .dispatch(stored.map((row) => ({ ...row, notificationId: row.id, route: row.route ?? null })))
+      .catch((error: unknown) => this.logger.warn(`푸시 작업 추가 실패: ${String(error)}`));
     return stored;
   }
 

@@ -13,6 +13,12 @@ const commaList = <T extends z.ZodType<unknown, string>>(item: T) =>
     )
     .pipe(z.array(item));
 
+/** 한 줄로 넣은 PEM(\n)을 줄바꿈으로 */
+const pem = z
+  .string()
+  .min(1)
+  .transform((value) => value.replaceAll(String.raw`\n`, '\n'));
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().default('0.0.0.0'),
@@ -25,10 +31,7 @@ export const envSchema = z.object({
   // 대결 참가·매칭이 몰릴 때 연결을 기다리지 않도록 넉넉히 (MySQL max_connections 151보다 작게)
   DB_POOL_SIZE: z.coerce.number().int().min(1).max(100).default(20),
   VALKEY_URL: z.url({ protocol: /^rediss?$/ }),
-  JWT_PRIVATE_KEY: z
-    .string()
-    .min(1)
-    .transform((pem) => pem.replaceAll(String.raw`\n`, '\n')),
+  JWT_PRIVATE_KEY: pem,
   JWT_KEY_ID: z.string().min(1).default('k1'),
   DATAGSM_CLIENT_ID: z.string().min(1),
   DATAGSM_REDIRECT_URIS: commaList(z.url()).refine(
@@ -39,6 +42,18 @@ export const envSchema = z.object({
   DATAGSM_RESOURCE_URL: z.url().default('https://oauth.resource.datagsm.kr'),
   // 웹 도메인이 생기기 전까지는 앱 스킴으로 공유 링크를 만든다
   SHARE_LINK_BASE: z.url().default('wordmate://'),
+  // 푸시 키. 없으면 그 플랫폼은 보내지 않고 기록만 남긴다
+  APNS_KEY_P8: pem.optional(),
+  APNS_KEY_ID: z.string().min(1).optional(),
+  APNS_TEAM_ID: z.string().min(1).optional(),
+  APNS_BUNDLE_ID: z.string().min(1).optional(),
+  APNS_SANDBOX: z.stringbool().default(false),
+  FCM_PROJECT_ID: z.string().min(1).optional(),
+  FCM_CLIENT_EMAIL: z.email().optional(),
+  FCM_PRIVATE_KEY: pem.optional(),
+  VAPID_PUBLIC_KEY: z.string().min(1).optional(),
+  VAPID_PRIVATE_KEY: z.string().min(1).optional(),
+  VAPID_SUBJECT: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

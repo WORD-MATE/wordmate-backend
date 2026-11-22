@@ -19,6 +19,14 @@ export function kstDate(at: Date = new Date()): string {
     .toString();
 }
 
+/** KST 시각 HH:mm */
+export function kstTime(at: Date = new Date()): string {
+  return Temporal.Instant.fromEpochMilliseconds(at.getTime())
+    .toZonedDateTimeISO(KST)
+    .toPlainTime()
+    .toString({ smallestUnit: 'minute' });
+}
+
 export function kstDayRange(date: string): TimeRange {
   const day = Temporal.PlainDate.from(date);
   return rangeOf(day, day.add({ days: 1 }));
