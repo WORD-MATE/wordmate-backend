@@ -4,6 +4,7 @@ import { BadgesModule } from '../badges/badges.module.js';
 import { ClassesModule } from '../classes/classes.module.js';
 import { ForbiddenWordsModule } from '../forbidden-words/forbidden-words.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
+import { PoliciesModule } from '../policies/policies.module.js';
 import { RankingModule } from '../ranking/ranking.module.js';
 import { UsersModule } from '../users/users.module.js';
 import { AdminAppConfigController } from './admin-app-config.controller.js';
@@ -11,6 +12,8 @@ import { AdminAuditLogsController } from './admin-audit-logs.controller.js';
 import { AdminAuditLogsService } from './admin-audit-logs.service.js';
 import { AdminForbiddenWordsController } from './admin-forbidden-words.controller.js';
 import { AdminForbiddenWordsService } from './admin-forbidden-words.service.js';
+import { AdminPoliciesController } from './admin-policies.controller.js';
+import { AdminPoliciesService } from './admin-policies.service.js';
 import { AdminReportsController } from './admin-reports.controller.js';
 import { AdminReportsService } from './admin-reports.service.js';
 import { AdminSanctionsController } from './admin-sanctions.controller.js';
@@ -25,6 +28,7 @@ import { AdminUsersService } from './admin-users.service.js';
     ClassesModule,
     ForbiddenWordsModule,
     NotificationsModule,
+    PoliciesModule,
     RankingModule,
     UsersModule,
   ],
@@ -32,6 +36,7 @@ import { AdminUsersService } from './admin-users.service.js';
     AdminAppConfigController,
     AdminAuditLogsController,
     AdminForbiddenWordsController,
+    AdminPoliciesController,
     AdminReportsController,
     AdminSanctionsController,
     AdminUsersController,
@@ -39,6 +44,7 @@ import { AdminUsersService } from './admin-users.service.js';
   providers: [
     AdminAuditLogsService,
     AdminForbiddenWordsService,
+    AdminPoliciesService,
     AdminReportsService,
     AdminSanctionsService,
     AdminUsersService,
