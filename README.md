@@ -116,6 +116,7 @@ create(@ZodBody(CreatePack) body: z.infer<typeof CreatePack>) { ... }
 | `LOG_LEVEL`             | `info`                                   | `fatal` / `error` / `warn` / `info` / `debug` / `trace` / `silent`  |
 | `CORS_ORIGINS`          | (없음)                                   | 허용할 웹 Origin, 쉼표로 구분                                       |
 | `DATABASE_URL`          | (필수)                                   | `mysql://user:pass@host:3306/db`                                    |
+| `DB_POOL_SIZE`          | `20`                                     | DB 연결 수 (MySQL `max_connections`보다 작게)                       |
 | `VALKEY_URL`            | (필수)                                   | `redis://host:6379`                                                 |
 | `JWT_PRIVATE_KEY`       | (필수)                                   | Ed25519 개인키 PEM (`pnpm jwt:keygen`으로 생성)                     |
 | `JWT_KEY_ID`            | `k1`                                     | 토큰 헤더의 kid (키 교체 시 변경)                                   |
@@ -471,7 +472,7 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 - `POST /battles/matchmaking` (학생, 202 `{ queuedAt, timeoutAt }`): WebSocket에 접속해 있어야 합니다(409 `MATCH_WS_NOT_CONNECTED`). 연결이 열린 직후에는 서버가 티켓을 확인하는 중이라 최대 2초까지 접속 등록을 기다린 뒤 판단합니다. 다른 방에 있으면 409 `ROOM_ALREADY_JOINED`, 이미 기다리는 중이면 409 `MATCH_ALREADY_QUEUED`.
 - 대기열은 Valkey(`mm:queue` ZSET 점수 = 누적 XP, `mm:queued` 대기 시각)입니다. 들어오는 순간 기다리는 사람 가운데 누적 XP가 가장 가까운 상대(같으면 먼저 기다린 사람)와 짝짓고, 없으면 기다립니다. 차단 관계는 차단 기능이 생기면 제외합니다.
 - 대기열에서 빼기와 성사를 Lua 스크립트 하나에서 처리해, 취소와 성사가 겹치면 먼저 도착한 쪽만 이깁니다.
-- 성사: 먼저 기다린 사람이 방장인 `QUICK_MATCH` 방(추천순 맨 앞 기본 단어팩, 한→영 4지선다, 10문항, 10초, 2명)을 만들고 두 사람에게 `MATCH_FOUND { roomId, inviteCode }`를 보낸 뒤 바로 카운트다운을 시작합니다. 기다리던 상대의 연결이 끊겼거나 그사이 다른 방에 들어갔으면 상대를 빼고 다음 대기자를 봅니다.
+- 성사: 요청에는 바로 202로 답하고, 방 만들기·시작은 응답 뒤에 이어서 처리합니다(동시에 많이 성사돼도 요청이 DB 연결을 기다리며 쌓이지 않게). 처리에 실패하면 두 사람을 원래 대기 시각으로 다시 줄 세웁니다. 먼저 기다린 사람이 방장인 `QUICK_MATCH` 방(추천순 맨 앞 기본 단어팩, 한→영 4지선다, 10문항, 10초, 2명)을 만들고 두 사람에게 `MATCH_FOUND { roomId, inviteCode }`를 보낸 뒤 바로 카운트다운을 시작합니다. 기다리던 상대의 연결이 끊겼거나 그사이 다른 방에 들어갔으면 상대를 빼고 다음 대기자를 봅니다.
 - 60초 동안 상대가 없으면 지연 작업이 빼고 `MATCH_TIMEOUT {}`을 보냅니다. 작업이 유실돼도 만료된 대기자는 짝지을 때 걸러집니다.
 - `DELETE /battles/matchmaking` (204): 이미 성사됐으면 409 `MATCH_ALREADY_FOUND`(`detail = { roomId, inviteCode }`), 기다리는 매칭이 없으면 404 `MATCH_NOT_QUEUED`. 방을 만드는 중이면 결과가 나올 때까지 잠깐(최대 3초) 기다립니다. 남아 있는 성사 기록은 그 방에 아직 있을 때만 409로 답하고, 아니면 404입니다.
 - 연결이 모두 끊기거나(다른 서버에 연결이 남아 있으면 그대로) 직접 방을 만들거나 들어가면 대기열에서 뺍니다. 성사 처리 중에 다시 요청하면 409 `MATCH_ALREADY_QUEUED`, 만료 작업이 유실돼 남은 자기 대기는 새로 줄 서면 덮습니다.
