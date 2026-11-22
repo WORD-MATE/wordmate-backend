@@ -285,10 +285,9 @@ export class RoomsService {
     await this.expireIfOverdue(found);
     await this.releaseExpired(user.userId);
 
-    // 반 소속은 참가 중에 바뀌지 않으므로 방을 잠그기 전에 확인한다 (잠금을 쥐는 시간을 줄인다)
-    if (found.type === 'CLASS' && !(await this.inClass(found.classId, user.userId))) {
-      throw RoomErrors.classOnly();
-    }
+    // 반 소속 조회는 잠그기 전에 한다 (잠금을 쥐는 시간을 줄인다). 판정은 예전 순서대로 잠금 안에서
+    // 없는 방·이미 참가·강퇴·시작 확인 뒤에 해야 끝난 반 방의 코드도 404로 세어 코드 찔러보기를 막는다
+    const member = found.type !== 'CLASS' || (await this.inClass(found.classId, user.userId));
     let joined = false;
     try {
       // 같은 방 참가는 서버 안에서 먼저 줄을 세워, 방 잠금을 기다리는 동안 DB 연결을 붙잡지 않게 한다
@@ -323,6 +322,7 @@ export class RoomsService {
           if (mine?.active) return false;
           if (mine?.state === 'KICKED') throw RoomErrors.kicked();
           if (room.status !== 'WAITING') throw RoomErrors.alreadyStarted();
+          if (!member) throw RoomErrors.classOnly();
           const occupied = rows.filter((row) => row.active).length;
           if (occupied >= room.maxParticipants) throw RoomErrors.full();
 
