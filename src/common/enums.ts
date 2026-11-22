@@ -36,6 +36,10 @@ export const AUDIT_ACTION = [
   'NOTICE_CREATE',
   'NOTICE_UPDATE',
   'NOTICE_DELETE',
+  'MORNING_CREATE',
+  'MORNING_UPDATE',
+  'MORNING_PUBLISH',
+  'MORNING_UNPUBLISH',
 ] as const;
 export type AuditAction = Values<typeof AUDIT_ACTION>;
 
