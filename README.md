@@ -405,7 +405,7 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 
 ## 대결방
 
-- 대기 중인 방은 MySQL(`battle_rooms`, `battle_room_participants`)에 둡니다. 참가는 방 행을 잠가(`FOR UPDATE`) 정원 확인과 참가를 한 번에 처리합니다.
+- 대기 중인 방은 MySQL(`battle_rooms`, `battle_room_participants`)에 둡니다. 참가는 방 행을 잠가(`FOR UPDATE`) 정원 확인과 참가를 한 번에 처리합니다. 같은 방 참가는 서버 안에서 먼저 줄을 세워(`KeyedSerializer`) 잠금을 기다리는 동안 DB 연결을 붙잡지 않게 하고, 반 소속 확인은 잠금 밖에서 합니다.
 - 사용자당 활성 방 하나는 참가자의 생성 컬럼 `active_user = IF(active, user_id, NULL)` 유니크로 막습니다. 생성·참가·매칭·다시 하기가 모두 같은 제약을 씁니다. 초대 코드(영문 대문자·숫자 6자리)는 진행 중인 방끼리만 겹치지 않게 `active_code` 유니크로 막습니다.
 - 30분 안에 시작하지 않은 방은 BullMQ `battle` 큐의 지연 작업(`expire-room`, 실패하면 5번까지 재시도)으로 닫고 `ROOM_CLOSED { reason: EXPIRED }`를 보냅니다.
   - 방 상태와 참가자 비우기는 한 트랜잭션입니다. 나눠 하면 그 사이에 실패했을 때 참가자가 끝난 방에 묶입니다.
@@ -502,7 +502,7 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 - `SCENARIO=match`: 사용자마다 티켓 → WebSocket 접속 → 빠른 매칭 → 문항마다 0.5~4초 생각한 뒤 아무 보기나 답 → `BATTLE_FINISHED` 뒤 결과 조회. `VUS`명이 `ITERATIONS`판씩 합니다.
 - `SCENARIO=room`: `ROOM_SIZE`명씩 `ROOMS`개 방을 미리 만들고, 모두 들어오면 방장이 시작합니다(반 전체 대결). 다 모이지 않아도 1분 뒤 시작합니다.
 - 요청이 실패하거나 카운트다운이 취소되면 기다리지 않고 원인(상태·에러 코드)을 `console.warn`으로 남기고 그 판을 끝냅니다.
-- 기록하는 지표: `answer_ack_ms`(답 → `ANSWER_ACCEPTED`), `question_start_delay_ms`(서버가 문항을 시작한 시각 → 받은 시각, 작업 지연 포함, 부하 PC와 서버 시계가 맞아야 의미 있음), `match_wait_ms`, `battles_finished`, `match_timeouts`, `server_errors`(코드별).
+- 기록하는 지표: `answer_ack_ms`(답 → `ANSWER_ACCEPTED`), `question_start_delay_ms`(서버가 문항을 시작한 시각 → 받은 시각, 작업 지연 포함, 부하 PC와 서버 시계가 맞아야 의미 있음), `match_wait_ms`, `battles_finished`, `match_timeouts`, `server_errors`(코드별), 요청 종류별 응답 시간 `req_ticket_ms`·`req_matchmaking_ms`·`req_join_ms`·`req_result_ms`.
 
 ### 목표
 
