@@ -9,6 +9,7 @@ import {
   battleResults,
   type Pack,
   packs,
+  reportGroups,
   reports,
   users,
   words,
@@ -48,16 +49,43 @@ export class ReportsService {
     await this.assertTarget(user, body);
     if (body.battleId) await this.assertBattle(user, body.battleId);
     const reportId = newId();
+    const now = new Date();
     try {
-      await this.db.insert(reports).values({
-        id: reportId,
-        reporterId: user.userId,
-        targetType: body.targetType,
-        targetId: body.targetId,
-        reason: body.reason,
-        detail: body.detail || null,
-        battleId: body.battleId ?? null,
-        reportDate: kstDate(),
+      await this.db.transaction(async (tx) => {
+        // 대상의 열린 묶음에 넣는다. 없으면 만들고, 동시에 만들어도 유니크 키로 하나만 남는다
+        await tx.insert(reportGroups).ignore().values({
+          id: newId(),
+          targetType: body.targetType,
+          targetId: body.targetId,
+          lastReportedAt: now,
+        });
+        const openGroup = and(
+          eq(reportGroups.targetType, body.targetType),
+          eq(reportGroups.targetId, body.targetId),
+          eq(reportGroups.openKey, 1),
+        );
+        const [group] = await tx
+          .select({ id: reportGroups.id, status: reportGroups.status })
+          .from(reportGroups)
+          .where(openGroup)
+          .for('update');
+        if (!group) throw new Error('열린 신고 묶음을 만들지 못했습니다.');
+        await tx
+          .update(reportGroups)
+          .set({ lastReportedAt: now })
+          .where(eq(reportGroups.id, group.id));
+        await tx.insert(reports).values({
+          id: reportId,
+          groupId: group.id,
+          status: group.status,
+          reporterId: user.userId,
+          targetType: body.targetType,
+          targetId: body.targetId,
+          reason: body.reason,
+          detail: body.detail || null,
+          battleId: body.battleId ?? null,
+          reportDate: kstDate(),
+        });
       });
     } catch (error) {
       if (isDuplicateKeyError(error, 'reports_daily_uq')) throw ReportErrors.duplicateToday();
