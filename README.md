@@ -468,7 +468,7 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 
 ### 빠른 1:1 매칭
 
-- `POST /battles/matchmaking` (학생, 202 `{ queuedAt, timeoutAt }`): WebSocket에 접속해 있어야 합니다(409 `MATCH_WS_NOT_CONNECTED`). 다른 방에 있으면 409 `ROOM_ALREADY_JOINED`, 이미 기다리는 중이면 409 `MATCH_ALREADY_QUEUED`.
+- `POST /battles/matchmaking` (학생, 202 `{ queuedAt, timeoutAt }`): WebSocket에 접속해 있어야 합니다(409 `MATCH_WS_NOT_CONNECTED`). 연결이 열린 직후에는 서버가 티켓을 확인하는 중이라 최대 2초까지 접속 등록을 기다린 뒤 판단합니다. 다른 방에 있으면 409 `ROOM_ALREADY_JOINED`, 이미 기다리는 중이면 409 `MATCH_ALREADY_QUEUED`.
 - 대기열은 Valkey(`mm:queue` ZSET 점수 = 누적 XP, `mm:queued` 대기 시각)입니다. 들어오는 순간 기다리는 사람 가운데 누적 XP가 가장 가까운 상대(같으면 먼저 기다린 사람)와 짝짓고, 없으면 기다립니다. 차단 관계는 차단 기능이 생기면 제외합니다.
 - 대기열에서 빼기와 성사를 Lua 스크립트 하나에서 처리해, 취소와 성사가 겹치면 먼저 도착한 쪽만 이깁니다.
 - 성사: 먼저 기다린 사람이 방장인 `QUICK_MATCH` 방(추천순 맨 앞 기본 단어팩, 한→영 4지선다, 10문항, 10초, 2명)을 만들고 두 사람에게 `MATCH_FOUND { roomId, inviteCode }`를 보낸 뒤 바로 카운트다운을 시작합니다. 기다리던 상대의 연결이 끊겼거나 그사이 다른 방에 들어갔으면 상대를 빼고 다음 대기자를 봅니다.
@@ -501,6 +501,7 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 
 - `SCENARIO=match`: 사용자마다 티켓 → WebSocket 접속 → 빠른 매칭 → 문항마다 0.5~4초 생각한 뒤 아무 보기나 답 → `BATTLE_FINISHED` 뒤 결과 조회. `VUS`명이 `ITERATIONS`판씩 합니다.
 - `SCENARIO=room`: `ROOM_SIZE`명씩 `ROOMS`개 방을 미리 만들고, 모두 들어오면 방장이 시작합니다(반 전체 대결). 다 모이지 않아도 1분 뒤 시작합니다.
+- 요청이 실패하거나 카운트다운이 취소되면 기다리지 않고 원인(상태·에러 코드)을 `console.warn`으로 남기고 그 판을 끝냅니다.
 - 기록하는 지표: `answer_ack_ms`(답 → `ANSWER_ACCEPTED`), `question_start_delay_ms`(서버가 문항을 시작한 시각 → 받은 시각, 작업 지연 포함, 부하 PC와 서버 시계가 맞아야 의미 있음), `match_wait_ms`, `battles_finished`, `match_timeouts`, `server_errors`(코드별).
 
 ### 목표
@@ -514,6 +515,7 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 
 ### 실행
 
+0. 빠른 매칭·반 대결은 단어 10개 이상인 기본 단어팩이 있어야 합니다. 없으면 매칭이 503 `MATCH_UNAVAILABLE`로 실패합니다. 먼저 `기본 단어팩 시드`로 넣어 둡니다.
 1. 개발 서버에서 계정과 토큰을 만듭니다(토큰은 30분 유효, 파일은 소유자만 읽을 수 있고 화면에 출력하지 않습니다).
 
    ```bash

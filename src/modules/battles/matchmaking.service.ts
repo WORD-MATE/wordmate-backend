@@ -23,6 +23,9 @@ export const QUICK_MATCH_SETTINGS = {
 const PENDING_WAIT_MS = 3000;
 const PENDING_POLL_MS = 100;
 const PAIR_ATTEMPTS = 3;
+/** 연결이 열린 직후에는 서버가 티켓을 확인하는 중이라 아직 접속으로 잡히지 않을 수 있어 잠깐 기다린다 */
+const ONLINE_WAIT_MS = 2000;
+const ONLINE_POLL_MS = 50;
 
 export const MatchErrors = {
   wsRequired: () =>
@@ -77,7 +80,7 @@ export class MatchmakingService implements OnModuleInit {
    * 결과는 WebSocket MATCH_FOUND { roomId, inviteCode } 또는 MATCH_TIMEOUT
    */
   async enqueue(user: AuthUser): Promise<MatchTicket> {
-    if (!(await this.realtime.isOnline(user.userId))) throw MatchErrors.wsRequired();
+    if (!(await this.waitOnline(user.userId))) throw MatchErrors.wsRequired();
     await this.rooms.assertFree(user.userId);
     const pack = await this.defaultPack();
     if (!pack) throw MatchErrors.unavailable();
@@ -179,6 +182,18 @@ export class MatchmakingService implements OnModuleInit {
         this.logger.warn(`빠른 매칭 시작 실패 (${room.roomId}): ${String(error)}`),
       );
     return true;
+  }
+
+  /**
+   * 클라이언트는 연결이 열리자마자 매칭을 요청할 수 있는데, 서버는 그 뒤 티켓을 확인하고서야 접속으로 등록한다.
+   * 그 사이에 온 요청을 거절하지 않도록 등록될 때까지 잠깐 기다린다 (다른 서버에 붙은 연결은 Valkey 기록으로 확인)
+   */
+  private async waitOnline(userId: string): Promise<boolean> {
+    for (let waited = 0; ; waited += ONLINE_POLL_MS) {
+      if (await this.realtime.isOnline(userId)) return true;
+      if (waited >= ONLINE_WAIT_MS) return false;
+      await new Promise((resolve) => setTimeout(resolve, ONLINE_POLL_MS));
+    }
   }
 
   /** 추천순으로 가장 앞에 있는 기본 단어팩 (단어 10개 이상) */
