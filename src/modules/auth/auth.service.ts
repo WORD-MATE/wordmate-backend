@@ -106,6 +106,7 @@ export class AuthService {
       classNo: profile.classNo,
       number: profile.number,
       lastLoginAt: now,
+      ...(profile.datagsmStudentId ? { datagsmStudentId: profile.datagsmStudentId } : {}),
     };
 
     const user = await this.db.transaction(async (tx) => {

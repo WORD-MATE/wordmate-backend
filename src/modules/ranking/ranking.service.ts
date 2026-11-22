@@ -11,6 +11,7 @@ import {
   periodKey,
   RANK_KEY_TTL_SECONDS,
   rankKey,
+  type RankMember,
   scopeKeys,
   tiebreakOf,
   XP_FACTOR,
@@ -65,6 +66,26 @@ for i, key in ipairs(KEYS) do
   end
 end
 return #KEYS
+`;
+
+/**
+ * 학년·반이 바뀐 사용자의 이번 기간 점수를 옮긴다. 학교 키(KEYS[1])에는 기간 전체 점수가 있으므로
+ * 그 점수를 새 범위 키에 그대로 넣고 옛 범위 키에서는 뺀다
+ */
+const MOVE_SCOPE_SCRIPT = `
+local member = ARGV[1]
+local removeCount = tonumber(ARGV[2])
+local ttl = tonumber(ARGV[3])
+for i = 2, removeCount + 1 do
+  redis.call('ZREM', KEYS[i], member)
+end
+local score = redis.call('ZSCORE', KEYS[1], member)
+if not score then return 0 end
+for i = removeCount + 2, #KEYS do
+  redis.call('ZADD', KEYS[i], score, member)
+  if ttl > 0 then redis.call('EXPIRE', KEYS[i], ttl) end
+end
+return 1
 `;
 
 @Injectable()
@@ -134,6 +155,36 @@ export class RankingService {
       );
     } catch (error) {
       this.logger.error(`랭킹 조정 실패 (user ${userId}, ${delta}): ${String(error)}`);
+    }
+  }
+
+  /** 학년·반이 바뀐 뒤 호출한다. 실패는 로그만 남긴다 (복구 명령으로 다시 만든다) */
+  async moveScopes(
+    userId: string,
+    from: RankMember,
+    to: RankMember,
+    at = new Date(),
+  ): Promise<void> {
+    const before = scopeKeys(from);
+    const after = scopeKeys(to);
+    const removed = before.filter((scope) => !after.includes(scope));
+    const added = after.filter((scope) => !before.includes(scope));
+    if (removed.length === 0 && added.length === 0) return;
+    const date = kstDate(at);
+    try {
+      for (const period of RANK_PERIOD) {
+        const keys = ['school', ...removed, ...added].map((scope) => rankKey(period, date, scope));
+        await this.valkey.eval(
+          MOVE_SCOPE_SCRIPT,
+          keys.length,
+          ...keys,
+          userId,
+          removed.length,
+          RANK_KEY_TTL_SECONDS[period] ?? 0,
+        );
+      }
+    } catch (error) {
+      this.logger.error(`랭킹 범위 이동 실패 (user ${userId}): ${String(error)}`);
     }
   }
 

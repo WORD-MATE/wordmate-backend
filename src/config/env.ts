@@ -40,6 +40,9 @@ export const envSchema = z.object({
   ),
   DATAGSM_AUTH_URL: z.url().default('https://oauth.authorization.datagsm.kr'),
   DATAGSM_RESOURCE_URL: z.url().default('https://oauth.resource.datagsm.kr'),
+  DATAGSM_OPENAPI_URL: z.url().default('https://openapi.datagsm.kr'),
+  // 학적 동기화용 OpenAPI 키 (student:read). 없으면 동기화를 건너뛴다
+  DATAGSM_API_KEY: z.string().min(1).optional(),
   // 웹 도메인이 생기기 전까지는 앱 스킴으로 공유 링크를 만든다
   SHARE_LINK_BASE: z.url().default('wordmate://'),
   // 푸시 키. 없으면 그 플랫폼은 보내지 않고 기록만 남긴다
