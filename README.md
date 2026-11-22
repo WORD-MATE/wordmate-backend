@@ -587,6 +587,14 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 - 어느 쪽이든 차단했으면 친구 요청이 403 `FRIEND_NOT_ALLOWED`(차단 사실을 드러내지 않는 같은 문구)이고, 빠른 매칭에서 서로 짝짓지 않습니다.
 - 대결방 리액션은 보낸 사람을 차단한 사람에게 보내지 않습니다. 초대 코드로 같은 방에 들어오는 것은 막지 않습니다.
 
+## 신고
+
+- 로그인한 사용자는 사용자·단어팩·단어를 신고합니다(`POST /reports`). 사유는 부적절한 내용·불쾌한 리액션·부정행위·기타이고, 기타는 상세가 필수(200자 이하, 앞뒤 공백 제거)입니다.
+- 나 자신·내 단어팩(그 안의 단어)은 400 `REPORT_SELF`, 없거나 탈퇴했거나 내가 볼 수 없는 대상(공유하지 않은 남의 단어팩)은 404 `REPORT_TARGET_NOT_FOUND`입니다.
+- 대결 중 일어난 일이면 `battleId`를 붙이고, 내가 참여한 대결이 아니면 404 `BATTLE_NOT_FOUND`입니다.
+- 같은 대상·사유는 하루(KST) 한 번입니다(429 `REPORT_DUPLICATE_TODAY`). 유니크 키로 막아 동시에 보내도 하나만 남습니다.
+- 신고는 `RECEIVED` 상태로 쌓이고, 처리·결과 알림은 관리자 기능에서 합니다. 신고 대상에게는 알리지 않으며 신고한 사람을 드러내는 API가 없습니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.
