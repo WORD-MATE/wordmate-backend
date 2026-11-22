@@ -1,4 +1,6 @@
+import { getQueueToken } from '@nestjs/bullmq';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { Queue } from 'bullmq';
 import { eq, inArray } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { type Database, DB } from '../src/infra/db/db.module.js';
@@ -6,7 +8,7 @@ import { devices, notifications, users } from '../src/infra/db/schema/index.js';
 import { newId } from '../src/infra/db/uuid.js';
 import { NotificationsService } from '../src/modules/notifications/notifications.service.js';
 import { ApnsSender } from '../src/modules/push/apns.sender.js';
-import { PushService } from '../src/modules/push/push.service.js';
+import { PUSH_QUEUE, PushService } from '../src/modules/push/push.service.js';
 import type { PushMessage } from '../src/modules/push/push-rules.js';
 import { WebPushSender } from '../src/modules/push/webpush.sender.js';
 import { createTestApp } from './support/create-test-app.js';
@@ -66,6 +68,10 @@ describe('푸시 발송', () => {
   });
 
   it('푸시를 등록한 쓰는 기기마다 작업을 넣고, 금지 시간에는 넣지 않는다', async () => {
+    // 실제 발송 작업이 돌지 않게 큐에 넣는 것만 확인한다
+    const addBulk = vi
+      .spyOn(app.get<Queue>(getQueueToken(PUSH_QUEUE)), 'addBulk')
+      .mockResolvedValue([]);
     const userId = await makeUser();
     await addDevice(userId, { pushType: 'APNS', pushToken: `apns-${newId()}` });
     await addDevice(userId, {
@@ -83,6 +89,7 @@ describe('푸시 발송', () => {
     });
     const queued = await push.dispatch([{ userId, ...message() }], NOON);
     expect(queued).toBe(2);
+    expect(addBulk).toHaveBeenCalledTimes(1);
     expect(await push.dispatch([{ userId, ...message() }], kst('23:00'))).toBe(0);
     expect(await push.dispatch([{ userId, ...message('MARKETING') }], kst('21:30'))).toBe(0);
   });
