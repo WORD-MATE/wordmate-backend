@@ -73,20 +73,31 @@ export class BadgesService {
    */
   async evaluate(userId: string): Promise<void> {
     try {
-      for (const name of await this.earnNew(userId)) {
-        await this.notifications.notify([userId], {
-          type: 'BADGE_EARNED',
-          title: '배지 획득',
-          body: `'${name}' 배지를 얻었어요.`,
-          route: '/badges',
-        });
+      for (const def of await this.reached(userId)) {
+        // 배지마다 따로 처리해 하나가 실패해도 나머지는 주고 알린다
+        try {
+          const [result] = await this.db
+            .insert(userBadges)
+            .ignore()
+            .values({ userId, badgeId: def.id, earnedAt: new Date() });
+          if (result.affectedRows === 0) continue;
+          await this.notifications.notify([userId], {
+            type: 'BADGE_EARNED',
+            title: '배지 획득',
+            body: `'${def.name}' 배지를 얻었어요.`,
+            route: '/badges',
+          });
+        } catch (error) {
+          this.logger.error(`배지 지급 실패 (${userId}, ${def.code}): ${String(error)}`);
+        }
       }
     } catch (error) {
       this.logger.error(`배지 평가 실패 (${userId}): ${String(error)}`);
     }
   }
 
-  private async earnNew(userId: string): Promise<string[]> {
+  /** 아직 없는 업적 배지 가운데 조건을 채운 것 */
+  private async reached(userId: string) {
     const owned = await this.db
       .select({ badgeId: userBadges.badgeId })
       .from(userBadges)
@@ -100,25 +111,14 @@ export class BadgesService {
           and(eq(badges.active, true), eq(badges.type, 'ACHIEVEMENT'), isNotNull(badges.metric)),
         )
     ).filter((def) => !ownedIds.has(def.id));
-    if (candidates.length === 0) return [];
+    if (candidates.length === 0) return candidates;
 
     const metrics = new Set(candidates.map((def) => def.metric as BadgeMetric));
     const values = new Map<BadgeMetric, number>();
     for (const metric of metrics) values.set(metric, await this.valueOf(userId, metric));
-    const reached = candidates.filter(
+    return candidates.filter(
       (def) => (values.get(def.metric as BadgeMetric) ?? 0) >= (def.threshold ?? Infinity),
     );
-
-    const names: string[] = [];
-    const earnedAt = new Date();
-    for (const def of reached) {
-      const [result] = await this.db
-        .insert(userBadges)
-        .ignore()
-        .values({ userId, badgeId: def.id, earnedAt });
-      if (result.affectedRows > 0) names.push(def.name);
-    }
-    return names;
   }
 
   private async valueOf(userId: string, metric: BadgeMetric): Promise<number> {

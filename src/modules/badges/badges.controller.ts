@@ -17,7 +17,7 @@ export class BadgesController {
   @ApiOperation({
     summary: '배지 목록',
     description:
-      '내 배지는 전체와 획득 여부, 다른 사람은 획득한 것만. 랭킹 비공개 사용자는 빈 배열. 404 USER_NOT_FOUND',
+      '내 배지는 전체와 획득 여부, 다른 사람은 획득한 것만. 랭킹 비공개 사용자는 빈 배열. 404 USER_NOT_FOUND(없거나 탈퇴)',
   })
   @Get()
   @ZodResponse(BadgeList)

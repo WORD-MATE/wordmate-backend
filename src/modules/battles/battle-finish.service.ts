@@ -94,6 +94,9 @@ export class BattleFinishService {
         xpEarned = grant.earned;
         if (grant.capped) blockedReason = 'DAILY_CAP';
         earned.push({ userId: result.userId, earned: grant.earned });
+      } else if (result.completed) {
+        // XP가 없어도 결과는 남으므로 배지 평가 대상에 넣는다 (랭킹은 0이면 건너뜀)
+        earned.push({ userId: result.userId, earned: 0 });
       }
       // 기권승은 XP가 없는 것처럼 승리로 세지 않는다
       if (result.completed && !idle) {

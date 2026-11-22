@@ -170,6 +170,7 @@ export class PlayService implements OnModuleInit {
       await Promise.all(
         xp.map(({ userId, earned }) => this.ranking.addXp(userId, earned, finishedAt)),
       );
+      // 끝까지 남은 참가자 (XP 0 포함)
       await Promise.all(xp.map(({ userId }) => this.badges.evaluate(userId)));
     }
     if (outcome.deadlineAt) await this.queue.scheduleQuestionEnd(battleId, idx, outcome.deadlineAt);
