@@ -265,6 +265,11 @@ describe('오늘의 문장', () => {
     expect((await call(user, 'POST', url, { packId, newPackName: '둘 다' })).statusCode).toBe(400);
     expect((await call(user, 'POST', url, { packId, keywordIndexes: [5] })).statusCode).toBe(400);
     expect((await call(user, 'POST', url, { packId: newId() })).json().code).toBe('PACK_NOT_FOUND');
+    const other = await makeUser();
+    const othersPack = (await call(other, 'POST', '/packs', { name: '남의 팩' })).json().packId;
+    expect((await call(user, 'POST', url, { packId: othersPack })).json().code).toBe(
+      'PACK_NOT_FOUND',
+    );
 
     const full = (await call(user, 'POST', '/packs', { name: '가득 찬 팩' })).json().packId;
     await db.update(packs).set({ wordCount: 999 }).where(eq(packs.id, full));
