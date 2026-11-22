@@ -18,7 +18,7 @@ import {
   morningSentences,
   userStreaks,
 } from '../../infra/db/schema/index.js';
-import { PacksService } from '../packs/packs.service.js';
+import { PackErrors, PacksService } from '../packs/packs.service.js';
 import { RankingService } from '../ranking/ranking.service.js';
 import { streakView } from '../records/stats.js';
 import { nextStreak } from '../study/study-result.js';
@@ -181,19 +181,30 @@ export class MorningService {
       throw CommonErrors.invalidRequest({ field: 'keywordIndexes' }, '없는 핵심 어휘입니다.');
     }
     const selected = wanted ? keywords.filter((k) => wanted.has(k.idx)) : keywords;
+    if (body.packId) {
+      // 기본 단어팩·남의 단어팩은 "내 단어팩"이 아니므로 없는 것으로 본다
+      const pack = await this.packs.findById(body.packId);
+      if (pack.type !== 'MINE' || pack.ownerUserId !== user.userId) throw PackErrors.notFound();
+    }
     const packId =
       body.packId ??
       (await this.packs.create(user, { name: body.newPackName ?? '', type: 'MINE' })).packId;
-    const result = await this.words.add(
-      user,
-      packId,
-      {
-        words: selected.map((k) => ({ english: k.english, meanings: k.meanings })),
-        duplicatePolicy: 'SKIP',
-      },
-      { rejectOverLimit: true },
-    );
-    return { packId, saved: result.added, skipped: result.skipped };
+    try {
+      const result = await this.words.add(
+        user,
+        packId,
+        {
+          words: selected.map((k) => ({ english: k.english, meanings: k.meanings })),
+          duplicatePolicy: 'SKIP',
+        },
+        { rejectOverLimit: true },
+      );
+      return { packId, saved: result.added, skipped: result.skipped };
+    } catch (error) {
+      // 이번 요청에서 만든 빈 팩은 남기지 않는다
+      if (!body.packId) await this.packs.remove(user, packId);
+      throw error;
+    }
   }
 
   /** 홈 카드. 게시된 문장이 하나도 없으면 null */

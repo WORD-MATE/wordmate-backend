@@ -8,12 +8,14 @@ import {
   morningSentences,
 } from '../../../infra/db/schema/index.js';
 import { newId } from '../../../infra/db/uuid.js';
+import { WordInput } from '../../words/words.schemas.js';
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 
+// 내 단어팩에 그대로 저장하므로 단어 추가와 같은 규칙으로 정규화한다
 const Keyword = z.object({
-  english: text(50),
-  meanings: z.array(text(100)).min(1).max(5),
+  english: WordInput.shape.english,
+  meanings: WordInput.shape.meanings,
   example: text(500).optional(),
   highlight: z.object({ start: z.number().int().min(0), end: z.number().int().min(1) }),
 });
@@ -35,6 +37,10 @@ const Sentence = z
     quizzes: z.array(Quiz).min(1).max(10),
   })
   .superRefine((value, ctx) => {
+    const englishes = value.keywords.map((k) => k.english.toLowerCase());
+    if (new Set(englishes).size !== englishes.length) {
+      ctx.addIssue({ code: 'custom', path: ['keywords'], message: '핵심 어휘가 겹칩니다.' });
+    }
     value.keywords.forEach((keyword, index) => {
       const { start, end } = keyword.highlight;
       if (start >= end || end > value.sentence.length) {
