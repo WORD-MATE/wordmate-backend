@@ -14,6 +14,7 @@ import {
   studyRecordItems,
   studyRecords,
   studySessions,
+  userBadges,
   userMissions,
   userStreaks,
   users,
@@ -176,6 +177,13 @@ describe('학습 종료', () => {
       WEEKLY_STUDY: 1,
       WEEKLY_XP: 13,
     });
+    // 첫 학습 배지
+    expect(
+      await db
+        .select({ badgeId: userBadges.badgeId })
+        .from(userBadges)
+        .where(eq(userBadges.userId, user.userId)),
+    ).toHaveLength(1);
 
     const replay = await complete(user, session.sessionId, 'FINISHED', key);
     expect(replay.json()).toEqual(result);

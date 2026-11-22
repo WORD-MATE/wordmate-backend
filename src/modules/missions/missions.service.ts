@@ -5,6 +5,7 @@ import type { MissionPeriod } from '../../common/enums.js';
 import { AppException } from '../../common/errors/app-exception.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import { type Mission, missions, userMissions, users } from '../../infra/db/schema/index.js';
+import { BadgesService } from '../badges/badges.service.js';
 import { RankingService } from '../ranking/ranking.service.js';
 import { XpService } from '../xp/xp.service.js';
 import { expiresAtOf, missionPeriodKey } from './mission-progress.js';
@@ -29,6 +30,7 @@ export class MissionsService {
     @Inject(DB) private readonly db: Database,
     private readonly xp: XpService,
     private readonly ranking: RankingService,
+    private readonly badges: BadgesService,
   ) {}
 
   /** 이번 기간(일일은 오늘, 주간은 이번 주) 미션. 오늘의 문장 미션은 06:00 기준 날짜로 센다 */
@@ -118,6 +120,7 @@ export class MissionsService {
       };
     });
     await this.ranking.addXp(user.userId, xp.earned, now);
+    await this.badges.evaluate(user.userId);
     return { xp };
   }
 

@@ -18,6 +18,7 @@ import {
   morningSentences,
   userStreaks,
 } from '../../infra/db/schema/index.js';
+import { BadgesService } from '../badges/badges.service.js';
 import { addMissionProgress } from '../missions/mission-progress.js';
 import { PackErrors, PacksService } from '../packs/packs.service.js';
 import { RankingService } from '../ranking/ranking.service.js';
@@ -48,6 +49,7 @@ export class MorningService {
     @Inject(DB) private readonly db: Database,
     private readonly xp: XpService,
     private readonly ranking: RankingService,
+    private readonly badges: BadgesService,
     private readonly packs: PacksService,
     private readonly words: WordsService,
   ) {}
@@ -169,6 +171,7 @@ export class MorningService {
       };
     });
     await this.ranking.addXp(user.userId, result.xp.earned, now);
+    await this.badges.evaluate(user.userId);
     return result;
   }
 

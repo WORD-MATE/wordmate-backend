@@ -17,6 +17,7 @@ import {
   words,
 } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
+import { BadgesService } from '../badges/badges.service.js';
 import { addMissionProgress } from '../missions/mission-progress.js';
 import { RankingService } from '../ranking/ranking.service.js';
 import { type XpGrant, XpService } from '../xp/xp.service.js';
@@ -39,6 +40,7 @@ export class StudyCompleteService {
     @Inject(DB) private readonly db: Database,
     private readonly xp: XpService,
     private readonly ranking: RankingService,
+    private readonly badges: BadgesService,
   ) {}
 
   /**
@@ -140,6 +142,7 @@ export class StudyCompleteService {
       };
     });
     await this.ranking.addXp(user.userId, result.xp.earned, completedAt);
+    await this.badges.evaluate(user.userId);
     return result;
   }
 

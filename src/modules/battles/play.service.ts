@@ -15,6 +15,7 @@ import {
   words,
 } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
+import { BadgesService } from '../badges/badges.service.js';
 import { RankingService } from '../ranking/ranking.service.js';
 import { type RealtimeContext, RealtimeService } from '../realtime/realtime.service.js';
 import { CHOICE_COUNT } from '../study/question-builder.js';
@@ -61,6 +62,7 @@ export class PlayService implements OnModuleInit {
     private readonly queue: BattleQueue,
     private readonly finisher: BattleFinishService,
     private readonly ranking: RankingService,
+    private readonly badges: BadgesService,
   ) {}
 
   onModuleInit(): void {
@@ -168,6 +170,8 @@ export class PlayService implements OnModuleInit {
       await Promise.all(
         xp.map(({ userId, earned }) => this.ranking.addXp(userId, earned, finishedAt)),
       );
+      // 끝까지 남은 참가자 (XP 0 포함)
+      await Promise.all(xp.map(({ userId }) => this.badges.evaluate(userId)));
     }
     if (outcome.deadlineAt) await this.queue.scheduleQuestionEnd(battleId, idx, outcome.deadlineAt);
   }

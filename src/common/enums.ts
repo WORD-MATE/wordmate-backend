@@ -146,6 +146,16 @@ export type MissionStatus = Values<typeof MISSION_STATUS>;
 export const BADGE_TYPE = ['ACHIEVEMENT', 'SEASON'] as const;
 export type BadgeType = Values<typeof BADGE_TYPE>;
 
+/** 업적 배지가 보는 값 (연속 기록은 최고 기록) */
+export const BADGE_METRIC = [
+  'TOTAL_XP',
+  'STUDY_COUNT',
+  'STUDY_STREAK',
+  'BATTLE_WINS',
+  'MORNING_STREAK',
+] as const;
+export type BadgeMetric = Values<typeof BADGE_METRIC>;
+
 export const FRIEND_REQUEST_DIRECTION = ['RECEIVED', 'SENT'] as const;
 export type FriendRequestDirection = Values<typeof FRIEND_REQUEST_DIRECTION>;
 
