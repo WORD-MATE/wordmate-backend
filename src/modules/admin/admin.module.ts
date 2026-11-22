@@ -27,6 +27,8 @@ import { AdminReportsController } from './admin-reports.controller.js';
 import { AdminReportsService } from './admin-reports.service.js';
 import { AdminSanctionsController } from './admin-sanctions.controller.js';
 import { AdminSanctionsService } from './admin-sanctions.service.js';
+import { AdminSeasonsController } from './admin-seasons.controller.js';
+import { AdminSeasonsService } from './admin-seasons.service.js';
 import { AdminUsersController } from './admin-users.controller.js';
 import { AdminUsersService } from './admin-users.service.js';
 
@@ -55,6 +57,7 @@ import { AdminUsersService } from './admin-users.service.js';
     AdminPoliciesController,
     AdminReportsController,
     AdminSanctionsController,
+    AdminSeasonsController,
     AdminUsersController,
   ],
   providers: [
@@ -65,6 +68,7 @@ import { AdminUsersService } from './admin-users.service.js';
     AdminPoliciesService,
     AdminReportsService,
     AdminSanctionsService,
+    AdminSeasonsService,
     AdminUsersService,
   ],
 })

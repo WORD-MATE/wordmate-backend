@@ -391,6 +391,7 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
   - 끝났는데 확정하지 못한 시즌(`CLOSED_PENDING`·`FAILED`)을 마감하고, 그 기간의 학교·학년·반 ZSET을 `ranking_snapshots`에 남긴 뒤 `CONFIRMED`로 바꿉니다.
   - 실패하면 `FAILED`·`last_error`를 남기고 다음 시간에 다시 시도합니다. 서버가 꺼져 있던 동안의 시즌도 주간 4주·월간 2달까지 따라잡습니다(지난 ZSET이 만료되기 전).
   - 스냅샷 순위는 목록에 보이는 사람끼리 셉니다. 비공개 등 목록에 없던 사람은 자기를 그 사이에 끼워 넣은 순위를 받습니다(`listed=false`).
+  - 관리자가 시즌에서 제외한 사용자(`ranking_season_exclusions`)는 `rank`가 null이고 아무의 순위에도 세지 않습니다. 마감할 때(다시 돌릴 때도) 시즌 행을 잠근 뒤 제외 대상을 읽어 반영합니다. 스냅샷에는 마감 순서(`position`)를 남겨, 제외가 바뀌면 XP 동점 순서를 지킨 채 다시 매깁니다. 주간 결과 알림과 `/ranking/me`의 `change`도 제외된 사용자에게는 순위를 주지 않습니다.
   - `/ranking/me`의 `change`는 직전 시즌이 확정됐으면 그 스냅샷 순위로, 아직이면 지난 기간 ZSET에서 계산합니다.
   - 시즌 배지·주간 결과 알림은 시즌을 `CONFIRMED`로 바꾸는 곳(`SeasonService.close`)에 붙입니다.
 - `PATCH /users/me/privacy`(학생만)는 공개 설정과 함께 `ranking_onboarded`를 true로 바꿉니다. 랭킹 첫 진입 안내와 설정 화면이 같이 씁니다. ZSET은 건드리지 않습니다.
@@ -737,6 +738,15 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 - `POST /admin/morning`: 날짜당 하나, 있으면 409 `MORNING_DATE_EXISTS`(`replace: true`면 게시 전 문장을 교체, 게시된 날짜는 409 `MORNING_ALREADY_PUBLISHED`). 어휘·퀴즈는 비어 있어도 저장되고, 강조 위치를 비우면 문장에서 처음 나오는 위치로 채웁니다.
 - `PATCH /admin/morning/{id}`: 보낸 항목만(어휘·퀴즈는 통째로) 바꿉니다. 예약·게시된 문장은 바꾼 뒤에도 게시할 수 있어야 하고(400), 게시된 문장의 날짜는 바꿀 수 없습니다. 이미 푼 사용자의 기록(정답 수)은 그대로입니다.
 - `POST /admin/morning/{id}/publish`: 문장·뜻·어휘·퀴즈가 다 있어야 하고(400 `MORNING_INCOMPLETE`), 빈칸 정답이 문장에 있어야 하며(400 `MORNING_BLANK_NOT_IN_SENTENCE`), 강조 위치·객관식 정답이 맞아야 합니다(400 `MORNING_INVALID`). `detail.issues`에 문제 목록이 담깁니다. 시드도 같은 검사를 씁니다.
+
+### 시즌 관리
+
+- 시즌은 기간이 끝나면 자동으로 마감·확정합니다(관리자 확정 없음). 관리자는 결과를 보고 제외 대상을 정하거나 실패한 마감을 다시 돌립니다.
+- `GET /admin/seasons`(주간·월간, 상태 필터, 최근 시즌순): `endDate`는 마지막 날(포함), `closedAt`은 확정 시각입니다. `pendingReportCount`는 그 시즌 학교 순위에 든 사용자(제외된 사용자 포함)가 대상인 처리 전(`RECEIVED`·`IN_REVIEW`) 신고 묶음 수로, 조회할 때 기준입니다.
+- `GET /admin/seasons/{seasonId}`: 학교 범위를 마감 순서대로 100위까지(그 사이의 제외된 사용자도 `rank: null`, `excluded: true`로 함께), 제외 대상 전체(사유·관리자·시각), FAILED일 때 실패 사유. 없으면 404 `ADMIN_SEASON_NOT_FOUND`입니다.
+- `PUT /admin/seasons/{seasonId}/exclusions`: 제외 대상을 통째로 바꿉니다(최대 100명, 사유 필수, 빈 배열이면 모두 해제). 상태와 관계없이 바꿀 수 있고, 같은 트랜잭션에서 그 시즌의 학교·학년·반 순위를 마감과 같은 규칙으로 다시 매깁니다. 계속 제외되는 사용자는 처음 사유를 그대로 두고, 없는 사용자는 404 `USER_NOT_FOUND`입니다.
+- `POST /admin/seasons/{seasonId}/rerun`: `FAILED`만(409 `ADMIN_SEASON_NOT_FAILED`) `ranking` 큐에 `close-season` 작업으로 넣고 202를 돌려줍니다. 진행은 `GET /admin/jobs`의 `SEASON_CLOSE`에서 봅니다. 따라잡는 기간보다 오래된 시즌도 다시 돌릴 수 있지만, 지난 ZSET이 만료됐으면 빈 스냅샷으로 확정됩니다.
+- 제외 대상 변경과 다시 실행은 감사 로그에 남습니다.
 
 ### 정기 작업
 
