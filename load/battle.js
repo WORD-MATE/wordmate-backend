@@ -31,6 +31,17 @@ const questionDelay = new Trend('question_start_delay_ms', true);
 const battlesFinished = new Counter('battles_finished');
 const matchTimeouts = new Counter('match_timeouts');
 const serverErrors = new Counter('server_errors');
+// 요청 종류별 응답 시간 (몰릴 때 어디가 느린지 나눠 보기 위해)
+const requestTime = {
+  ticket: new Trend('req_ticket_ms', true),
+  matchmaking: new Trend('req_matchmaking_ms', true),
+  join: new Trend('req_join_ms', true),
+  result: new Trend('req_result_ms', true),
+};
+const timed = (kind, res) => {
+  requestTime[kind].add(res.timings.duration);
+  return res;
+};
 
 const thresholds = {
   answer_ack_ms: ['p(95)<300'],
@@ -96,7 +107,7 @@ function failed(step, res) {
 }
 
 function ticketUrl(token) {
-  const res = http.post(`${BASE_URL}/realtime/ticket`, null, params(token));
+  const res = timed('ticket', http.post(`${BASE_URL}/realtime/ticket`, null, params(token)));
   if (!check(res, { 'ticket 200': (r) => r.status === 200 })) {
     failed('ticket', res);
     return null;
@@ -141,7 +152,10 @@ function play(token, { onOpen, onMessage }) {
         const at = sentAt[payload.questionIndex];
         if (at) answerAck.add(Date.now() - at);
       } else if (type === 'BATTLE_FINISHED') {
-        const res = http.get(`${BASE_URL}/battles/${payload.battleId}/result`, params(token));
+        const res = timed(
+          'result',
+          http.get(`${BASE_URL}/battles/${payload.battleId}/result`, params(token)),
+        );
         check(res, { 'result 200': (r) => r.status === 200 });
         battlesFinished.add(1);
         socket.close();
@@ -165,7 +179,10 @@ function quickMatch() {
   play(token, {
     onOpen: (_send, socket) => {
       queuedAt = Date.now();
-      const res = http.post(`${BASE_URL}/battles/matchmaking`, null, params(token));
+      const res = timed(
+        'matchmaking',
+        http.post(`${BASE_URL}/battles/matchmaking`, null, params(token)),
+      );
       if (!check(res, { 'matchmaking 202': (r) => r.status === 202 })) {
         failed('matchmaking', res);
         socket.close();
@@ -218,7 +235,10 @@ function classRoom(data) {
   const isHost = index % ROOM_SIZE === 0;
   const token = tokenOf(index);
   if (!isHost) {
-    const res = http.post(`${BASE_URL}/battles/rooms/${room.inviteCode}/join`, null, params(token));
+    const res = timed(
+      'join',
+      http.post(`${BASE_URL}/battles/rooms/${room.inviteCode}/join`, null, params(token)),
+    );
     if (!check(res, { 'join 200': (r) => r.status === 200 })) {
       failed('join', res);
       return;
