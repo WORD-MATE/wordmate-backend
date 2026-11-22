@@ -352,7 +352,10 @@ describe('대결 대기실', () => {
       userId: sender.user.userId,
       reaction: 'FIRE',
     });
-    expect(host.has('REACTION_RECEIVED')).toBe(false);
+    // 같은 경로로 오는 다음 리액션을 받은 뒤에 확인해야 늦게 도착한 것과 구분된다
+    other.send('REACTION_SEND', { roomId: room.roomId, reaction: 'CLAP' });
+    await host.waitFor('REACTION_RECEIVED', { userId: other.user.userId });
+    expect(host.has('REACTION_RECEIVED', { userId: sender.user.userId })).toBe(false);
   });
 
   it('교사용 반 방: 교사가 진행하고, 교사가 나가면 방이 닫힌다', async () => {

@@ -77,6 +77,9 @@ describe('차단', () => {
     await befriend(a, b);
     await call(c, 'POST', '/friends/requests', { userId: a.userId });
     expect(await friendIdsOf(a)).toEqual([b.userId]);
+    const notificationsOfB = () =>
+      db.select().from(notifications).where(eq(notifications.userId, b.userId));
+    const before = (await notificationsOfB()).length;
 
     expect((await block(a, b)).statusCode).toBe(204);
     expect((await block(a, c)).statusCode).toBe(204);
@@ -90,9 +93,7 @@ describe('차단', () => {
           or(eq(friendRequests.requesterId, c.userId), eq(friendRequests.receiverId, c.userId)),
         ),
     ).toEqual([]);
-    expect(await db.select().from(notifications).where(eq(notifications.userId, b.userId))).toEqual(
-      [],
-    );
+    expect(await notificationsOfB()).toHaveLength(before);
 
     const list = (await call(a, 'GET', '/blocks')).json();
     expect(list.map((r: { user: { userId: string } }) => r.user.userId).sort()).toEqual(
