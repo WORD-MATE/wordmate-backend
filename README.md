@@ -683,6 +683,13 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 - 관리자 행동은 바꾸는 작업과 같은 트랜잭션에서 `AuditLogService.record`로 감사 로그에 남깁니다(행위자·행동·대상·상세·IP·User-Agent). 교사 담당 반 변경도 남깁니다.
 - `GET /admin/audit-logs`: 행위자·대상·행동·기간(KST 날짜, 양 끝 포함)으로 걸러 최신순 페이지로 봅니다.
 
+### 사용자 관리
+
+- `GET /admin/users`(학번 앞부분·이름 포함 검색, 역할·관리자·상태 필터)와 `GET /admin/users/{userId}`(학습·대결 요약, 받은 신고 수, 담당 반). 개인정보 열람이라 조회도 감사 로그에 남깁니다.
+- 관리자 권한은 교사에게만 줍니다(409 `ADMIN_NOT_TEACHER`). 관리자 행을 모두 잠근 뒤 세어, 동시에 회수해도 마지막 관리자는 남습니다(409 `ADMIN_LAST_ADMIN`).
+- 교사 담당 반은 교사가 직접 바꾸는 것과 같은 처리를 쓰고, 감사 로그 행위자는 관리자입니다.
+- XP 조정(`POST /admin/users/{userId}/xp-adjustments`, Idempotency-Key)은 사유 필수, 조정 뒤 0 미만이면 400 `ADMIN_XP_NEGATIVE`입니다. 원장에 `ADMIN_ADJUST`로 남고, 하루 상한을 적용하지 않으며 상한 계산에도 넣지 않습니다. 랭킹은 0 아래로 내려가지 않게 조정하고 늘어날 때만 도달 시각을 바꿉니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.
