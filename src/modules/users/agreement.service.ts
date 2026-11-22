@@ -161,7 +161,10 @@ export class AgreementService {
   }
 
   private cacheKey(userId: string, states: Map<PolicyType, PolicyState>): string {
-    const revision = [...states.values()].map((state) => state.baseline.id).join(',');
+    // 재동의 없이 필수 여부만 바뀐 개정도 결과가 달라지므로 현재 버전까지 키에 넣는다
+    const revision = [...states.values()]
+      .map((state) => `${state.baseline.id}.${state.current.id}`)
+      .join(',');
     return `terms:needs:${userId}:${revision}`;
   }
 }

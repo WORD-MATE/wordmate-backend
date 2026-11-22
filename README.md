@@ -706,7 +706,7 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 ### 사용자 관리
 
 - `GET /admin/users`(학번 앞부분·이름 포함 검색, 역할·관리자·상태 필터)와 `GET /admin/users/{userId}`(학습·대결 요약, 받은 신고 수, 담당 반). 개인정보 열람이라 조회도 감사 로그에 남깁니다.
-- 관리자 권한은 교사에게만 줍니다(409 `ADMIN_NOT_TEACHER`). 관리자 행을 모두 잠근 뒤(`is_admin` 인덱스로 관리자 행만) 세어, 동시에 회수해도 활동 중인 관리자가 한 명은 남습니다(409 `ADMIN_LAST_ADMIN`).
+- 관리자 권한은 학생·교사 모두에게 줄 수 있습니다. 담당 반 수정만 교사 전용입니다(409 `ADMIN_NOT_TEACHER`). 학생 관리자가 졸업·자퇴로 나와도 활동 중인 관리자가 그 사람뿐이면 학적 동기화·로그인에서 휴면 처리하지 않고 남깁니다(관리자 API로는 되돌릴 수 없어서). 다른 관리자를 정하면 다음 동기화 때 휴면 처리됩니다. 관리자 행을 모두 잠근 뒤(`is_admin` 인덱스로 관리자 행만) 세어, 동시에 회수해도 활동 중인 관리자가 한 명은 남습니다(409 `ADMIN_LAST_ADMIN`).
 - 교사 담당 반은 교사가 직접 바꾸는 것과 같은 처리를 쓰고, 감사 로그 행위자는 관리자입니다.
 - XP 조정(`POST /admin/users/{userId}/xp-adjustments`, Idempotency-Key)은 한 번에 ±100,000까지, 사유 필수, 조정 뒤 0 미만이면 400 `ADMIN_XP_NEGATIVE`입니다. 원장에 `ADMIN_ADJUST`로 남고, 하루 상한을 적용하지 않으며 상한 계산과 결과 화면의 오늘 합계(`todayTotal`)에도 넣지 않습니다(XP 내역·랭킹 재구성에는 들어감). 랭킹은 0 아래로 내려가지 않게 조정하고 늘어날 때만 도달 시각을 바꿉니다.
 
@@ -747,7 +747,7 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 ### 약관 버전
 
 - `GET /admin/policies`(시행 전 버전 포함)와 `POST /admin/policies`(종류·버전·제목·내용·시행일·재동의 필요 여부). 시행일은 지금 이후만 받습니다. 필수 여부를 비우면 새 버전 바로 앞 버전을 따릅니다. 같은 종류에 같은 버전은 409 `POLICY_VERSION_EXISTS`, 같은 시행일은 409 `POLICY_EFFECTIVE_AT_EXISTS`입니다.
-- 시행일이 되면 현재 약관이 되고, 재동의가 필요한 버전이면 그 뒤 첫 요청부터 약관 재동의를 안내합니다(서버마다 약관 캐시 1분). 고지 공지(시행 7일 전, 불리한 변경은 30일 전)는 공지로 따로 등록합니다.
+- 시행일이 되면 현재 약관이 되고, 재동의가 필요한 버전이거나 선택 약관이 필수로 바뀐 버전이면 그 뒤 첫 요청부터 약관 동의를 안내합니다(서버마다 약관 캐시 1분). 고지 공지(시행 7일 전, 불리한 변경은 30일 전)는 공지로 따로 등록합니다.
 
 ### 오늘의 문장 관리
 
@@ -813,7 +813,7 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 - `POST /inquiries`(multipart/form-data, Idempotency-Key 필수): `type`·`title`(1~50자)·`content`(10~1000자)와 `images` 필드로 이미지 3장까지, 한 장에 5MB까지 받습니다. 앱 버전·플랫폼은 `X-Client-Platform`·`X-Client-Version`에서 저장합니다.
 - 이미지는 확장자·Content-Type이 아니라 파일 앞부분의 시그니처로 형식을 판단해 JPEG·PNG·WebP만 받고, sharp로 같은 형식으로 다시 인코딩해 EXIF(위치 정보 포함)를 지웁니다(회전 정보는 픽셀에 먼저 적용). 디코딩 메모리 때문에 2500만 픽셀까지만 받고, 서버마다 한 장씩 차례로 처리합니다. HEIC는 sharp 기본 빌드에 HEVC 디코더가 없어 400 `INQUIRY_IMAGE_INVALID`로 거절하니 앱에서 JPEG로 바꿔 보냅니다. 5MB를 넘으면 400 `INQUIRY_IMAGE_TOO_LARGE`, 4장 이상이거나 필드가 틀리면 400 `INVALID_REQUEST`입니다.
 - 한 사람이 첫 문의부터 1시간 동안 5건까지(임시값, Valkey 카운터 `inquiry:rate:{userId}`) 남길 수 있고, 넘으면 429 `INQUIRY_TOO_FREQUENT`(Retry-After)입니다. 검증에 실패한 요청은 세지 않습니다.
-- 이미지는 서버 디스크 `UPLOAD_DIR`(기본 `./uploads`) 아래 `inquiries/{imageId}`에 둡니다. 개발 서버는 named volume `uploads`를 `/app/uploads`에 붙입니다. 파일을 먼저 쓰고 DB에 저장하며, 저장에 실패하면 파일을 지웁니다.
+- 이미지는 서버 디스크 `UPLOAD_DIR`(기본 `./uploads`) 아래 `inquiries/{imageId}`에 둡니다. 개발 서버는 named volume `uploads`를 `/app/uploads`에 붙입니다. 파일을 먼저 쓰고 DB에 저장하며, 저장에 실패하면 파일을 지우고, 서버가 중간에 멈춰 남은 파일은 정리 작업이 지웁니다.
 - `GET /inquiries`(내 문의, 최신순 커서), `GET /inquiries/{inquiryId}`(본인 문의만, 관리자는 모든 문의, 아니면 403 `FORBIDDEN`, 없으면 404 `INQUIRY_NOT_FOUND`). 이미지는 10분 동안 유효한 서명 주소 `/inquiries/images/{imageId}?exp=..&sig=..`로 내줍니다. 서명은 `HMAC-SHA256(imageId.exp)`이고, 키는 `UPLOAD_SIGNING_SECRET`이 없으면 `JWT_PRIVATE_KEY`에서 HMAC으로 유도합니다. 서명이 권한이라 이 주소는 로그인·클라이언트 헤더 없이 `<img src>`로 열리고(웹에서도 보이게 `Cross-Origin-Resource-Policy: cross-origin`), 만료·변조되면 403 `INQUIRY_IMAGE_URL_INVALID`입니다.
 - 관리자: `GET /admin/inquiries`(상태·종류 필터, 최신순 페이지, 작성자·플랫폼·앱 버전 포함). 상세는 `GET /inquiries/{inquiryId}`로 봅니다. `POST /admin/inquiries/{inquiryId}/answer`는 답변을 쓰고 상태를 `ANSWERED`로 바꾸며, 다시 호출하면 답변을 고칩니다(`answeredAt`은 마지막으로 쓴 시각). 처음 답할 때만 작성자에게 `INQUIRY_ANSWERED` 알림을 보내고, 쓸 때마다 감사 로그(`INQUIRY_ANSWER`)가 남습니다.
 
@@ -828,6 +828,7 @@ BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenan
 
 - 학습 기록(`study_records`)은 지우지 않습니다. 사용자가 늘면 보관 기간을 다시 정합니다. 세션을 지워도 기록은 남고 `study_records.session_id`만 NULL이 됩니다.
 - 지울 행은 1000개씩 나눠 지워서 테이블을 오래 잠그지 않습니다.
+- `daily-cleanup`은 DB에 없는 문의 이미지 파일(파일을 쓴 뒤 DB에 저장하기 전에 서버가 멈춘 경우)도 저장한 지 하루가 지나면 지웁니다. 파일 이름이 이미지 ID 형식이 아니면 건드리지 않습니다.
 - 스케줄 등록은 앱 시작을 기다리게 하지 않습니다. Valkey가 내려가 있으면 BullMQ 명령은 연결될 때까지 대기하므로, 기다리면 앱 시작이 멈춥니다.
 
 ## 학급·교사 담당 반

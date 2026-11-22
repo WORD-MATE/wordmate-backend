@@ -9,9 +9,10 @@ import { AuthErrors } from '../../common/auth/auth-errors.js';
 import type { NextStep, Platform } from '../../common/enums.js';
 import { CommonErrors } from '../../common/errors/app-exception.js';
 import type { Env } from '../../config/env.js';
-import { type Database, DB } from '../../infra/db/db.module.js';
+import { type Database, DB, type Transaction } from '../../infra/db/db.module.js';
 import { classes, type User, users, withdrawnSuspensions } from '../../infra/db/schema/index.js';
 import { RankingService } from '../ranking/ranking.service.js';
+import { hasOtherActiveAdmin } from '../users/active-admins.js';
 import { type Me, toMe } from '../users/me.schema.js';
 import { NextStepService } from '../users/next-step.service.js';
 import { TeacherClassService } from '../users/teacher-class.service.js';
@@ -148,7 +149,7 @@ export class AuthService {
       } else {
         await tx
           .update(users)
-          .set({ ...fields, status: nextStatus(existing, profile, now) })
+          .set({ ...fields, status: await this.statusAfterLogin(tx, existing, profile, now) })
           .where(eq(users.id, existing.id));
       }
       if (profile.role === 'STUDENT' && profile.grade && profile.classNo) {
@@ -181,6 +182,25 @@ export class AuthService {
     if (row && suspensionActive(row.suspendedUntil, new Date())) {
       throw AuthErrors.withdrawnSuspended(row.suspendedUntil);
     }
+  }
+
+  /** 마지막 활동 관리자는 졸업·자퇴로 나와도 휴면 처리하지 않는다 (학적 동기화와 같은 규칙) */
+  private async statusAfterLogin(
+    tx: Transaction,
+    existing: User,
+    profile: DataGsmProfile,
+    now: Date,
+  ): Promise<User['status']> {
+    const status = nextStatus(existing, profile, now);
+    if (
+      status === 'INACTIVE' &&
+      existing.status === 'ACTIVE' &&
+      existing.isAdmin &&
+      !(await hasOtherActiveAdmin(tx, existing.id))
+    ) {
+      return existing.status;
+    }
+    return status;
   }
 
   private assertActive(user: User): void {

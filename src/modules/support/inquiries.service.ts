@@ -1,5 +1,5 @@
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
-import { and, asc, count, desc, eq, lt } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, lt } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import type { Redis } from 'ioredis';
 import { z } from 'zod';
@@ -33,6 +33,10 @@ import { InquiryImageStorage } from './inquiry-image.storage.js';
 /** 한 사람이 이 시간 동안 남길 수 있는 문의 수 (임시값) */
 export const INQUIRY_RATE_LIMIT = 5;
 export const INQUIRY_RATE_WINDOW_SECONDS = 60 * 60;
+
+/** 저장 중인 파일을 건드리지 않도록 이 시간이 지난 파일만 정리한다 */
+const ORPHAN_IMAGE_GRACE_MS = 24 * 60 * 60 * 1000;
+const ORPHAN_SWEEP_BATCH = 500;
 
 const ListCursor = z.object({ id: z.uuid() });
 const rateKey = (userId: string) => `inquiry:rate:${userId}`;
@@ -290,5 +294,25 @@ export class InquiriesService {
       this.logger.warn(`문의 빈도 기록 실패: ${String(error)}`);
       return false;
     }
+  }
+
+  /** 파일을 저장한 뒤 DB에 기록하기 전에 서버가 멈추면 남는 파일을 지운다 */
+  async sweepOrphanImages(now = new Date()): Promise<number> {
+    const ids = (
+      await this.storage.imageIdsSavedBefore(new Date(now.getTime() - ORPHAN_IMAGE_GRACE_MS))
+    ).filter((id) => z.uuid().safeParse(id).success);
+    let removed = 0;
+    for (let i = 0; i < ids.length; i += ORPHAN_SWEEP_BATCH) {
+      const chunk = ids.slice(i, i + ORPHAN_SWEEP_BATCH);
+      const rows = await this.db
+        .select({ id: inquiryImages.id })
+        .from(inquiryImages)
+        .where(inArray(inquiryImages.id, chunk));
+      const known = new Set(rows.map((row) => row.id));
+      const orphans = chunk.filter((id) => !known.has(id));
+      await this.storage.remove(orphans.map((id) => this.storage.keyOf(id)));
+      removed += orphans.length;
+    }
+    return removed;
   }
 }

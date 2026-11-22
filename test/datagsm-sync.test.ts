@@ -221,6 +221,38 @@ describe('DataGSM 학적 동기화', () => {
     });
   });
 
+  it('마지막 활동 관리자인 학생은 졸업해도 다른 관리자가 생길 때까지 휴면 처리하지 않는다', async () => {
+    const others = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.isAdmin, true), eq(users.status, 'ACTIVE')));
+    const otherIds = others.map((row) => row.id);
+    if (otherIds.length > 0) {
+      await db.update(users).set({ isAdmin: false }).where(inArray(users.id, otherIds));
+    }
+    try {
+      const last = await makeUser({ isAdmin: true, datagsmStudentId: `${tag}-last-admin` });
+      listStudents = async () => [graduated(`${tag}-last-admin`)];
+      await app.get(DataGsmSyncService).sync();
+      expect((await userOf(last))?.status).toBe('ACTIVE');
+
+      await makeUser({
+        role: 'TEACHER',
+        isAdmin: true,
+        grade: null,
+        classNo: null,
+        number: null,
+        studentNumber: null,
+      });
+      await app.get(DataGsmSyncService).sync();
+      expect((await userOf(last))?.status).toBe('INACTIVE');
+    } finally {
+      if (otherIds.length > 0) {
+        await db.update(users).set({ isAdmin: true }).where(inArray(users.id, otherIds));
+      }
+    }
+  });
+
   it('로그인으로 학년·반이 바뀌어도 랭킹 범위를 옮기고, 다른 계정에 붙은 학생 ID를 가져온다', async () => {
     const datagsmId = `${tag}-login`;
     const loginUser = await makeUser({ datagsmId });
