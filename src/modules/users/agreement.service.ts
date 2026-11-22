@@ -76,6 +76,11 @@ export class AgreementService {
     };
   }
 
+  /** 마케팅 정보 수신: 가장 최근 마케팅 약관 응답이 동의인지 (버전과 상관없이 철회 전까지 유효) */
+  async marketingAgreed(userId: string): Promise<boolean> {
+    return (await this.latestByType(userId)).get('MARKETING')?.agreed === true;
+  }
+
   async needsAgreement(userId: string): Promise<boolean> {
     const key = this.cacheKey(userId, await this.policies.currentStates());
     const cached = await withTimeout(this.valkey.get(key), CACHE_TIMEOUT_MS).catch(() => null);

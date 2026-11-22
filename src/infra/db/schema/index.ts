@@ -2,6 +2,7 @@ export * from './audit-logs.js';
 export * from './battles.js';
 export * from './classes.js';
 export * from './devices.js';
+export * from './notifications.js';
 export * from './packs.js';
 export * from './policies.js';
 export * from './ranking.js';

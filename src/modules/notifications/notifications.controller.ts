@@ -1,0 +1,80 @@
+import { Controller, Get, HttpCode, Patch, Put, Req } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { FastifyRequest } from 'fastify';
+import { z } from 'zod';
+import type { AuthUser } from '../../common/auth/auth-user.js';
+import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
+import {
+  NotificationListQuery,
+  NotificationPage,
+  NotificationSettings,
+  UnreadCount,
+  UpdateNotificationSettings,
+} from './notifications.schemas.js';
+import { NotificationsService } from './notifications.service.js';
+
+const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
+
+@ApiTags('notifications')
+@Controller('notifications')
+export class NotificationsController {
+  constructor(private readonly notifications: NotificationsService) {}
+
+  @ApiOperation({ summary: '알림 목록', description: '최신순 커서, 30일 보관' })
+  @Get()
+  @ZodResponse(NotificationPage)
+  list(
+    @ZodQuery(NotificationListQuery) query: z.infer<typeof NotificationListQuery>,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.notifications.list(currentUser(request), query);
+  }
+
+  @ApiOperation({ summary: '안 읽은 알림 수' })
+  @Get('unread-count')
+  @ZodResponse(UnreadCount)
+  unreadCount(@Req() request: FastifyRequest) {
+    return this.notifications.unreadCount(currentUser(request));
+  }
+
+  @ApiOperation({ summary: '알림 설정', description: '계정 단위라 모든 기기에 같이 적용' })
+  @Get('settings')
+  @ZodResponse(NotificationSettings)
+  settings(@Req() request: FastifyRequest) {
+    return this.notifications.settings(currentUser(request));
+  }
+
+  @ApiOperation({
+    summary: '알림 설정 변경',
+    description:
+      '학습 리마인더는 07:00~22:00(400 NOTI_REMINDER_TIME_OUT_OF_RANGE). 광고성(MARKETING)은 마케팅 수신 동의가 있어야 켤 수 있음(400 NOTI_MARKETING_AGREEMENT_REQUIRED)',
+  })
+  @Put('settings')
+  @ZodResponse(NotificationSettings)
+  updateSettings(
+    @ZodBody(UpdateNotificationSettings) body: z.infer<typeof UpdateNotificationSettings>,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.notifications.updateSettings(currentUser(request), body);
+  }
+
+  @ApiOperation({ summary: '전체 읽음' })
+  @Patch('read-all')
+  @HttpCode(204)
+  async readAll(@Req() request: FastifyRequest): Promise<void> {
+    await this.notifications.readAll(currentUser(request));
+  }
+
+  @ApiOperation({
+    summary: '한 건 읽음',
+    description: '푸시를 눌러 들어왔을 때도 호출. 남의 알림이면 404 NOTI_NOT_FOUND',
+  })
+  @Patch(':notificationId/read')
+  @HttpCode(204)
+  async read(
+    @ZodParam('notificationId', z.uuid()) notificationId: string,
+    @Req() request: FastifyRequest,
+  ): Promise<void> {
+    await this.notifications.read(currentUser(request), notificationId);
+  }
+}

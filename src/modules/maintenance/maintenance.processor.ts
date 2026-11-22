@@ -65,6 +65,7 @@ export class MaintenanceProcessor extends WorkerHost implements OnApplicationBoo
           expiredSessions: await this.maintenance.expireStudySessions(),
           purgedSessions: await this.maintenance.purgeEndedSessions(),
           purgedPractices: await this.maintenance.purgePracticeSessions(),
+          purgedNotifications: await this.maintenance.purgeNotifications(),
           purgedFavorites: await this.maintenance.purgeDeletedWordFavorites(),
         };
       default:
