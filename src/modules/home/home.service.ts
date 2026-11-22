@@ -4,6 +4,7 @@ import type { AuthUser } from '../../common/auth/auth-user.js';
 import type { StudySource } from '../../common/enums.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import { studyRecords } from '../../infra/db/schema/index.js';
+import { MorningService } from '../morning/morning.service.js';
 import { PacksService } from '../packs/packs.service.js';
 import { RankingQueryService } from '../ranking/ranking-query.service.js';
 import { RecordsService } from '../records/records.service.js';
@@ -29,21 +30,24 @@ export class HomeService {
     private readonly records: RecordsService,
     private readonly ranking: RankingQueryService,
     private readonly packs: PacksService,
+    private readonly morning: MorningService,
   ) {}
 
   /** 칸마다 따로 불러 한 칸이 실패해도 나머지는 보여준다 (실패한 칸은 null, 추천 팩은 빈 배열) */
   async home(user: AuthUser): Promise<Home> {
-    const [review, continueStudy, streak, myWeeklyRank, recommendedPacks] = await Promise.all([
-      this.part('review', async () => ({
-        dueCount: (await this.sessions.reviewSummary(user)).dueCount,
-      })),
-      this.part('continueStudy', () => this.continueStudy(user)),
-      this.part('streak', () => this.records.streak(user)),
-      this.part('myWeeklyRank', () => this.weeklyRank(user)),
-      this.part('recommendedPacks', () => this.recommendedPacks(user)),
-    ]);
+    const [morning, review, continueStudy, streak, myWeeklyRank, recommendedPacks] =
+      await Promise.all([
+        this.part('morning', () => this.morning.card(user)),
+        this.part('review', async () => ({
+          dueCount: (await this.sessions.reviewSummary(user)).dueCount,
+        })),
+        this.part('continueStudy', () => this.continueStudy(user)),
+        this.part('streak', () => this.records.streak(user)),
+        this.part('myWeeklyRank', () => this.weeklyRank(user)),
+        this.part('recommendedPacks', () => this.recommendedPacks(user)),
+      ]);
     return {
-      morning: null,
+      morning,
       review,
       continueStudy,
       streak,
