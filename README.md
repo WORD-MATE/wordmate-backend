@@ -739,8 +739,8 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 ### 정기 작업
 
 - 정기 작업(정리, 시즌 마감, 챌린지 생성, 예약 알림)은 실행할 때마다 `job_runs`에 시작·끝·상태·오류·실행 방식(정기/수동)을 남기고, 7일 지난 기록은 매일 정리에서 지웁니다. 작업 목록은 `src/modules/jobs/job-registry.ts`입니다.
-- 시즌 마감이 실패하면(한 시즌이라도 확정하지 못하면) 실패로 남기고 활동 중인 관리자 모두에게 `ADMIN_ALERT`를 보냅니다.
-- `GET /admin/jobs`: 작업마다 주기, 마지막 실행·상태·오류, 다음 정기 실행. `POST /admin/jobs/{job}/run`: 큐에 넣고 바로 202를 돌려주고, 실행 중이거나 30초 안에 다시 누르면 409 `ADMIN_JOB_RUNNING`입니다(1시간 넘게 RUNNING이면 서버가 꺼진 것으로 보고 다시 실행 가능).
+- 시즌 마감이 실패하면(한 시즌이라도 확정하지 못하면) 실패로 남기고 활동 중인 관리자 모두에게 `ADMIN_ALERT`를 보냅니다(실패가 이어지는 동안은 처음 한 번만).
+- `GET /admin/jobs`: 작업마다 주기, 마지막 실행·상태·오류, 다음 정기 실행. `POST /admin/jobs/{job}/run`: 큐에 넣고 바로 202를 돌려주고, 실행 중이거나 30초 안에 다시 누르면 409 `ADMIN_JOB_RUNNING`, 정해진 시각에 보내는 알림 작업(리마인더·오늘의 문장 알림·주간 결과·순위 하락)은 409 `ADMIN_JOB_SCHEDULE_ONLY`입니다(1시간 넘게 RUNNING이면 서버가 꺼진 것으로 보고 다시 실행 가능).
 
 ## 고객지원
 

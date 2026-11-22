@@ -1,5 +1,5 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessTokenService } from '../src/common/auth/access-token.service.js';
@@ -89,6 +89,9 @@ describe('관리자 정기 작업', () => {
       })
       .toMatchObject({ lastStatus: 'SUCCEEDED', lastTrigger: 'MANUAL' });
     expect((await call(admin, 'POST', '/admin/jobs/UNKNOWN/run')).statusCode).toBe(400);
+    expect((await call(admin, 'POST', '/admin/jobs/MORNING_SENTENCE/run')).json().code).toBe(
+      'ADMIN_JOB_SCHEDULE_ONLY',
+    );
   });
 
   it('시즌 마감이 실패하면 실패로 남기고 관리자에게 알린다', async () => {
@@ -97,8 +100,20 @@ describe('관리자 정기 작업', () => {
         throw new Error('테스트 실패');
       }),
     ).rejects.toThrow('테스트 실패');
-    const season = (await jobsOf()).find((j) => j.job === 'SEASON_CLOSE');
-    expect(season).toMatchObject({ lastStatus: 'FAILED', lastTrigger: 'MANUAL' });
+    // 정기 실행과 겹쳐도 흔들리지 않게 직접 실행한 기록만 본다
+    const [run] = await db
+      .select()
+      .from(jobRuns)
+      .where(and(eq(jobRuns.job, 'SEASON_CLOSE'), eq(jobRuns.trigger, 'MANUAL')))
+      .orderBy(desc(jobRuns.id))
+      .limit(1);
+    expect(run).toMatchObject({ status: 'FAILED', error: '테스트 실패' });
+    // 실패가 이어지면 다시 알리지 않는다
+    await expect(
+      app.get(JobRunsService).track('SEASON_CLOSE', 'MANUAL', async () => {
+        throw new Error('또 실패');
+      }),
+    ).rejects.toThrow('또 실패');
     const alerts = await db
       .select({ body: notifications.body })
       .from(notifications)

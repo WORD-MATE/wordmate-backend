@@ -18,6 +18,7 @@ const JobList = z
       lastTrigger: z.enum(JOB_TRIGGER).nullable(),
       lastError: z.string().nullable(),
       nextRunAt: z.iso.datetime().nullable().describe('다음 정기 실행 (못 읽으면 null)'),
+      manual: z.boolean().describe('직접 실행할 수 있는지 (정해진 시각에 보내는 알림은 불가)'),
     }),
   )
   .meta({ id: 'AdminJobList' });
@@ -44,7 +45,8 @@ export class AdminJobsController {
 
   @ApiOperation({
     summary: '정기 작업 수동 실행',
-    description: '큐에 넣고 바로 202. 409 ADMIN_JOB_RUNNING(실행 중이거나 방금 실행함)',
+    description:
+      '큐에 넣고 바로 202. 409 ADMIN_JOB_RUNNING(실행 중이거나 방금 실행함) / ADMIN_JOB_SCHEDULE_ONLY(정해진 시각에 보내는 알림 작업)',
   })
   @Post(':job/run')
   @HttpCode(202)

@@ -29,6 +29,17 @@ export const JOB_DEFINITIONS: Record<Job, { queue: string; name: string; schedul
   RANK_DROP: { queue: 'scheduled-notifications', name: 'rank-drop', schedule: '매일 20:00' },
 };
 
+/**
+ * 직접 실행하지 못하는 작업. 정해진 시각 기준으로 하루 한 번만 보내는 알림이라
+ * 미리 돌리면 그날 정기 발송을 써 버린다
+ */
+export const SCHEDULE_ONLY_JOBS = new Set<Job>([
+  'STUDY_REMINDER',
+  'MORNING_SENTENCE',
+  'RANK_WEEKLY_RESULT',
+  'RANK_DROP',
+]);
+
 export const JOB_QUEUES = [...new Set(Object.values(JOB_DEFINITIONS).map((d) => d.queue))];
 
 /** 큐의 작업 이름으로 찾는다 */

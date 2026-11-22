@@ -10,7 +10,7 @@ import { JOB, type Job } from '../../common/enums.js';
 import { AppException } from '../../common/errors/app-exception.js';
 import { withTimeout } from '../../common/with-timeout.js';
 import { VALKEY } from '../../infra/valkey/valkey.module.js';
-import { JOB_DEFINITIONS } from '../jobs/job-registry.js';
+import { JOB_DEFINITIONS, SCHEDULE_ONLY_JOBS } from '../jobs/job-registry.js';
 import { JobRunsService } from '../jobs/job-runs.service.js';
 
 /** 이보다 오래 RUNNING이면 서버가 중간에 꺼진 것으로 보고 다시 실행할 수 있게 한다 */
@@ -20,6 +20,12 @@ const MANUAL_LOCK_SECONDS = 30;
 const QUEUE_TIMEOUT_MS = 1000;
 
 export const AdminJobErrors = {
+  scheduleOnly: () =>
+    new AppException(
+      'ADMIN_JOB_SCHEDULE_ONLY',
+      '정해진 시각에만 도는 작업이라 직접 실행할 수 없습니다.',
+      HttpStatus.CONFLICT,
+    ),
   running: () =>
     new AppException('ADMIN_JOB_RUNNING', '이미 실행 중인 작업입니다.', HttpStatus.CONFLICT),
 };
@@ -46,6 +52,7 @@ export class AdminJobsService {
           lastTrigger: last?.trigger ?? null,
           lastError: last?.error ?? null,
           nextRunAt: next,
+          manual: !SCHEDULE_ONLY_JOBS.has(job),
         };
       }),
     );
@@ -53,6 +60,7 @@ export class AdminJobsService {
 
   /** 큐에 넣고 바로 돌려준다(202). 진행은 목록에서 본다 */
   async run(admin: AuthUser, job: Job, request: FastifyRequest) {
+    if (SCHEDULE_ONLY_JOBS.has(job)) throw AdminJobErrors.scheduleOnly();
     const last = await this.runs.latest(job);
     if (last?.status === 'RUNNING' && Date.now() - last.startedAt.getTime() < STALE_RUN_MS) {
       throw AdminJobErrors.running();

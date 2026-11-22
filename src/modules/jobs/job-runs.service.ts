@@ -20,6 +20,7 @@ export class JobRunsService {
 
   /** 작업 실행을 기록한다. 기록이 실패해도 작업은 돌린다 */
   async track<T>(job: Job, trigger: JobTrigger, run: () => Promise<T>): Promise<T> {
+    const previous = ALERT_JOBS.has(job) ? await this.latest(job).catch(() => null) : null;
     const id = newId();
     await this.db
       .insert(jobRuns)
@@ -32,7 +33,8 @@ export class JobRunsService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await this.finish(id, { status: 'FAILED', error: message.slice(0, 1000) });
-      if (ALERT_JOBS.has(job)) await this.alert(job, message);
+      // 실패가 이어지는 동안에는 매번 알리지 않는다 (처음 실패할 때만)
+      if (ALERT_JOBS.has(job) && previous?.status !== 'FAILED') await this.alert(job, message);
       throw error;
     }
   }

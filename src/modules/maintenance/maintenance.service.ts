@@ -16,10 +16,10 @@ export const ENDED_SESSION_RETENTION_DAYS = 7;
 const BATCH = 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** 한 번에 오래 잠그지 않도록 BATCH개씩 끝날 때까지 반복한다 */
 /** 정기 작업 실행 기록 보관 기간 */
 const JOB_RUN_RETENTION_DAYS = 7;
 
+/** 한 번에 오래 잠그지 않도록 BATCH개씩 끝날 때까지 반복한다 */
 async function inBatches(run: () => Promise<number>): Promise<number> {
   let total = 0;
   for (;;) {
