@@ -134,7 +134,7 @@ export const XpResult = z
   .object({
     earned: z.number().int(),
     blockedReason: z.enum(XP_BLOCK_REASON).nullable(),
-    todayTotal: z.number().int().describe('오늘(KST) 모든 출처 합계, 최대 500'),
+    todayTotal: z.number().int().describe('오늘(KST) 받은 XP 합계, 최대 500 (관리자 조정 제외)'),
   })
   .meta({ id: 'XpResult' });
 

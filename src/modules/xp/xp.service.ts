@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, sql, sum } from 'drizzle-orm';
+import { and, eq, ne, sql, sum } from 'drizzle-orm';
 import type { XpBlockReason, XpSource } from '../../common/enums.js';
 import { kstDate } from '../../common/time/kst.js';
 import type { Transaction } from '../../infra/db/db.module.js';
@@ -40,7 +40,14 @@ export class XpService {
     const [row] = await tx
       .select({ total: sum(xpLedger.amount) })
       .from(xpLedger)
-      .where(and(eq(xpLedger.userId, userId), eq(xpLedger.date, date)))
+      .where(
+        and(
+          eq(xpLedger.userId, userId),
+          eq(xpLedger.date, date),
+          // 관리자 조정은 상한에 넣지 않는다 (사용자가 그날 받을 XP를 막지 않게)
+          ne(xpLedger.source, 'ADMIN_ADJUST'),
+        ),
+      )
       .for('share');
     let todayTotal = Number(row?.total ?? 0);
 

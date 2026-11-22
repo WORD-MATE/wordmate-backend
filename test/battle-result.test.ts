@@ -392,7 +392,7 @@ describe('대결 결과·XP·기록·다시 하기', () => {
     await db.insert(xpLedger).values({
       id: newId(),
       userId: c?.userId as string,
-      source: 'ADMIN_ADJUST',
+      source: 'STUDY',
       refKey: `test:${newId()}`,
       amount: 490,
       date: today,

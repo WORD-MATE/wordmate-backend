@@ -201,7 +201,13 @@ export class BattleResultsService {
     const [row] = await this.db
       .select({ total: sum(xpLedger.amount) })
       .from(xpLedger)
-      .where(and(eq(xpLedger.userId, userId), eq(xpLedger.date, kstDate())));
+      .where(
+        and(
+          eq(xpLedger.userId, userId),
+          eq(xpLedger.date, kstDate()),
+          ne(xpLedger.source, 'ADMIN_ADJUST'),
+        ),
+      );
     return Number(row?.total ?? 0);
   }
 }

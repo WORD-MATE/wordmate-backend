@@ -39,6 +39,34 @@ end
 return #KEYS
 `;
 
+/** 조정: 0 아래로는 내려가지 않고 0이면 뺀다. 늘어날 때만 도달 시각을 바꾼다 */
+const ADJUST_XP_SCRIPT = `
+local member = ARGV[1]
+local delta = tonumber(ARGV[2])
+local tiebreak = tonumber(ARGV[3])
+local factor = tonumber(ARGV[4])
+for i, key in ipairs(KEYS) do
+  local score = redis.call('ZSCORE', key, member)
+  local xp, kept = 0, tiebreak
+  if score then
+    local s = tonumber(score)
+    kept = math.fmod(s, factor)
+    xp = (s - kept) / factor
+  end
+  local next = xp + delta
+  if next <= 0 then
+    redis.call('ZREM', key, member)
+  else
+    local tb = kept
+    if delta > 0 then tb = tiebreak end
+    redis.call('ZADD', key, string.format('%.0f', next * factor + tb), member)
+    local ttl = tonumber(ARGV[4 + i])
+    if ttl > 0 then redis.call('EXPIRE', key, ttl) end
+  end
+end
+return #KEYS
+`;
+
 @Injectable()
 export class RankingService {
   private readonly logger = new Logger(RankingService.name);
@@ -77,6 +105,35 @@ export class RankingService {
       );
     } catch (error) {
       this.logger.error(`랭킹 반영 실패 (user ${userId}, +${amount}): ${String(error)}`);
+    }
+  }
+
+  /** 관리자 XP 조정 (음수 가능). 커밋 뒤 호출하고 실패는 로그만 남긴다 */
+  async adjustXp(userId: string, delta: number, at = new Date()): Promise<void> {
+    if (delta === 0) return;
+    try {
+      const [member] = await this.db
+        .select({ role: users.role, grade: users.grade, classNo: users.classNo })
+        .from(users)
+        .where(eq(users.id, userId));
+      const scopes = member ? scopeKeys(member) : [];
+      if (scopes.length === 0) return;
+      const date = kstDate(at);
+      const keys = RANK_PERIOD.flatMap((period) =>
+        scopes.map((scope) => ({ key: rankKey(period, date, scope), period })),
+      );
+      await this.valkey.eval(
+        ADJUST_XP_SCRIPT,
+        keys.length,
+        ...keys.map((k) => k.key),
+        userId,
+        delta,
+        tiebreakOf(at),
+        XP_FACTOR,
+        ...keys.map((k) => RANK_KEY_TTL_SECONDS[k.period] ?? 0),
+      );
+    } catch (error) {
+      this.logger.error(`랭킹 조정 실패 (user ${userId}, ${delta}): ${String(error)}`);
     }
   }
 
