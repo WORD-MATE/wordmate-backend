@@ -722,7 +722,7 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 ### 오늘의 문장 관리
 
 - 상태: 등록하면 `PENDING_REVIEW`(검수 대기) → 게시 예약하면 `SCHEDULED` → 날짜가 되면 06:00 작업이 `PUBLISHED`로 바꿉니다. 게시 예약할 때 날짜가 이미 오늘(06:00 기준) 이전이면 바로 게시합니다. 게시를 취소하면 검수 대기로 돌아가고 앱에서 사라집니다.
-- `POST /admin/morning/parse`: 게시물 본문을 저장하지 않고 분석합니다. 줄마다 `머리말: 내용`, 칸은 ` | `입니다.
+- `POST /admin/morning/parse`: 게시물 본문을 저장하지 않고 분석합니다. 줄마다 `머리말: 내용`이고 칸은 `|`로 나눕니다.
 
 ```text
 문장: Persistence is the key.

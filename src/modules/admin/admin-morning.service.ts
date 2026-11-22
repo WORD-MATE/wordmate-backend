@@ -9,9 +9,9 @@ import type { Page } from '../../common/pagination.js';
 import { type Database, DB, type Transaction } from '../../infra/db/db.module.js';
 import { isDuplicateKeyError } from '../../infra/db/errors.js';
 import {
+  type MorningSentenceRow,
   morningKeywords,
   morningQuizzes,
-  type MorningSentenceRow,
   morningSentences,
   users,
 } from '../../infra/db/schema/index.js';
