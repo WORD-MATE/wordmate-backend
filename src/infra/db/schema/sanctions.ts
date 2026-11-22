@@ -24,3 +24,14 @@ export const sanctions = mysqlTable(
 );
 
 export type Sanction = typeof sanctions.$inferSelect;
+
+/**
+ * 정지 중에 탈퇴한 사람. 탈퇴하면 계정과 DataGSM 연결이 끊기므로, 정지 기간 동안 다시 가입하지 못하게
+ * DataGSM 식별값만 따로 둔다 (suspended_until이 NULL이면 영구 정지)
+ */
+export const withdrawnSuspensions = mysqlTable('withdrawn_suspensions', {
+  datagsmId: varchar('datagsm_id', { length: 64 }).primaryKey(),
+  suspendedUntil: datetime('suspended_until', { mode: 'date', fsp: 3 }),
+  reason: varchar('reason', { length: 200 }).notNull(),
+  createdAt: timestamps.createdAt,
+});
