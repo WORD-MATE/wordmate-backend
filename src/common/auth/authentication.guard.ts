@@ -24,8 +24,10 @@ export class AuthenticationGuard implements CanActivate {
 
     try {
       const user = await this.tokens.verify(token);
-      // 정지 직후에도 이미 받은 액세스 토큰으로 쓰지 못하게 한다
-      if (await this.blocks.isBlocked(user.userId)) throw AuthErrors.accountSuspended(null, null);
+      // 정지·탈퇴 직후에도 이미 받은 액세스 토큰으로 쓰지 못하게 한다
+      const blocked = await this.blocks.blockedAs(user.userId);
+      if (blocked === 'WITHDRAWN') throw AuthErrors.invalidToken();
+      if (blocked === 'SUSPENDED') throw AuthErrors.accountSuspended(null, null);
       request.user = user;
     } catch (error) {
       const authorities = this.reflector.getAllAndOverride<Authority[] | undefined>(AUTH_KEY, [
