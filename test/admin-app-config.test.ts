@@ -59,6 +59,7 @@ describe('관리자 앱 설정', () => {
   });
 
   afterAll(async () => {
+    if (!valkey) return;
     if (original === null) await valkey.del(APP_CONFIG_KEY);
     else await valkey.set(APP_CONFIG_KEY, original);
     await db.delete(auditLogs).where(inArray(auditLogs.actorId, userIds));

@@ -51,6 +51,7 @@ export class AdminAppConfigController {
       },
       request,
     );
-    return this.config.get(true);
+    // 다시 읽으면 Valkey 장애 때 기본값이 보일 수 있어 저장한 값을 돌려준다
+    return AppConfig.parse(body);
   }
 }
