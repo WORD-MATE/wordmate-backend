@@ -56,7 +56,7 @@ export class FriendsController {
   @ApiOperation({
     summary: '친구 요청 수락',
     description:
-      '받은 요청만(403). 404 FRIEND_REQUEST_NOT_FOUND, 409 FRIEND_LIMIT_EXCEEDED(양쪽 확인)',
+      '받은 요청만(403). 404 FRIEND_REQUEST_NOT_FOUND / USER_NOT_FOUND(보낸 사람이 정지·탈퇴·휴면이면 요청을 지움), 409 FRIEND_LIMIT_EXCEEDED(양쪽 확인)',
   })
   @Post('requests/:requestId/accept')
   @HttpCode(204)

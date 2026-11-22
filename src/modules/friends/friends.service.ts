@@ -114,8 +114,8 @@ export class FriendsService {
         .select({ id: friendRequests.id })
         .from(friendRequests)
         .where(this.requestBetween(targetId, user.userId));
-      if (reverse) {
-        await tx.delete(friendRequests).where(eq(friendRequests.id, reverse.id));
+      // 취소는 사용자 잠금 없이 지우므로 실제로 지운 경우에만 친구가 된다
+      if (reverse && (await this.deleteRequest(tx, reverse.id))) {
         await this.befriend(tx, user.userId, targetId);
         return { requestId: null, accepted: { requesterId: targetId, accepterId: user.userId } };
       }
@@ -147,19 +147,20 @@ export class FriendsService {
     const accepted = await this.db.transaction(async (tx) => {
       // 잠금을 첫 문장으로 해야 뒤의 조회가 잠근 뒤의 최신 상태를 본다(취소·한도)
       await this.lockUsers(tx, [request.requesterId, request.receiverId]);
-      await this.findRequest(tx, requestId);
+      if (!(await this.deleteRequest(tx, requestId))) throw FriendErrors.requestNotFound();
       const [requester] = await tx
         .select({ status: users.status })
         .from(users)
         .where(eq(users.id, request.requesterId));
-      if (requester?.status !== 'ACTIVE') throw FriendErrors.userNotFound();
-      await tx.delete(friendRequests).where(eq(friendRequests.id, requestId));
+      // 쓸 수 없는 계정의 요청은 지우기만 하고 404
+      if (requester?.status !== 'ACTIVE') return null;
       if (!(await this.areFriends(tx, request.requesterId, request.receiverId))) {
         await this.assertRoom(tx, [request.requesterId, request.receiverId]);
         await this.befriend(tx, request.requesterId, request.receiverId);
       }
       return { requesterId: request.requesterId, accepterId: request.receiverId };
     });
+    if (!accepted) throw FriendErrors.userNotFound();
     await this.notifyAccepted(accepted);
   }
 
@@ -192,6 +193,11 @@ export class FriendsService {
       .where(eq(friendRequests.id, requestId));
     if (!request) throw FriendErrors.requestNotFound();
     return request;
+  }
+
+  private async deleteRequest(tx: Transaction, requestId: string): Promise<boolean> {
+    const [result] = await tx.delete(friendRequests).where(eq(friendRequests.id, requestId));
+    return result.affectedRows > 0;
   }
 
   private requestBetween(requesterId: string, receiverId: string) {
