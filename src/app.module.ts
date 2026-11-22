@@ -5,6 +5,7 @@ import { validateEnv } from './config/env.js';
 import { InfraModule } from './infra/infra.module.js';
 import { AppStatusModule } from './modules/app-status/app-status.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { BadgesModule } from './modules/badges/badges.module.js';
 import { BattlesModule } from './modules/battles/battles.module.js';
 import { BlocksModule } from './modules/blocks/blocks.module.js';
 import { ChallengesModule } from './modules/challenges/challenges.module.js';
@@ -62,6 +63,7 @@ import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
     ReportsModule,
     MorningModule,
     MissionsModule,
+    BadgesModule,
     PoliciesModule,
     UsersModule,
   ],
