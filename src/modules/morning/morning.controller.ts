@@ -41,7 +41,7 @@ export class MorningController {
   @ApiOperation({ summary: '지난 문장 목록', description: '게시된 문장만 최신순' })
   @Get()
   @ZodResponse(MorningList)
-  list(@ZodQuery(CursorQuery) query: CursorQuery, @Req() request: FastifyRequest) {
+  list(@ZodQuery(CursorQuery) query: z.infer<typeof CursorQuery>, @Req() request: FastifyRequest) {
     return this.morning.list(currentUser(request), query);
   }
 
@@ -66,7 +66,7 @@ export class MorningController {
   @ZodResponse(MorningQuizResult)
   complete(
     @DateParam() date: string,
-    @ZodBody(CompleteMorningQuiz) body: CompleteMorningQuiz,
+    @ZodBody(CompleteMorningQuiz) body: z.infer<typeof CompleteMorningQuiz>,
     @Req() request: FastifyRequest,
   ) {
     return this.morning.complete(currentUser(request), date, body);
@@ -83,7 +83,7 @@ export class MorningController {
   @ZodResponse(SaveMorningWordsResult)
   saveWords(
     @DateParam() date: string,
-    @ZodBody(SaveMorningWords) body: SaveMorningWords,
+    @ZodBody(SaveMorningWords) body: z.infer<typeof SaveMorningWords>,
     @Req() request: FastifyRequest,
   ) {
     return this.morning.saveWords(currentUser(request), date, body);
