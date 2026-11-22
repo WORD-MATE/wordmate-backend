@@ -5,7 +5,13 @@ import { AuditLogService } from '../src/common/audit/audit-log.service.js';
 import { AccessTokenService } from '../src/common/auth/access-token.service.js';
 import type { AuthUser } from '../src/common/auth/auth-user.js';
 import { type Database, DB } from '../src/infra/db/db.module.js';
-import { auditLogs, type NewUser, users } from '../src/infra/db/schema/index.js';
+import {
+  auditLogs,
+  classes,
+  type NewUser,
+  teacherClasses,
+  users,
+} from '../src/infra/db/schema/index.js';
 import { newId } from '../src/infra/db/uuid.js';
 import { createTestApp, inject } from './support/create-test-app.js';
 
@@ -82,12 +88,21 @@ describe('관리자 감사 로그', () => {
     expect(
       (await list(admin, `?actorId=${teacher.userId}&from=2000-01-01&to=2000-01-02`)).json(),
     ).toMatchObject({ totalCount: 0 });
+    expect((await list(admin, '?from=2026-02-01&to=2026-01-01')).statusCode).toBe(400);
+    expect((await list(admin, '?targetId=')).statusCode).toBe(400);
   });
 
   it('관리자만 볼 수 있다', async () => {
     const teacher = await makeUser();
+    // 담당 반이 있어야 반 선택 안내가 아니라 권한 검사에서 막힌다
+    const [someClass] = await db.select({ id: classes.id }).from(classes).limit(1);
+    await db
+      .insert(teacherClasses)
+      .values({ teacherId: teacher.userId, classId: someClass?.id as string });
     const student = await makeUser({ role: 'STUDENT' });
-    expect((await list(teacher)).statusCode).toBe(403);
+    const res = await list(teacher);
+    expect(res.statusCode).toBe(403);
+    expect(res.json().code).toBe('FORBIDDEN');
     expect((await list(student)).statusCode).toBe(403);
   });
 });

@@ -5,10 +5,13 @@ import { UserSummary } from '../users/user-summary.js';
 
 export const AuditLogQuery = PageQuery.extend({
   actorId: z.uuid().optional(),
-  targetId: z.string().max(64).optional(),
+  targetId: z.string().min(1).max(64).optional(),
   action: z.enum(AUDIT_ACTION).optional(),
   from: z.iso.date().optional().describe('KST 날짜, 포함'),
   to: z.iso.date().optional().describe('KST 날짜, 포함'),
+}).refine((q) => !q.from || !q.to || q.from <= q.to, {
+  message: '시작 날짜가 끝 날짜보다 늦습니다.',
+  path: ['from'],
 });
 export type AuditLogQuery = z.infer<typeof AuditLogQuery>;
 
