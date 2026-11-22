@@ -283,13 +283,21 @@ describe('빠른 1:1 매칭', () => {
   it('성사 처리 중이면 다시 줄 서지 못하고, 남은 기록은 방에 있을 때만 믿는다', async () => {
     const a = await online();
     const foundKey = `mm:found:${a.user.userId}`;
-    await valkey.set(foundKey, 'PENDING', 'EX', 120);
+    await valkey.set(foundKey, `PENDING:${Date.now()}`, 'EX', 120);
     expect((await enqueue(a)).json().code).toBe('MATCH_ALREADY_QUEUED');
-    // 성사 처리가 중간에 끊겨 방이 없으면 잠깐 기다린 뒤 404, 기록도 지운다
+    // 방을 만드는 중이면 잠깐 기다려 본 뒤 이미 성사된 것으로 답하고, 표시는 지우지 않는다
+    const busy = await call(a.user, 'DELETE', '/battles/matchmaking');
+    expect(busy.json()).toMatchObject({ code: 'MATCH_ALREADY_FOUND', detail: null });
+    expect(await valkey.get(foundKey)).not.toBeNull();
+    // 오래되어 끊긴 표시는 다시 줄 서는 것을 막지 않고, 취소하면 404와 함께 지운다
+    await valkey.set(foundKey, `PENDING:${Date.now() - 31_000}`, 'EX', 120);
     expect((await call(a.user, 'DELETE', '/battles/matchmaking')).json().code).toBe(
       'MATCH_NOT_QUEUED',
     );
     expect(await valkey.get(foundKey)).toBeNull();
+    await valkey.set(foundKey, `PENDING:${Date.now() - 31_000}`, 'EX', 120);
+    expect((await enqueue(a)).statusCode).toBe(202);
+    expect((await call(a.user, 'DELETE', '/battles/matchmaking')).statusCode).toBe(204);
     // 이미 끝난 방을 가리키는 기록도 404
     await valkey.set(
       foundKey,
