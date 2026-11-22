@@ -1,11 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { SEASON_PERIOD } from '../../common/enums.js';
 import { kstDate } from '../../common/time/kst.js';
-import { type Database, DB } from '../../infra/db/db.module.js';
+import { type Database, DB, type Transaction } from '../../infra/db/db.module.js';
 import {
   type RankingSeason,
+  rankingSeasonExclusions,
   rankingSeasons,
   rankingSnapshots,
   users,
@@ -18,6 +19,15 @@ import { endedSeasons, type SeasonRange, snapshotRanks } from './season.js';
 const INSERT_CHUNK = 500;
 
 export type CloseResult = { confirmed: string[]; failed: string[] };
+
+/** 마감 순서대로 놓인 한 범위의 참여자 (순위는 제외 대상을 반영해 쓸 때 매긴다) */
+type SnapshotMember = {
+  scope: string;
+  userId: string;
+  xp: number;
+  listed: boolean;
+  position: number;
+};
 
 @Injectable()
 export class SeasonService {
@@ -58,22 +68,52 @@ export class SeasonService {
     return `rank:${range.period.toLowerCase()}:${range.periodKey}:school`;
   }
 
+  /** 관리자가 다시 돌린 시즌 하나를 마감한다. 이미 확정됐으면 그대로 둔다 */
+  async closeById(seasonId: string): Promise<boolean> {
+    const [season] = await this.db
+      .select()
+      .from(rankingSeasons)
+      .where(eq(rankingSeasons.id, seasonId));
+    if (!season || season.status === 'CONFIRMED') return true;
+    return this.close(season, season);
+  }
+
+  /** 제외 대상이 바뀐 뒤 그 시즌 스냅샷의 모든 범위 순위를 마감 때와 같은 규칙으로 다시 매긴다 */
+  async rerank(tx: Transaction, seasonId: string): Promise<void> {
+    const members = await tx
+      .select({
+        scope: rankingSnapshots.scope,
+        userId: rankingSnapshots.userId,
+        xp: rankingSnapshots.xp,
+        listed: rankingSnapshots.listed,
+        position: rankingSnapshots.position,
+      })
+      .from(rankingSnapshots)
+      .where(eq(rankingSnapshots.seasonId, seasonId))
+      .orderBy(asc(rankingSnapshots.scope), asc(rankingSnapshots.position));
+    await this.writeSnapshots(tx, seasonId, members);
+  }
+
   private async close(range: SeasonRange, existing: RankingSeason | undefined): Promise<boolean> {
     const seasonId = existing?.id ?? (await this.open(range));
     try {
-      const rows = await this.snapshotRows(range, seasonId);
+      const members = await this.collect(range);
       await this.db.transaction(async (tx) => {
-        await tx.delete(rankingSnapshots).where(eq(rankingSnapshots.seasonId, seasonId));
-        for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
-          await tx.insert(rankingSnapshots).values(rows.slice(i, i + INSERT_CHUNK));
-        }
+        // 제외 대상 변경·다른 마감과 겹치지 않게 시즌 행부터 잠근다
+        const [locked] = await tx
+          .select({ status: rankingSeasons.status })
+          .from(rankingSeasons)
+          .where(eq(rankingSeasons.id, seasonId))
+          .for('update');
+        if (locked?.status === 'CONFIRMED') return;
+        await this.writeSnapshots(tx, seasonId, members);
         await tx
           .update(rankingSeasons)
           .set({
             status: 'CONFIRMED',
             confirmedAt: new Date(),
             lastError: null,
-            attempts: (existing?.attempts ?? 0) + 1,
+            attempts: sql`${rankingSeasons.attempts} + 1`,
           })
           .where(eq(rankingSeasons.id, seasonId));
       });
@@ -85,10 +125,34 @@ export class SeasonService {
         .set({
           status: 'FAILED',
           lastError: String(error).slice(0, 500),
-          attempts: (existing?.attempts ?? 0) + 1,
+          attempts: sql`${rankingSeasons.attempts} + 1`,
         })
         .where(eq(rankingSeasons.id, seasonId));
       return false;
+    }
+  }
+
+  /** 저장된 제외 대상을 반영해 순위를 매기고 그 시즌 스냅샷을 통째로 바꾼다 */
+  private async writeSnapshots(
+    tx: Transaction,
+    seasonId: string,
+    members: SnapshotMember[],
+  ): Promise<void> {
+    const exclusions = await tx
+      .select({ userId: rankingSeasonExclusions.userId })
+      .from(rankingSeasonExclusions)
+      .where(eq(rankingSeasonExclusions.seasonId, seasonId));
+    const excluded = new Set(exclusions.map((e) => e.userId));
+    const byScope = new Map<string, SnapshotMember[]>();
+    for (const member of members) {
+      byScope.set(member.scope, [...(byScope.get(member.scope) ?? []), member]);
+    }
+    const rows = [...byScope.values()].flatMap((scoped) =>
+      snapshotRanks(scoped, excluded).map((member) => ({ seasonId, ...member })),
+    );
+    await tx.delete(rankingSnapshots).where(eq(rankingSnapshots.seasonId, seasonId));
+    for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
+      await tx.insert(rankingSnapshots).values(rows.slice(i, i + INSERT_CHUNK));
     }
   }
 
@@ -108,9 +172,9 @@ export class SeasonService {
   }
 
   /** 그 기간의 학교·학년·반 ZSET을 모두 스냅샷으로. 교사·탈퇴로 지워진 사용자는 뺀다 */
-  private async snapshotRows(range: SeasonRange, seasonId: string) {
+  private async collect(range: SeasonRange): Promise<SnapshotMember[]> {
     const prefix = `rank:${range.period.toLowerCase()}:${range.periodKey}:`;
-    const rows: (typeof rankingSnapshots.$inferInsert)[] = [];
+    const rows: SnapshotMember[] = [];
     for (const key of await this.scan(`${prefix}*`)) {
       const flat = await this.valkey.zrevrange(key, 0, -1, 'WITHSCORES');
       const members: { userId: string; xp: number }[] = [];
@@ -129,16 +193,12 @@ export class SeasonService {
           ),
         );
       const byId = new Map(people.map((user) => [user.id, user]));
-      const ranked = snapshotRanks(
-        members.flatMap((member) => {
-          const user = byId.get(member.userId);
-          if (user?.role !== 'STUDENT') return [];
-          return [{ ...member, listed: listable(user) }];
-        }),
-      );
       const scope = key.slice(prefix.length);
-      for (const member of ranked) {
-        rows.push({ seasonId, scope, ...member });
+      let position = 0;
+      for (const member of members) {
+        const user = byId.get(member.userId);
+        if (user?.role !== 'STUDENT') continue;
+        rows.push({ scope, ...member, listed: listable(user), position: position++ });
       }
     }
     return rows;
