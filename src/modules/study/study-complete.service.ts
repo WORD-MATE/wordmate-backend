@@ -17,6 +17,7 @@ import {
   words,
 } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
+import { addMissionProgress } from '../missions/mission-progress.js';
 import { RankingService } from '../ranking/ranking.service.js';
 import { type XpGrant, XpService } from '../xp/xp.service.js';
 import type { CompleteResult, CompleteStudy } from './study.schemas.js';
@@ -126,6 +127,8 @@ export class StudyCompleteService {
       if (answered.length > 0) {
         await this.addDailyStats(tx, user.userId, today, session, answered, xp.earned);
         streak = await this.updateStreak(tx, user.userId, today);
+        await addMissionProgress(tx, user.userId, 'STUDY_COMPLETE', 1, now);
+        await addMissionProgress(tx, user.userId, 'WORDS_STUDIED', answered.length, now);
       }
 
       return {

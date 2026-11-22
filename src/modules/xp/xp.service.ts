@@ -5,6 +5,7 @@ import { kstDate } from '../../common/time/kst.js';
 import type { Transaction } from '../../infra/db/db.module.js';
 import { users, xpLedger } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
+import { addMissionProgress } from '../missions/mission-progress.js';
 
 /** 모든 출처를 합친 하루(KST) XP 상한 */
 export const DAILY_XP_CAP = 500;
@@ -66,6 +67,12 @@ export class XpService {
       granted.push(amount);
     }
     const earned = granted.reduce<number>((total, amount) => total + (amount ?? 0), 0);
+    // 미션 보상이 다시 XP 미션을 채우지 않게 뺀다
+    const missionCounted = grants.reduce(
+      (total, grant, i) => total + (grant.source === 'MISSION' ? 0 : (granted[i] ?? 0)),
+      0,
+    );
+    await addMissionProgress(tx, userId, 'XP_EARNED', missionCounted, now);
     if (earned > 0) {
       await tx
         .update(users)
