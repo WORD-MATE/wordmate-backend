@@ -1,6 +1,7 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { BadgesModule } from '../badges/badges.module.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
 import { PacksModule } from '../packs/packs.module.js';
 import { RankingModule } from '../ranking/ranking.module.js';
 import { XpModule } from '../xp/xp.module.js';
@@ -21,6 +22,7 @@ import { RoomsService } from './rooms.service.js';
   imports: [
     BullModule.registerQueue({ name: BATTLE_QUEUE }),
     BadgesModule,
+    NotificationsModule,
     PacksModule,
     XpModule,
     RankingModule,

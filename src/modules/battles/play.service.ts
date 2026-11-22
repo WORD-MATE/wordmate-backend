@@ -16,6 +16,7 @@ import {
 } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
 import { BadgesService } from '../badges/badges.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { RankingService } from '../ranking/ranking.service.js';
 import { type RealtimeContext, RealtimeService } from '../realtime/realtime.service.js';
 import { CHOICE_COUNT } from '../study/question-builder.js';
@@ -63,6 +64,7 @@ export class PlayService implements OnModuleInit {
     private readonly finisher: BattleFinishService,
     private readonly ranking: RankingService,
     private readonly badges: BadgesService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   onModuleInit(): void {
@@ -172,8 +174,27 @@ export class PlayService implements OnModuleInit {
       );
       // 끝까지 남은 참가자 (XP 0 포함)
       await Promise.all(xp.map(({ userId }) => this.badges.evaluate(userId)));
+      await this.notifyResult(
+        battleId,
+        xp.map(({ userId }) => userId),
+      );
     }
     if (outcome.deadlineAt) await this.queue.scheduleQuestionEnd(battleId, idx, outcome.deadlineAt);
+  }
+
+  /** 끝까지 남은 참가자에게 결과 알림 (대결 중 배너는 앱이 숨긴다). 실패해도 대결은 끝난 그대로 */
+  private async notifyResult(battleId: string, userIds: string[]): Promise<void> {
+    if (userIds.length === 0) return;
+    await this.notifications
+      .notify(userIds, {
+        type: 'BATTLE_RESULT',
+        title: '대결 결과',
+        body: '대결이 끝났어요. 결과를 확인해 보세요.',
+        route: `/battles/${battleId}/result`,
+      })
+      .catch((error: unknown) =>
+        this.logger.warn(`대결 결과 알림 실패 (${battleId}): ${String(error)}`),
+      );
   }
 
   /**
