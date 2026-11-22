@@ -8,7 +8,13 @@ import { CommonErrors } from '../../common/errors/app-exception.js';
 import { decodeCursor, encodeCursor } from '../../common/pagination.js';
 import { kstDate } from '../../common/time/kst.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
-import { rankingSeasons, rankingSnapshots, type User, users } from '../../infra/db/schema/index.js';
+import {
+  friendships,
+  rankingSeasons,
+  rankingSnapshots,
+  type User,
+  users,
+} from '../../infra/db/schema/index.js';
 import { VALKEY } from '../../infra/valkey/valkey.module.js';
 import { toUserSummary } from '../users/user-summary.js';
 import type {
@@ -189,9 +195,12 @@ export class RankingQueryService {
       .map((row) => ({ id: row.id, user: row.user, xp: xpOfScore(row.score) }));
   }
 
-  /** 친구 기능이 생기면 여기서 친구 id를 돌려준다 */
-  private async friendIds(_userId: string): Promise<string[]> {
-    return [];
+  private async friendIds(userId: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ id: friendships.friendId })
+      .from(friendships)
+      .where(eq(friendships.userId, userId));
+    return rows.map((row) => row.id);
   }
 
   /**
