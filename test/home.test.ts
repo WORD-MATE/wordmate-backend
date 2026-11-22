@@ -140,9 +140,14 @@ describe('홈 화면', () => {
       review: { dueCount: 0 },
       continueStudy: null,
       streak: { current: 0, best: 0, todayDone: false },
-      missions: null,
       myWeeklyRank: { rank: null, topPercent: null, xp: 0, change: null },
     });
+    expect(body.missions).toHaveLength(4);
+    expect(
+      body.missions.every(
+        (m: { progress: number; status: string }) => m.progress === 0 && m.status === 'IN_PROGRESS',
+      ),
+    ).toBe(true);
     expect(body.recommendedPacks.length).toBeLessThanOrEqual(5);
     expect(body.recommendedPacks.map((p: { packId: string }) => p.packId)).toContain(
       recommended.packId,

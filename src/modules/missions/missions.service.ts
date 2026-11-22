@@ -7,7 +7,7 @@ import { type Database, DB } from '../../infra/db/db.module.js';
 import { type Mission, missions, userMissions, users } from '../../infra/db/schema/index.js';
 import { RankingService } from '../ranking/ranking.service.js';
 import { XpService } from '../xp/xp.service.js';
-import { expiresAtOf, periodKeyOf } from './mission-progress.js';
+import { expiresAtOf, missionPeriodKey } from './mission-progress.js';
 import type { MissionItem } from './missions.schemas.js';
 
 export const MissionErrors = {
@@ -31,14 +31,14 @@ export class MissionsService {
     private readonly ranking: RankingService,
   ) {}
 
-  /** 이번 기간(일일은 오늘, 주간은 이번 주) 미션 */
+  /** 이번 기간(일일은 오늘, 주간은 이번 주) 미션. 오늘의 문장 미션은 06:00 기준 날짜로 센다 */
   async list(user: AuthUser, now = new Date()) {
     const defs = await this.db
       .select()
       .from(missions)
       .where(eq(missions.active, true))
       .orderBy(asc(missions.sortOrder), asc(missions.code));
-    const keys = [...new Set(defs.map((d) => periodKeyOf(d.period, now)))];
+    const keys = [...new Set(defs.map((d) => missionPeriodKey(d, now)))];
     const rows =
       defs.length === 0
         ? []
@@ -57,7 +57,7 @@ export class MissionsService {
             );
     const items = defs.map((def) => {
       const row = rows.find(
-        (r) => r.missionId === def.id && r.periodKey === periodKeyOf(def.period, now),
+        (r) => r.missionId === def.id && r.periodKey === missionPeriodKey(def, now),
       );
       return this.view(def, row?.progress ?? 0, row?.claimedAt ?? null, now);
     });
@@ -78,7 +78,7 @@ export class MissionsService {
       .where(and(eq(missions.id, missionId), eq(missions.active, true)));
     if (!def) throw MissionErrors.notFound();
     const now = new Date();
-    const periodKey = periodKeyOf(def.period, now);
+    const periodKey = missionPeriodKey(def, now);
     const target = and(
       eq(userMissions.userId, user.userId),
       eq(userMissions.missionId, def.id),

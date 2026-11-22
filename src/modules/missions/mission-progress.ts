@@ -3,13 +3,26 @@ import type { MissionMetric, MissionPeriod } from '../../common/enums.js';
 import { kstDate, kstDayRange, kstWeekRange } from '../../common/time/kst.js';
 import type { Transaction } from '../../infra/db/db.module.js';
 import { missions, userMissions, users } from '../../infra/db/schema/index.js';
+import { morningDate } from '../morning/morning-rules.js';
 
-/** 일일은 그날, 주간은 그 주 월요일 (KST 자정 기준) */
-export function periodKeyOf(period: MissionPeriod, now: Date): string {
-  const today = Temporal.PlainDate.from(kstDate(now));
+/** 일일은 그날, 주간은 그 주 월요일 (KST 자정 기준, day를 주면 그 날짜 기준) */
+export function periodKeyOf(period: MissionPeriod, now: Date, day?: string): string {
+  const today = Temporal.PlainDate.from(day ?? kstDate(now));
   return period === 'DAILY'
     ? today.toString()
     : today.subtract({ days: today.dayOfWeek - 1 }).toString();
+}
+
+/** 오늘의 문장 미션은 문장이 바뀌는 06:00 기준 날짜로 센다 (같은 문장을 두 날에 세지 않게) */
+export function missionPeriodKey(
+  def: { period: MissionPeriod; metric: MissionMetric },
+  now: Date,
+): string {
+  return periodKeyOf(
+    def.period,
+    now,
+    def.metric === 'MORNING_COMPLETE' ? morningDate(now) : undefined,
+  );
 }
 
 export function expiresAtOf(period: MissionPeriod, now: Date): Date {
@@ -30,7 +43,12 @@ export async function addMissionProgress(
 ): Promise<void> {
   if (amount <= 0) return;
   const defs = await tx
-    .select({ id: missions.id, period: missions.period, target: missions.target })
+    .select({
+      id: missions.id,
+      period: missions.period,
+      metric: missions.metric,
+      target: missions.target,
+    })
     .from(missions)
     .where(and(eq(missions.metric, metric), eq(missions.active, true)));
   if (defs.length === 0) return;
@@ -41,7 +59,7 @@ export async function addMissionProgress(
       .values({
         userId,
         missionId: def.id,
-        periodKey: periodKeyOf(def.period, now),
+        periodKey: missionPeriodKey(def, now),
         progress: Math.min(amount, def.target),
       })
       .onDuplicateKeyUpdate({
