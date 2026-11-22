@@ -5,6 +5,7 @@ import { classes, users } from '../../infra/db/schema/index.js';
 import { DataGsmClient, type DataGsmStudent } from '../auth/datagsm/datagsm.client.js';
 import { SessionService } from '../auth/session.service.js';
 import { RankingService } from '../ranking/ranking.service.js';
+import { hasOtherActiveAdmin } from '../users/active-admins.js';
 import { classesOf, planSync } from './datagsm-sync.js';
 
 /** 한 번에 맞춰 볼 학생 수 (임시값) */
@@ -134,6 +135,13 @@ export class DataGsmSyncService {
       if (user?.role !== 'STUDENT') return null;
       const plan = planSync(user, student);
       if (!plan) return null;
+      // 학생 관리자가 졸업해 활동 중인 관리자가 없어지면 관리자 API로 되돌릴 수 없어, 다른 관리자를 정할 때까지 남긴다
+      if (plan.deactivate && user.isAdmin && !(await hasOtherActiveAdmin(tx, userId))) {
+        this.logger.warn(`마지막 활동 관리자라 휴면 처리하지 않습니다 (user ${userId})`);
+        const { status: _, ...rest } = plan.changes;
+        plan.changes = rest;
+        plan.deactivate = false;
+      }
       if (Object.keys(plan.changes).length > 0) {
         await tx.update(users).set(plan.changes).where(eq(users.id, userId));
       }

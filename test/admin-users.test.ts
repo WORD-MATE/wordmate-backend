@@ -115,13 +115,17 @@ describe('관리자 사용자 관리', () => {
     );
   });
 
-  it('관리자 권한은 교사에게만 주고 회수할 수 있다', async () => {
+  it('관리자 권한은 학생·교사 모두에게 주고 회수할 수 있다', async () => {
     const teacher = await makeUser({ role: 'TEACHER' });
     const student = await makeUser();
     expect(
-      (await call(admin, 'PUT', `/admin/users/${student.userId}/admin`, { isAdmin: true })).json()
-        .code,
-    ).toBe('ADMIN_NOT_TEACHER');
+      (await call(admin, 'PUT', `/admin/users/${student.userId}/admin`, { isAdmin: true }))
+        .statusCode,
+    ).toBe(204);
+    expect(
+      (await call(admin, 'PUT', `/admin/users/${student.userId}/admin`, { isAdmin: false }))
+        .statusCode,
+    ).toBe(204);
     expect(
       (await call(admin, 'PUT', `/admin/users/${teacher.userId}/admin`, { isAdmin: true }))
         .statusCode,

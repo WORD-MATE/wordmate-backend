@@ -11,7 +11,11 @@ export const AdminUserErrors = {
       HttpStatus.CONFLICT,
     ),
   notTeacher: () =>
-    new AppException('ADMIN_NOT_TEACHER', '교사만 지정할 수 있습니다.', HttpStatus.CONFLICT),
+    new AppException(
+      'ADMIN_NOT_TEACHER',
+      '교사만 담당 반을 정할 수 있습니다.',
+      HttpStatus.CONFLICT,
+    ),
   xpNegative: () =>
     new AppException(
       'ADMIN_XP_NEGATIVE',

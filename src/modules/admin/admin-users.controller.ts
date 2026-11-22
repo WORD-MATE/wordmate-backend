@@ -84,8 +84,7 @@ export class AdminUsersController {
 
   @ApiOperation({
     summary: '관리자 권한 부여·회수',
-    description:
-      '교사만 부여(409 ADMIN_NOT_TEACHER). 마지막 관리자는 회수 불가 409 ADMIN_LAST_ADMIN',
+    description: '학생·교사 모두 부여 가능. 마지막 관리자는 회수 불가 409 ADMIN_LAST_ADMIN',
   })
   @Put(':userId/admin')
   @HttpCode(204)

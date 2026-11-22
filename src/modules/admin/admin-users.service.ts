@@ -172,7 +172,6 @@ export class AdminUsersService {
       const [target] = await tx.select().from(users).where(eq(users.id, userId)).for('update');
       if (!target || target.status === 'WITHDRAWN') throw AdminUserErrors.userNotFound();
       if (target.isAdmin === isAdmin) return;
-      if (isAdmin && target.role !== 'TEACHER') throw AdminUserErrors.notTeacher();
       // 활동 중인 관리자가 하나도 남지 않으면 안 된다 (정지·휴면 관리자는 관리할 수 없음)
       if (!isAdmin && activeAdmins.every((a) => a.id === userId)) throw AdminUserErrors.lastAdmin();
       await tx.update(users).set({ isAdmin }).where(eq(users.id, userId));
