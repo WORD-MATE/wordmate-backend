@@ -12,6 +12,7 @@ import {
   battleRoomParticipants,
   users,
 } from '../../infra/db/schema/index.js';
+import { addMissionProgress } from '../missions/mission-progress.js';
 import { recordWrongWords } from '../wrong-notes/wrong-note-writer.js';
 import { XpService } from '../xp/xp.service.js';
 import { battleXpOf, DAILY_PAIR_LIMIT, decideOutcomes } from './battle-rules.js';
@@ -93,6 +94,13 @@ export class BattleFinishService {
         xpEarned = grant.earned;
         if (grant.capped) blockedReason = 'DAILY_CAP';
         earned.push({ userId: result.userId, earned: grant.earned });
+      }
+      // 기권승은 XP가 없는 것처럼 승리로 세지 않는다
+      if (result.completed && !idle) {
+        await addMissionProgress(tx, result.userId, 'BATTLE_FINISH', 1, finishedAt);
+        if (result.outcome === 'WIN') {
+          await addMissionProgress(tx, result.userId, 'BATTLE_WIN', 1, finishedAt);
+        }
       }
       rows.push({
         battleId: battle.id,

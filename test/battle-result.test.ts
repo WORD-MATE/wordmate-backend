@@ -14,9 +14,11 @@ import {
   battleRooms,
   battles,
   classes,
+  missions,
   type NewUser,
   packs,
   teacherClasses,
+  userMissions,
   users,
   words,
   wrongNotes,
@@ -172,6 +174,17 @@ describe('대결 결과·XP·기록·다시 하기', () => {
     clients.length = 0;
   };
 
+  const missionProgress = async (userId: string) =>
+    Object.fromEntries(
+      (
+        await db
+          .select({ code: missions.code, progress: userMissions.progress })
+          .from(userMissions)
+          .innerJoin(missions, eq(missions.id, userMissions.missionId))
+          .where(eq(userMissions.userId, userId))
+      ).map((row) => [row.code, row.progress]),
+    );
+
   beforeAll(async () => {
     app = await createTestApp();
     db = app.get(DB);
@@ -277,6 +290,14 @@ describe('대결 결과·XP·기록·다시 하기', () => {
         .from(xpLedger)
         .where(and(eq(xpLedger.userId, a?.userId as string), eq(xpLedger.source, 'BATTLE'))),
     ).toEqual([{ refKey: `battle:${battleId}`, amount: 30 }]);
+    // 미션: 완주·승리·XP (중도 이탈은 세지 않음)
+    expect(await missionProgress(a?.userId as string)).toEqual({
+      DAILY_BATTLE: 1,
+      WEEKLY_WIN: 1,
+      WEEKLY_XP: 30,
+    });
+    expect(await missionProgress(b?.userId as string)).toEqual({ DAILY_BATTLE: 1, WEEKLY_XP: 5 });
+    expect(await missionProgress(c?.userId as string)).toEqual({});
     // 틀리거나 답하지 않은 단어는 오답노트로 (같은 단어는 한 번)
     const notes = await db
       .select()

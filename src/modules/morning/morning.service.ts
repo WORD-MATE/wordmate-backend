@@ -18,6 +18,7 @@ import {
   morningSentences,
   userStreaks,
 } from '../../infra/db/schema/index.js';
+import { addMissionProgress } from '../missions/mission-progress.js';
 import { PackErrors, PacksService } from '../packs/packs.service.js';
 import { RankingService } from '../ranking/ranking.service.js';
 import { streakView } from '../records/stats.js';
@@ -140,7 +141,7 @@ export class MorningService {
         isToday ? [{ source: 'MORNING', refKey: date, amount: MORNING_XP }] : [],
         now,
       );
-      await tx.insert(morningCompletions).ignore().values({
+      const [inserted] = await tx.insert(morningCompletions).ignore().values({
         userId: user.userId,
         sentenceId: sentence.id,
         correctCount,
@@ -148,6 +149,9 @@ export class MorningService {
         xpGranted: grant.earned,
         completedAt: now,
       });
+      if (isToday && inserted.affectedRows > 0) {
+        await addMissionProgress(tx, user.userId, 'MORNING_COMPLETE', 1, now);
+      }
       const streak = isToday
         ? await this.updateStreak(tx, user.userId, today)
         : { current: await this.currentStreak(tx, user.userId, today), increased: false };

@@ -9,10 +9,12 @@ import { type Database, DB } from '../src/infra/db/db.module.js';
 import {
   dailyStudiedWords,
   dailyStudyStats,
+  missions,
   packs,
   studyRecordItems,
   studyRecords,
   studySessions,
+  userMissions,
   userStreaks,
   users,
   userWordProgress,
@@ -112,6 +114,17 @@ describe('학습 종료', () => {
       key ? { 'idempotency-key': key } : {},
     );
 
+  const missionProgress = async (userId: string) =>
+    Object.fromEntries(
+      (
+        await db
+          .select({ code: missions.code, progress: userMissions.progress })
+          .from(userMissions)
+          .innerJoin(missions, eq(missions.id, userMissions.missionId))
+          .where(eq(userMissions.userId, userId))
+      ).map((row) => [row.code, row.progress]),
+    );
+
   beforeAll(async () => {
     app = await createTestApp();
     db = app.get(DB);
@@ -156,6 +169,12 @@ describe('학습 종료', () => {
       xp: { earned: 13, blockedReason: null, todayTotal: 13 },
       packCompleteBonus: true,
       streak: { current: 1, increased: true },
+    });
+    expect(await missionProgress(user.userId)).toEqual({
+      DAILY_STUDY: 1,
+      DAILY_WORDS: 4,
+      WEEKLY_STUDY: 1,
+      WEEKLY_XP: 13,
     });
 
     const replay = await complete(user, session.sessionId, 'FINISHED', key);

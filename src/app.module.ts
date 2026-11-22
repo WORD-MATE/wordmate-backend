@@ -14,6 +14,7 @@ import { FriendsModule } from './modules/friends/friends.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { HomeModule } from './modules/home/home.module.js';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module.js';
+import { MissionsModule } from './modules/missions/missions.module.js';
 import { MorningModule } from './modules/morning/morning.module.js';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { PacksModule } from './modules/packs/packs.module.js';
@@ -60,6 +61,7 @@ import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
     BlocksModule,
     ReportsModule,
     MorningModule,
+    MissionsModule,
     PoliciesModule,
     UsersModule,
   ],

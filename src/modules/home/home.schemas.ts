@@ -41,7 +41,7 @@ export const Home = z
         }),
       )
       .nullable()
-      .describe('미션 기능 전까지 null'),
+      .describe('일일 미션. 교사는 null'),
     myWeeklyRank: z
       .object({
         rank: z.number().int().nullable(),

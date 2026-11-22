@@ -4,6 +4,7 @@ import type { AuthUser } from '../../common/auth/auth-user.js';
 import type { StudySource } from '../../common/enums.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import { studyRecords } from '../../infra/db/schema/index.js';
+import { MissionsService } from '../missions/missions.service.js';
 import { MorningService } from '../morning/morning.service.js';
 import { PacksService } from '../packs/packs.service.js';
 import { RankingQueryService } from '../ranking/ranking-query.service.js';
@@ -31,11 +32,12 @@ export class HomeService {
     private readonly ranking: RankingQueryService,
     private readonly packs: PacksService,
     private readonly morning: MorningService,
+    private readonly missions: MissionsService,
   ) {}
 
   /** 칸마다 따로 불러 한 칸이 실패해도 나머지는 보여준다 (실패한 칸은 null, 추천 팩은 빈 배열) */
   async home(user: AuthUser): Promise<Home> {
-    const [morning, review, continueStudy, streak, myWeeklyRank, recommendedPacks] =
+    const [morning, review, continueStudy, streak, missions, myWeeklyRank, recommendedPacks] =
       await Promise.all([
         this.part('morning', () => this.morning.card(user)),
         this.part('review', async () => ({
@@ -43,6 +45,9 @@ export class HomeService {
         })),
         this.part('continueStudy', () => this.continueStudy(user)),
         this.part('streak', () => this.records.streak(user)),
+        this.part('missions', async () =>
+          user.role === 'STUDENT' ? this.missions.dailyCard(user) : null,
+        ),
         this.part('myWeeklyRank', () => this.weeklyRank(user)),
         this.part('recommendedPacks', () => this.recommendedPacks(user)),
       ]);
@@ -51,7 +56,7 @@ export class HomeService {
       review,
       continueStudy,
       streak,
-      missions: null,
+      missions,
       myWeeklyRank,
       recommendedPacks: recommendedPacks ?? [],
     };

@@ -619,6 +619,29 @@ pnpm db:seed-morning seeds/morning.json
 docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 ```
 
+## 미션
+
+- 미션 정의는 `missions` 테이블의 데이터입니다(종류·목표·보상 XP, `active`로 끄기). 처음 7개는 마이그레이션으로 넣었고 수치는 임시입니다.
+
+| 코드            | 기간 | 세는 활동                | 목표 | 보상 XP |
+| --------------- | ---- | ------------------------ | ---- | ------- |
+| `DAILY_STUDY`   | 일일 | 학습 끝내기              | 1    | 10      |
+| `DAILY_WORDS`   | 일일 | 학습한 단어 수           | 20   | 10      |
+| `DAILY_BATTLE`  | 일일 | 대결 끝까지 하기         | 1    | 10      |
+| `DAILY_MORNING` | 일일 | 오늘의 문장 퀴즈         | 1    | 5       |
+| `WEEKLY_STUDY`  | 주간 | 학습 끝내기              | 5    | 30      |
+| `WEEKLY_WIN`    | 주간 | 대결 승리                | 3    | 30      |
+| `WEEKLY_XP`     | 주간 | 얻은 XP (미션 보상 제외) | 300  | 50      |
+
+- 진행(`user_missions`)은 기간 키(일일은 KST 날짜, 주간은 그 주 월요일)마다 한 줄이라, 자정·월요일 자정이 지나면 따로 초기화하지 않아도 새로 셉니다. 단, 오늘의 문장 미션은 문장이 바뀌는 06:00 기준 날짜로 셉니다(같은 문장을 두 날에 세지 않게). 목록은 이번 기간만 보여 주므로 `EXPIRED`는 나오지 않습니다.
+- 활동이 생긴 트랜잭션 안에서 `addMissionProgress`로 진행을 올립니다(목표에서 멈춤).
+  - 학습: 답을 낸 학습을 끝냈을 때 1회, 그 학습에서 답한 수만큼 단어 수.
+  - 대결: 한 문항이라도 답하고 끝까지 남았을 때 완주, `WIN`일 때 승리(기권승은 세지 않음).
+  - 오늘의 문장: 오늘 문장을 처음 끝냈을 때.
+  - XP: `XpService.grant`에서 실제로 받은 양(미션 보상 제외).
+- 보상(`POST /missions/{missionId}/claim`)은 이번 기간에 한 번입니다. 사용자 행을 잠근 뒤 `claimed_at IS NULL AND progress >= target` 조건부 업데이트로 두 번 받지 않게 하고, XP(출처 `MISSION`, 하루 500 상한 포함)를 같은 트랜잭션에서 줍니다. 상한에 걸려 일부만 받아도 받은 것으로 끝납니다. 404 `MISSION_NOT_FOUND`, 409 `MISSION_NOT_CLAIMABLE` / `MISSION_ALREADY_CLAIMED`.
+- 진행을 올리는 쪽도 사용자 행을 먼저 잠가, 보상 수령과 잠그는 순서가 같습니다. 홈 화면 `missions`는 일일 미션입니다(교사는 null).
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.
