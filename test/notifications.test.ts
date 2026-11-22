@@ -123,6 +123,9 @@ describe('알림', () => {
       .where(eq(notifications.id, old?.id as string));
     expect((await call(me, 'GET', '/notifications')).json().items).toEqual([]);
     expect((await call(me, 'GET', '/notifications/unread-count')).json()).toEqual({ count: 0 });
+    expect((await call(me, 'PATCH', `/notifications/${old?.id}/read`)).json().code).toBe(
+      'NOTI_NOT_FOUND',
+    );
     expect(await app.get(MaintenanceService).purgeNotifications()).toBeGreaterThanOrEqual(1);
     expect(
       await db
@@ -215,5 +218,24 @@ describe('알림', () => {
     expect(
       await service.notify([me.userId], { type: 'MARKETING', title: '이벤트', body: '' }),
     ).toEqual([]);
+    // 철회 뒤에는 광고성이 꺼진 것으로 보이고, 그대로 다른 설정만 바꿔 저장할 수 있다
+    const current = (await call(me, 'GET', '/notifications/settings')).json();
+    expect(current).toMatchObject({ categories: { MARKETING: false }, marketingAgreed: false });
+    const saved = await call(me, 'PUT', '/notifications/settings', {
+      categories: { ...current.categories, BATTLE: false },
+      reminder: current.reminder,
+    });
+    expect(saved.statusCode).toBe(200);
+  });
+
+  it('지금 쓰지 않는 계정(정지·탈퇴)과 없는 사용자에게는 저장하지 않는다', async () => {
+    const active = await makeUser();
+    const suspended = await makeUser({ status: 'SUSPENDED' });
+    const stored = await service.notify([active.userId, suspended.userId, newId()], {
+      type: 'NOTICE',
+      title: '공지',
+      body: '',
+    });
+    expect(stored.map((n) => n.userId)).toEqual([active.userId]);
   });
 });
