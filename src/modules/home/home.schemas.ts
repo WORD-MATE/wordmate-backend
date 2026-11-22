@@ -14,7 +14,7 @@ export const Home = z
         isFallback: z.boolean(),
       })
       .nullable()
-      .describe('오늘의 문장 기능 전까지 null'),
+      .describe('게시된 문장이 하나도 없으면 null'),
     review: z.object({ dueCount: z.number().int() }).nullable(),
     continueStudy: z
       .object({

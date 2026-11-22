@@ -82,7 +82,13 @@ export class WordsService {
     };
   }
 
-  async add(user: AuthUser, packId: string, body: AddWords): Promise<AddWordsResult> {
+  /** rejectOverLimit이면 한도를 넘는 단어를 빼지 않고 409로 전부 되돌린다 */
+  async add(
+    user: AuthUser,
+    packId: string,
+    body: AddWords,
+    { rejectOverLimit = false } = {},
+  ): Promise<AddWordsResult> {
     const pack = await this.packs.findEditable(user, packId);
 
     // 요청 안에서 같은 단어가 겹치면 처음 것만 쓴다
@@ -135,6 +141,7 @@ export class WordsService {
         }
 
         const capacity = Math.max(0, MAX_WORDS_PER_PACK - locked.wordCount);
+        if (rejectOverLimit && toInsert.length > capacity) throw WordErrors.limitExceeded();
         const inserted = toInsert.slice(0, capacity);
         if (inserted.length > 0) {
           await tx.insert(words).values(inserted);

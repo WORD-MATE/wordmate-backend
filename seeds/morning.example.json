@@ -1,0 +1,42 @@
+{
+  "sentences": [
+    {
+      "date": "2026-11-23",
+      "sentence": "Persistence is the key to mastering a new language.",
+      "translation": "꾸준함은 새로운 언어를 익히는 열쇠다.",
+      "keywords": [
+        {
+          "english": "persistence",
+          "meanings": ["끈기", "꾸준함"],
+          "example": "Her persistence finally paid off.",
+          "highlight": { "start": 0, "end": 11 }
+        },
+        {
+          "english": "master",
+          "meanings": ["숙달하다", "익히다"],
+          "highlight": { "start": 26, "end": 35 }
+        }
+      ],
+      "quizzes": [
+        {
+          "type": "FILL_BLANK",
+          "question": "_____ is the key to mastering a new language.",
+          "answers": ["Persistence"],
+          "explanation": "persistence: 끈기, 꾸준함"
+        },
+        {
+          "type": "MEANING",
+          "question": "master의 뜻으로 알맞은 것은?",
+          "choices": ["숙달하다", "포기하다", "잊어버리다", "미루다"],
+          "answers": ["숙달하다"]
+        },
+        {
+          "type": "QUESTION",
+          "question": "문장에서 새로운 언어를 익히는 열쇠는 무엇인가?",
+          "choices": ["꾸준함", "재능", "운", "돈"],
+          "answers": ["꾸준함"]
+        }
+      ]
+    }
+  ]
+}

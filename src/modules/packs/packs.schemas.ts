@@ -4,7 +4,7 @@ import { CursorQuery, cursorPage } from '../../common/pagination.js';
 import { UserSummary } from '../users/user-summary.js';
 import { WordItem } from '../words/words.schemas.js';
 
-const packName = z.string().trim().min(1, '이름을 입력해 주세요.').max(30);
+export const packName = z.string().trim().min(1, '이름을 입력해 주세요.').max(30);
 const description = z
   .string()
   .trim()

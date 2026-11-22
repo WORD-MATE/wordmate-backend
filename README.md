@@ -39,22 +39,23 @@ pnpm dev
 
 ## 명령어
 
-| 명령                   | 설명                                                         |
-| ---------------------- | ------------------------------------------------------------ |
-| `pnpm dev`             | 개발 서버 (변경 감지)                                        |
-| `pnpm build`           | 빌드 (`dist/`)                                               |
-| `pnpm start`           | 빌드 결과 실행                                               |
-| `pnpm test`            | 단위 테스트                                                  |
-| `pnpm test:e2e`        | 통합 테스트 (Docker 필요, MySQL·Valkey 컨테이너 자동 실행)   |
-| `pnpm typecheck`       | 타입 검사                                                    |
-| `pnpm lint`            | 린트·포맷 검사                                               |
-| `pnpm format`          | 린트·포맷 자동 수정                                          |
-| `pnpm db:generate`     | 스키마 변경으로 마이그레이션 생성 (`drizzle/`)               |
-| `pnpm db:migrate`      | 마이그레이션 적용                                            |
-| `pnpm db:seed <파일>`  | 기본 단어팩 시드 반영 (아래 "기본 단어팩 시드" 참고)         |
-| `pnpm ranking:rebuild` | XP 원장에서 이번 주·이번 달·전체 랭킹 재구성 (Valkey 복구용) |
-| `pnpm db:studio`       | Drizzle Studio (DB 브라우저)                                 |
-| `pnpm jwt:keygen`      | JWT 서명용 Ed25519 키 생성                                   |
+| 명령                          | 설명                                                         |
+| ----------------------------- | ------------------------------------------------------------ |
+| `pnpm dev`                    | 개발 서버 (변경 감지)                                        |
+| `pnpm build`                  | 빌드 (`dist/`)                                               |
+| `pnpm start`                  | 빌드 결과 실행                                               |
+| `pnpm test`                   | 단위 테스트                                                  |
+| `pnpm test:e2e`               | 통합 테스트 (Docker 필요, MySQL·Valkey 컨테이너 자동 실행)   |
+| `pnpm typecheck`              | 타입 검사                                                    |
+| `pnpm lint`                   | 린트·포맷 검사                                               |
+| `pnpm format`                 | 린트·포맷 자동 수정                                          |
+| `pnpm db:generate`            | 스키마 변경으로 마이그레이션 생성 (`drizzle/`)               |
+| `pnpm db:migrate`             | 마이그레이션 적용                                            |
+| `pnpm db:seed <파일>`         | 기본 단어팩 시드 반영 (아래 "기본 단어팩 시드" 참고)         |
+| `pnpm db:seed-morning <파일>` | 오늘의 문장 시드 반영 (아래 "오늘의 문장" 참고)              |
+| `pnpm ranking:rebuild`        | XP 원장에서 이번 주·이번 달·전체 랭킹 재구성 (Valkey 복구용) |
+| `pnpm db:studio`              | Drizzle Studio (DB 브라우저)                                 |
+| `pnpm jwt:keygen`             | JWT 서명용 Ed25519 키 생성                                   |
 
 ## 프로젝트 구조
 
@@ -594,6 +595,29 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 - 대결 중 일어난 일이면 `battleId`를 붙이고, 내가 참여한 대결이 아니면 404 `BATTLE_NOT_FOUND`입니다.
 - 같은 대상·사유는 하루(KST) 한 번입니다(429 `REPORT_DUPLICATE_TODAY`). 유니크 키로 막아 동시에 보내도 하나만 남습니다.
 - 신고는 `RECEIVED` 상태로 쌓이고, 처리·결과 알림은 관리자 기능에서 합니다. 신고 대상에게는 알리지 않으며 신고한 사람을 드러내는 API가 없습니다.
+
+## 오늘의 문장
+
+- 하루 경계는 **06:00 KST**입니다(`morningDate`). 06시 전에는 전날 문장이 "오늘"이고, XP 지급 여부(문장 날짜당 한 번)와 연속 기록도 같은 기준입니다. 하루 XP 상한(500)은 다른 XP처럼 자정 기준입니다.
+- `PUBLISHED`이면서 날짜가 오늘 이전인 문장만 보입니다. 미래·게시 전·없는 날짜는 404 `MORNING_NOT_FOUND`이고, 오늘 문장이 없으면 `GET /morning/today`가 가장 최근 문장을 `isFallback: true`로 줍니다(하나도 없으면 404, 홈 카드는 null).
+- 퀴즈 완료(`POST /morning/{date}/quiz/complete`, 학생, Idempotency-Key)는 모든 문항에 한 번씩 답해야 합니다(400). 빈칸은 앞뒤 공백 제거·대소문자 무시로 허용 정답과 비교합니다.
+  - 정답을 미리 내려주므로 XP는 정답 수와 상관없이 **오늘 문장을 처음 끝냈을 때 하루 한 번**(`MORNING_XP`, 임시 10)입니다. 지난 문장은 완료 기록만 남고 XP·연속 기록이 없습니다.
+  - 아침 문장 연속 기록은 학습 연속 기록과 따로 `user_streaks`(`MORNING`)에 쌓입니다.
+- 핵심 어휘 저장(`POST /morning/{date}/save-words`, 학생, Idempotency-Key)은 `packId`(내 단어팩, 기본·남의 단어팩은 404)와 `newPackName`(새 팩) 중 하나만 받습니다. 새 팩에 넣다 실패하면 만든 팩을 지웁니다. 이미 있는 단어는 건너뛰고, 한도(1000개)를 넘으면 하나도 넣지 않고 409 `PACK_WORD_LIMIT_EXCEEDED`입니다.
+- 강조 위치(`highlight`)는 문장 안 UTF-16 코드 단위이고 `end`는 포함하지 않습니다(JavaScript 문자열 인덱스와 같음).
+
+### 오늘의 문장 시드
+
+- 문장 등록·검수·게시 예약은 관리자 기능에서 합니다. 그 전까지는 시드 파일로 넣습니다. 형식은 [seeds/morning.example.json](seeds/morning.example.json)을 따릅니다.
+- 날짜마다 게시 상태로 넣고, 이미 있는 날짜는 내용과 핵심 어휘·퀴즈를 바꿉니다(사용자의 완료 기록은 그대로). 핵심 어휘는 단어 추가와 같은 규칙으로 정규화합니다. 강조 위치가 문장 밖이거나, 핵심 어휘가 겹치거나, 빈칸 정답이 문장에 없거나, 객관식 정답이 보기에 없으면 거절합니다. 이미 게시된 날짜의 퀴즈 수를 바꾸면 옛 문항으로 푸는 앱은 400을 받습니다.
+
+```bash
+pnpm db:seed-morning seeds/morning.json --dry-run
+pnpm db:seed-morning seeds/morning.json
+
+# 서버
+docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
+```
 
 ## 정리 작업
 
