@@ -7,6 +7,8 @@ import { RankingModule } from '../ranking/ranking.module.js';
 import { UsersModule } from '../users/users.module.js';
 import { AdminAuditLogsController } from './admin-audit-logs.controller.js';
 import { AdminAuditLogsService } from './admin-audit-logs.service.js';
+import { AdminReportsController } from './admin-reports.controller.js';
+import { AdminReportsService } from './admin-reports.service.js';
 import { AdminSanctionsController } from './admin-sanctions.controller.js';
 import { AdminSanctionsService } from './admin-sanctions.service.js';
 import { AdminUsersController } from './admin-users.controller.js';
@@ -21,7 +23,12 @@ import { AdminUsersService } from './admin-users.service.js';
     RankingModule,
     UsersModule,
   ],
-  controllers: [AdminAuditLogsController, AdminSanctionsController, AdminUsersController],
-  providers: [AdminAuditLogsService, AdminSanctionsService, AdminUsersService],
+  controllers: [
+    AdminAuditLogsController,
+    AdminReportsController,
+    AdminSanctionsController,
+    AdminUsersController,
+  ],
+  providers: [AdminAuditLogsService, AdminReportsService, AdminSanctionsService, AdminUsersService],
 })
 export class AdminModule {}
