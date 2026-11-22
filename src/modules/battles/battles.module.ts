@@ -1,5 +1,6 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
+import { BadgesModule } from '../badges/badges.module.js';
 import { PacksModule } from '../packs/packs.module.js';
 import { RankingModule } from '../ranking/ranking.module.js';
 import { XpModule } from '../xp/xp.module.js';
@@ -17,7 +18,13 @@ import { ClassRoomsController, RoomsController } from './rooms.controller.js';
 import { RoomsService } from './rooms.service.js';
 
 @Module({
-  imports: [BullModule.registerQueue({ name: BATTLE_QUEUE }), PacksModule, XpModule, RankingModule],
+  imports: [
+    BullModule.registerQueue({ name: BATTLE_QUEUE }),
+    BadgesModule,
+    PacksModule,
+    XpModule,
+    RankingModule,
+  ],
   controllers: [BattlesController, MatchmakingController, RoomsController, ClassRoomsController],
   providers: [
     BattleFinishService,

@@ -14,6 +14,7 @@ import {
   words,
 } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
+import { BadgesService } from '../badges/badges.service.js';
 import { RankingService } from '../ranking/ranking.service.js';
 import { CHOICE_COUNT, type QuizWord, shuffled } from '../study/question-builder.js';
 import { XpService } from '../xp/xp.service.js';
@@ -74,6 +75,7 @@ export class ChallengesService {
     @Inject(DB) private readonly db: Database,
     private readonly xp: XpService,
     private readonly ranking: RankingService,
+    private readonly badges: BadgesService,
   ) {}
 
   async today(user: AuthUser): Promise<ChallengeToday> {
@@ -198,6 +200,7 @@ export class ChallengesService {
       };
     });
     await this.ranking.addXp(user.userId, result.xp.earned, now);
+    await this.badges.evaluate(user.userId);
     return result;
   }
 
