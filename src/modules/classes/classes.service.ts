@@ -51,10 +51,12 @@ export class ClassesService {
       .orderBy(asc(classes.grade), asc(classes.classNo));
   }
 
+  /** actorId는 바꾼 사람 (교사 본인 또는 관리자) */
   async setTeacherClasses(
     teacherId: string,
     classIds: string[],
     request: FastifyRequest,
+    actorId = teacherId,
   ): Promise<ClassSummary[]> {
     const ids = [...new Set(classIds)];
     if (ids.length === 0) throw ClassErrors.required();
@@ -72,7 +74,7 @@ export class ClassesService {
       await tx.insert(teacherClasses).values(ids.map((classId) => ({ teacherId, classId })));
       await this.audit.record(
         {
-          actorId: teacherId,
+          actorId,
           action: 'TEACHER_CLASS_CHANGE',
           targetType: 'USER',
           targetId: teacherId,

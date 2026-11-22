@@ -15,7 +15,14 @@ export type PushType = Values<typeof PUSH_TYPE>;
 export const NEXT_STEP = ['TERMS_AGREEMENT', 'TEACHER_CLASS_SELECT', 'HOME'] as const;
 export type NextStep = Values<typeof NEXT_STEP>;
 
-export const AUDIT_ACTION = ['TEACHER_CLASS_CHANGE'] as const;
+export const AUDIT_ACTION = [
+  'TEACHER_CLASS_CHANGE',
+  'ADMIN_USER_SEARCH',
+  'ADMIN_USER_VIEW',
+  'ADMIN_GRANT',
+  'ADMIN_REVOKE',
+  'XP_ADJUST',
+] as const;
 export type AuditAction = Values<typeof AUDIT_ACTION>;
 
 export const UPDATE_STATUS = ['NONE', 'RECOMMENDED', 'REQUIRED'] as const;
