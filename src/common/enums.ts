@@ -29,6 +29,7 @@ export const AUDIT_ACTION = [
   'FORBIDDEN_WORD_UPDATE',
   'FORBIDDEN_WORD_DELETE',
   'APP_CONFIG_CHANGE',
+  'POLICY_CREATE',
 ] as const;
 export type AuditAction = Values<typeof AUDIT_ACTION>;
 
