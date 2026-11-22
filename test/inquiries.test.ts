@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -20,7 +20,7 @@ import {
 } from '../src/infra/db/schema/index.js';
 import { newId } from '../src/infra/db/uuid.js';
 import { VALKEY } from '../src/infra/valkey/valkey.module.js';
-import { INQUIRY_RATE_LIMIT } from '../src/modules/support/inquiries.service.js';
+import { INQUIRY_RATE_LIMIT, InquiriesService } from '../src/modules/support/inquiries.service.js';
 import { InquiryImageStorage, UPLOAD_ROOT } from '../src/modules/support/inquiry-image.storage.js';
 import { createTestApp, inject } from './support/create-test-app.js';
 
@@ -243,6 +243,24 @@ describe('1:1 문의', () => {
     const missing = await open(storage.signedPath(newId()));
     expect(missing.statusCode).toBe(404);
     expect(missing.json().code).toBe('INQUIRY_IMAGE_NOT_FOUND');
+  });
+
+  it('DB에 없는 이미지 파일은 하루가 지나면 정리하고, 문의에 붙은 파일은 남긴다', async () => {
+    const user = await makeUser();
+    const res = await submit(user, multipart(fields(), [{ data: await image('png') }]));
+    const detail = (await call(user, 'GET', `/inquiries/${res.json().inquiryId}`)).json();
+    const kept = detail.images[0].imageId as string;
+    const orphan = newId();
+    const dir = join(uploadRoot, 'inquiries');
+    await writeFile(join(dir, orphan), 'x');
+    await writeFile(join(dir, 'not-an-image-id'), 'x');
+    const sweep = (now: Date) => app.get(InquiriesService).sweepOrphanImages(now);
+
+    expect(await sweep(new Date())).toBe(0);
+    expect(await sweep(new Date(Date.now() + 25 * 60 * 60 * 1000))).toBe(1);
+    const left = await readdir(dir);
+    expect(left).toEqual(expect.arrayContaining([kept, 'not-an-image-id']));
+    expect(left).not.toContain(orphan);
   });
 
   it('필드·이미지가 잘못되면 400이고 아무것도 남기지 않는다', async () => {

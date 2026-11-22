@@ -3,6 +3,7 @@ import { Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import type { Job, Queue } from 'bullmq';
 import { jobOf, triggerOf } from '../jobs/job-registry.js';
 import { JobRunsService } from '../jobs/job-runs.service.js';
+import { InquiriesService } from '../support/inquiries.service.js';
 import { MaintenanceService } from './maintenance.service.js';
 
 export const MAINTENANCE_QUEUE = 'maintenance';
@@ -24,6 +25,7 @@ export class MaintenanceProcessor extends WorkerHost implements OnApplicationBoo
     @InjectQueue(MAINTENANCE_QUEUE) private readonly queue: Queue,
     private readonly maintenance: MaintenanceService,
     private readonly runs: JobRunsService,
+    private readonly inquiries: InquiriesService,
   ) {
     super();
   }
@@ -74,6 +76,7 @@ export class MaintenanceProcessor extends WorkerHost implements OnApplicationBoo
           purgedNotifications: await this.maintenance.purgeNotifications(),
           purgedFavorites: await this.maintenance.purgeDeletedWordFavorites(),
           purgedJobRuns: await this.maintenance.purgeJobRuns(),
+          purgedInquiryImages: await this.inquiries.sweepOrphanImages(),
         };
       default:
         // 같은 큐에 작업을 추가하고 여기 처리를 빠뜨리면 조용히 다른 작업이 돌지 않게 실패시킨다

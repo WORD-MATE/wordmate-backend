@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -31,6 +31,24 @@ export class InquiryImageStorage {
 
   keyOf(imageId: string): string {
     return `inquiries/${imageId}`;
+  }
+
+  /** 이 시각 전에 저장한 문의 이미지 파일 이름(이미지 ID) */
+  async imageIdsSavedBefore(before: Date): Promise<string[]> {
+    const dir = this.pathOf(this.keyOf(''));
+    let names: string[];
+    try {
+      names = await readdir(dir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw error;
+    }
+    const ids: string[] = [];
+    for (const name of names) {
+      const info = await stat(join(dir, name)).catch(() => null);
+      if (info?.isFile() && info.mtime < before) ids.push(name);
+    }
+    return ids;
   }
 
   async save(key: string, data: Buffer): Promise<void> {
