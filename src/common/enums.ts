@@ -25,6 +25,9 @@ export const AUDIT_ACTION = [
   'SANCTION_APPLY',
   'USER_UNSUSPEND',
   'REPORT_UPDATE',
+  'FORBIDDEN_WORD_CREATE',
+  'FORBIDDEN_WORD_UPDATE',
+  'FORBIDDEN_WORD_DELETE',
 ] as const;
 export type AuditAction = Values<typeof AUDIT_ACTION>;
 
