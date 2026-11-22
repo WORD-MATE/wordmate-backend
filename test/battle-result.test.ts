@@ -16,6 +16,7 @@ import {
   classes,
   missions,
   type NewUser,
+  notifications,
   packs,
   teacherClasses,
   userMissions,
@@ -493,6 +494,25 @@ describe('대결 결과·XP·기록·다시 하기', () => {
     const [original] = await db.select().from(battleRooms).where(eq(battleRooms.id, room.roomId));
     const [created] = await db.select().from(battleRooms).where(eq(battleRooms.id, rematch.roomId));
     expect(created).toMatchObject({ packId: original?.packId, sourceBattleId: battleId });
+    // 대결 결과 알림은 두 사람 모두, 다시 하기 초대는 상대에게만 (새 대기실로)
+    const typesOf = async (userId: string) =>
+      (
+        await db
+          .select({ type: notifications.type, route: notifications.route })
+          .from(notifications)
+          .where(eq(notifications.userId, userId))
+      ).filter((n) => n.type === 'BATTLE_RESULT' || n.type === 'BATTLE_INVITE');
+    await expect
+      .poll(() => typesOf(a?.userId as string))
+      .toEqual(
+        expect.arrayContaining([
+          { type: 'BATTLE_RESULT', route: `/battles/${battleId}/result` },
+          { type: 'BATTLE_INVITE', route: `/battles/rooms/${rematch.inviteCode}` },
+        ]),
+      );
+    await expect
+      .poll(async () => (await typesOf(b?.userId as string)).map((n) => n.type))
+      .toEqual(['BATTLE_RESULT']);
     // 이미 다른 방에 있으면 409
     expect((await call(b as AuthUser, 'POST', `/battles/${battleId}/rematch`)).json().code).toBe(
       'ROOM_ALREADY_JOINED',

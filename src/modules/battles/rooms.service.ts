@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { and, asc, desc, eq, inArray, lte, or } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
@@ -22,6 +22,8 @@ import {
 } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
 import { VALKEY } from '../../infra/valkey/valkey.module.js';
+import { blockedEitherWay } from '../blocks/block-queries.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { PacksService } from '../packs/packs.service.js';
 import { RealtimeService } from '../realtime/realtime.service.js';
 import { toUserSummary } from '../users/user-summary.js';
@@ -107,9 +109,11 @@ export class RoomsService {
     private readonly queue: BattleQueue,
     private readonly config: ConfigService<Env, true>,
     private readonly matchQueue: MatchQueue,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private readonly joinQueue = new KeyedSerializer();
+  private readonly logger = new Logger(RoomsService.name);
 
   /** 만든 사람이 방장이자 첫 참가자 */
   async create(user: AuthUser, body: CreateRoom, rematch?: Rematch): Promise<Room> {
@@ -192,7 +196,9 @@ export class RoomsService {
         throw CommonErrors.forbidden('교사용 방은 진행한 교사만 다시 할 수 있습니다.');
       }
       const pack = await this.packs.findById(room.packId);
-      return this.createForClass(user, room.classId, body, { pack, battleId });
+      const created = await this.createForClass(user, room.classId, body, { pack, battleId });
+      await this.inviteRematch(user, battleId, created);
+      return created;
     }
     const [played] = await this.db
       .select({ userId: battleResults.userId })
@@ -201,7 +207,36 @@ export class RoomsService {
     if (!played) throw CommonErrors.forbidden('참가하지 않은 대결입니다.');
     if (user.role !== 'STUDENT') throw CommonErrors.forbidden();
     const pack = await this.packs.findById(room.packId);
-    return this.create(user, body, { pack, battleId });
+    const created = await this.create(user, body, { pack, battleId });
+    await this.inviteRematch(user, battleId, created);
+    return created;
+  }
+
+  /** 지난 대결의 다른 참가자를 새 대기실로 초대한다 (차단 관계는 빼고, 실패해도 방은 그대로) */
+  private async inviteRematch(user: AuthUser, battleId: string, room: Room): Promise<void> {
+    try {
+      const players = await this.db
+        .select({ userId: battleResults.userId })
+        .from(battleResults)
+        .where(eq(battleResults.battleId, battleId));
+      const blocked = new Set(await blockedEitherWay(this.db, user.userId));
+      const invitees = players
+        .map((p) => p.userId)
+        .filter((id) => id !== user.userId && !blocked.has(id));
+      if (invitees.length === 0) return;
+      const [host] = await this.db
+        .select({ name: users.name })
+        .from(users)
+        .where(eq(users.id, user.userId));
+      await this.notifications.notify(invitees, {
+        type: 'BATTLE_INVITE',
+        title: '다시 대결해요',
+        body: `${host?.name ?? ''}님이 같은 설정으로 다시 대결하자고 해요.`,
+        route: `/battles/rooms/${room.inviteCode}`,
+      });
+    } catch (error) {
+      this.logger.warn(`다시 하기 초대 실패 (${battleId}): ${String(error)}`);
+    }
   }
 
   /** 교사는 진행자라 참가자 목록·인원에 들어가지 않는다. 진행 중인 반 방은 교사당 하나 */
