@@ -154,7 +154,7 @@ describe('기기 등록·목록·원격 로그아웃', () => {
       webPushEndpoint: 'https://push.example.com/sub-1',
       webPushP256dh:
         'BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-      webPushAuth: 'auth-key',
+      webPushAuth: 'AAAAAAAAAAAAAAAAAAAAAA',
     });
   });
 
