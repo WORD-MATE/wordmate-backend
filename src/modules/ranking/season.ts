@@ -33,14 +33,17 @@ export function endedSeasons(period: SeasonPeriod, today: string): SeasonRange[]
 }
 
 /**
- * XP 내림차순으로 정렬된 참여자에게 순위를 매긴다. 순위는 목록에 보이는 사람끼리 세고,
- * 목록에 없는 사람(비공개 등)은 자기를 그 사이에 끼워 넣은 순위를 받는다
+ * 마감 순서(XP 내림차순)로 정렬된 참여자에게 순위를 매긴다. 순위는 목록에 보이는 사람끼리 세고,
+ * 목록에 없는 사람(비공개 등)은 자기를 그 사이에 끼워 넣은 순위를 받는다.
+ * 제외된 사람은 순위 없이(null) 남고 아무의 순위에도 세지 않는다
  */
-export function snapshotRanks<T extends { listed: boolean }>(
+export function snapshotRanks<T extends { userId: string; listed: boolean }>(
   sorted: T[],
-): (T & { rank: number })[] {
+  excluded: ReadonlySet<string> = new Set(),
+): (T & { rank: number | null })[] {
   let listedBefore = 0;
   return sorted.map((member) => {
+    if (excluded.has(member.userId)) return { ...member, rank: null };
     const rank = listedBefore + 1;
     if (member.listed) listedBefore++;
     return { ...member, rank };

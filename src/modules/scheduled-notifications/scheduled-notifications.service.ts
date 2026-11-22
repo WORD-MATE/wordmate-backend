@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, gt, inArray, lte, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, lte, sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { WEEKDAY } from '../../common/enums.js';
 import { kstDate, kstTime } from '../../common/time/kst.js';
@@ -152,7 +152,14 @@ export class ScheduledNotificationsService {
           xp: rankingSnapshots.xp,
         })
         .from(rankingSnapshots)
-        .where(and(eq(rankingSnapshots.seasonId, season.id), eq(rankingSnapshots.scope, 'school')));
+        .where(
+          and(
+            eq(rankingSnapshots.seasonId, season.id),
+            eq(rankingSnapshots.scope, 'school'),
+            // 관리자가 시즌에서 제외한 사용자는 순위가 없다
+            isNotNull(rankingSnapshots.rank),
+          ),
+        );
       let sent = 0;
       for (const row of rows) {
         sent += (
