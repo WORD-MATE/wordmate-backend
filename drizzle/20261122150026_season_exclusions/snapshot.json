@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "mysql",
-  "id": "3f27dab0-41fd-4cb9-972e-22ac18f8b8bd",
+  "id": "56052926-59c0-4a19-928d-3985f675cdc9",
   "prevIds": [
     "e3b145e6-062d-4e02-8fba-8cc9fd14807b"
   ],
@@ -135,6 +135,10 @@
       "entityType": "tables"
     },
     {
+      "name": "ranking_season_exclusions",
+      "entityType": "tables"
+    },
+    {
       "name": "ranking_seasons",
       "entityType": "tables"
     },
@@ -220,10 +224,6 @@
     },
     {
       "name": "notices",
-      "entityType": "tables"
-    },
-    {
-      "name": "suspicious_flags",
       "entityType": "tables"
     },
     {
@@ -2365,7 +2365,7 @@
     {
       "table": "job_runs",
       "name": "job",
-      "type": "enum('EXPIRE_STUDY_SESSIONS','DAILY_CLEANUP','SEASON_CLOSE','CHALLENGE_GENERATE','STUDY_REMINDER','MORNING_PUBLISH','MORNING_SENTENCE','RANK_WEEKLY_RESULT','RANK_DROP','SUSPICIOUS_DETECT')",
+      "type": "enum('EXPIRE_STUDY_SESSIONS','DAILY_CLEANUP','SEASON_CLOSE','CHALLENGE_GENERATE','STUDY_REMINDER','MORNING_PUBLISH','MORNING_SENTENCE','RANK_WEEKLY_RESULT','RANK_DROP')",
       "notNull": true,
       "autoIncrement": false,
       "default": null,
@@ -3948,6 +3948,76 @@
       "entityType": "columns"
     },
     {
+      "table": "ranking_season_exclusions",
+      "name": "season_id",
+      "type": "binary(16)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "ranking_season_exclusions",
+      "name": "user_id",
+      "type": "binary(16)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "ranking_season_exclusions",
+      "name": "reason",
+      "type": "varchar(200)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "ranking_season_exclusions",
+      "name": "admin_id",
+      "type": "binary(16)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "ranking_season_exclusions",
+      "name": "created_at",
+      "type": "datetime(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": "(CURRENT_TIMESTAMP(3))",
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
       "table": "ranking_seasons",
       "name": "id",
       "type": "binary(16)",
@@ -4146,6 +4216,20 @@
     {
       "table": "ranking_snapshots",
       "name": "rank",
+      "type": "int",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "ranking_snapshots",
+      "name": "position",
       "type": "int",
       "notNull": true,
       "autoIncrement": false,
@@ -6555,132 +6639,6 @@
       "entityType": "columns"
     },
     {
-      "table": "suspicious_flags",
-      "name": "id",
-      "type": "binary(16)",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "suspicious_flags",
-      "name": "user_id",
-      "type": "binary(16)",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "suspicious_flags",
-      "name": "reason",
-      "type": "enum('FAST_ANSWERS','REPEATED_OPPONENT','XP_SPIKE')",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "suspicious_flags",
-      "name": "date",
-      "type": "date",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "suspicious_flags",
-      "name": "detail",
-      "type": "json",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "suspicious_flags",
-      "name": "detected_at",
-      "type": "datetime(3)",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": "(CURRENT_TIMESTAMP(3))",
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "suspicious_flags",
-      "name": "reviewed",
-      "type": "boolean",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": "false",
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "suspicious_flags",
-      "name": "reviewed_by",
-      "type": "binary(16)",
-      "notNull": false,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "suspicious_flags",
-      "name": "reviewed_at",
-      "type": "datetime(3)",
-      "notNull": false,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
       "table": "users",
       "name": "id",
       "type": "binary(16)",
@@ -7411,6 +7369,15 @@
       "entityType": "pks"
     },
     {
+      "table": "ranking_season_exclusions",
+      "name": "PRIMARY",
+      "columns": [
+        "season_id",
+        "user_id"
+      ],
+      "entityType": "pks"
+    },
+    {
       "table": "ranking_snapshots",
       "name": "PRIMARY",
       "columns": [
@@ -7762,14 +7729,6 @@
     },
     {
       "table": "notices",
-      "name": "PRIMARY",
-      "columns": [
-        "id"
-      ],
-      "entityType": "pks"
-    },
-    {
-      "table": "suspicious_flags",
       "name": "PRIMARY",
       "columns": [
         "id"
@@ -8416,6 +8375,51 @@
       "entityType": "fks"
     },
     {
+      "table": "ranking_season_exclusions",
+      "name": "ranking_season_exclusions_season_id_ranking_seasons_id_fkey",
+      "columns": [
+        "season_id"
+      ],
+      "tableTo": "ranking_seasons",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "ranking_season_exclusions",
+      "name": "ranking_season_exclusions_user_id_users_id_fkey",
+      "columns": [
+        "user_id"
+      ],
+      "tableTo": "users",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "ranking_season_exclusions",
+      "name": "ranking_season_exclusions_admin_id_users_id_fkey",
+      "columns": [
+        "admin_id"
+      ],
+      "tableTo": "users",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "SET NULL",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
       "table": "ranking_snapshots",
       "name": "ranking_snapshots_season_id_ranking_seasons_id_fkey",
       "columns": [
@@ -8930,36 +8934,6 @@
       "name": "notices_created_by_users_id_fkey",
       "columns": [
         "created_by"
-      ],
-      "tableTo": "users",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "SET NULL",
-      "nameExplicit": false,
-      "entityType": "fks"
-    },
-    {
-      "table": "suspicious_flags",
-      "name": "suspicious_flags_user_id_users_id_fkey",
-      "columns": [
-        "user_id"
-      ],
-      "tableTo": "users",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "entityType": "fks"
-    },
-    {
-      "table": "suspicious_flags",
-      "name": "suspicious_flags_reviewed_by_users_id_fkey",
-      "columns": [
-        "reviewed_by"
       ],
       "tableTo": "users",
       "columnsTo": [
@@ -10087,22 +10061,6 @@
       "entityType": "indexes"
     },
     {
-      "table": "study_answers",
-      "name": "study_answers_submitted_idx",
-      "columns": [
-        {
-          "value": "submitted_at",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "using": null,
-      "algorithm": null,
-      "lock": null,
-      "nameExplicit": true,
-      "entityType": "indexes"
-    },
-    {
       "table": "study_record_items",
       "name": "study_record_items_word_idx",
       "columns": [
@@ -10395,50 +10353,6 @@
       "entityType": "indexes"
     },
     {
-      "table": "suspicious_flags",
-      "name": "suspicious_flags_daily_uq",
-      "columns": [
-        {
-          "value": "user_id",
-          "isExpression": false
-        },
-        {
-          "value": "date",
-          "isExpression": false
-        },
-        {
-          "value": "reason",
-          "isExpression": false
-        }
-      ],
-      "isUnique": true,
-      "using": null,
-      "algorithm": null,
-      "lock": null,
-      "nameExplicit": true,
-      "entityType": "indexes"
-    },
-    {
-      "table": "suspicious_flags",
-      "name": "suspicious_flags_date_idx",
-      "columns": [
-        {
-          "value": "date",
-          "isExpression": false
-        },
-        {
-          "value": "user_id",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "using": null,
-      "algorithm": null,
-      "lock": null,
-      "nameExplicit": true,
-      "entityType": "indexes"
-    },
-    {
       "table": "users",
       "name": "users_class_idx",
       "columns": [
@@ -10632,26 +10546,6 @@
         },
         {
           "value": "id",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "using": null,
-      "algorithm": null,
-      "lock": null,
-      "nameExplicit": true,
-      "entityType": "indexes"
-    },
-    {
-      "table": "xp_ledger",
-      "name": "xp_ledger_date_idx",
-      "columns": [
-        {
-          "value": "date",
-          "isExpression": false
-        },
-        {
-          "value": "user_id",
           "isExpression": false
         }
       ],

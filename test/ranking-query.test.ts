@@ -3,6 +3,7 @@ import type { Redis } from 'ioredis';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AccessTokenService } from '../src/common/auth/access-token.service.js';
 import type { AuthUser } from '../src/common/auth/auth-user.js';
+import { kstDate, kstWeekRange } from '../src/common/time/kst.js';
 import { type Database, DB } from '../src/infra/db/db.module.js';
 import { classes, type NewUser, teacherClasses, users } from '../src/infra/db/schema/index.js';
 import { newId } from '../src/infra/db/uuid.js';
@@ -17,7 +18,11 @@ describe('랭킹 조회', () => {
   let db: Database;
   let valkey: Redis;
   let ranking: RankingService;
-  const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
+  // 월요일 0시 직후에 돌면 몇 분 전이 지난주가 되므로 이번 주 시작 뒤로 당긴다 (순서는 그대로)
+  const minutesAgo = (m: number) =>
+    new Date(
+      Math.max(Date.now() - m * 60_000, kstWeekRange(kstDate()).start.getTime() + (60 - m) * 1000),
+    );
 
   const makeUser = async (overrides: Partial<NewUser> = {}): Promise<AuthUser> => {
     const userId = newId();

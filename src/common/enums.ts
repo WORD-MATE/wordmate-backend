@@ -41,6 +41,8 @@ export const AUDIT_ACTION = [
   'MORNING_PUBLISH',
   'MORNING_UNPUBLISH',
   'JOB_RUN',
+  'SEASON_EXCLUSIONS_UPDATE',
+  'SEASON_RERUN',
   'SUSPICIOUS_REVIEW',
 ] as const;
 export type AuditAction = Values<typeof AUDIT_ACTION>;
@@ -272,6 +274,7 @@ export const JOB = [
   'MORNING_SENTENCE',
   'RANK_WEEKLY_RESULT',
   'RANK_DROP',
+  'DATAGSM_SYNC',
   'SUSPICIOUS_DETECT',
 ] as const;
 

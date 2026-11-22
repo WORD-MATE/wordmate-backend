@@ -154,8 +154,9 @@ describe('예약 알림', () => {
     expect(await service.morningSentence(sevenAm)).toBe(0);
   });
 
-  it('주간 랭킹 결과: 지난주 시즌이 확정됐을 때만 학교 순위를 알린다', async () => {
+  it('주간 랭킹 결과: 지난주 시즌이 확정됐을 때만 학교 순위를 알린다 (제외된 사용자는 빼고)', async () => {
     const student = await makeStudent();
+    const excluded = await makeStudent();
     const eightAm = new Date('2030-01-06T23:00:00Z');
     expect(await service.weeklyRankResult(eightAm)).toBe(0);
 
@@ -169,14 +170,32 @@ describe('예약 알림', () => {
       status: 'CONFIRMED',
     });
     await db.insert(rankingSnapshots).values([
-      { seasonId, scope: 'school', userId: student, rank: 2, xp: 120, listed: true },
-      { seasonId, scope: 'class:9-9', userId: student, rank: 1, xp: 120, listed: true },
+      {
+        seasonId,
+        scope: 'school',
+        userId: excluded,
+        rank: null,
+        xp: 500,
+        listed: true,
+        position: 0,
+      },
+      { seasonId, scope: 'school', userId: student, rank: 2, xp: 120, listed: true, position: 2 },
+      {
+        seasonId,
+        scope: 'class:9-9',
+        userId: student,
+        rank: 1,
+        xp: 120,
+        listed: true,
+        position: 0,
+      },
     ]);
     // 확정 전에는 한 번 표시를 남기지 않아 확정 뒤에 보낸다
     expect(await service.weeklyRankResult(eightAm)).toBeGreaterThanOrEqual(1);
     expect(await typesOf(student, 'RANK_WEEKLY_RESULT')).toEqual([
       { body: '지난주 학교 2위로 마감했어요. (120 XP)', route: '/ranking' },
     ]);
+    expect(await typesOf(excluded, 'RANK_WEEKLY_RESULT')).toEqual([]);
     expect(await service.weeklyRankResult(eightAm)).toBe(0);
   });
 

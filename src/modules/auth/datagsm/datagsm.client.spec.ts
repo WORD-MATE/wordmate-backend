@@ -10,6 +10,8 @@ const config = {
       DATAGSM_AUTH_URL: 'https://auth.test',
       DATAGSM_RESOURCE_URL: 'https://resource.test',
       DATAGSM_CLIENT_ID: 'client-1',
+      DATAGSM_OPENAPI_URL: 'https://openapi.test',
+      DATAGSM_API_KEY: 'api-key',
     })[key],
 } as unknown as ConfigService<Env, true>;
 
@@ -24,6 +26,7 @@ const student = {
   status: 'ACTIVE',
   objectType: 'STUDENT',
   student: {
+    id: 11,
     name: '김학생',
     grade: 2,
     classNum: 3,
@@ -87,6 +90,7 @@ describe('DataGsmClient', () => {
 
     expect(await client.getProfile('at')).toEqual({
       datagsmId: '42',
+      datagsmStudentId: '11',
       email: 's@gsm.hs.kr',
       role: 'STUDENT',
       name: '김학생',
@@ -131,5 +135,87 @@ describe('DataGsmClient', () => {
   it('student_read 권한이 없어 학생 정보가 비어 있으면 502', async () => {
     vi.stubGlobal('fetch', mockFetch(200, { ...student, student: null }));
     expect(await errorCode(client.getProfile('at'))).toEqual([502, 'DATAGSM_UNAVAILABLE']);
+  });
+
+  describe('학생 목록 (OpenAPI)', () => {
+    const page = (totalPages: number, students: unknown[]) => ({
+      status: '200 OK',
+      code: 200,
+      message: 'OK',
+      data: { totalPages, totalElements: students.length, students },
+    });
+    const listed = { ...student.student, id: 11, email: 's@gsm.hs.kr', sex: 'MAN' };
+
+    it('졸업생·자퇴생을 포함해 모든 페이지를 API 키로 읽는다', async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify(page(2, [listed]))))
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify(
+              page(2, [
+                {
+                  ...listed,
+                  id: 12,
+                  role: 'GRADUATE',
+                  grade: null,
+                  classNum: null,
+                  number: null,
+                  studentNumber: null,
+                },
+              ]),
+            ),
+          ),
+        );
+      vi.stubGlobal('fetch', fetch);
+
+      expect(await client.listStudents()).toEqual([
+        {
+          studentId: '11',
+          email: 's@gsm.hs.kr',
+          name: '김학생',
+          studentNumber: '2307',
+          grade: 2,
+          classNo: 3,
+          number: 7,
+          inactive: false,
+        },
+        {
+          studentId: '12',
+          email: 's@gsm.hs.kr',
+          name: '김학생',
+          studentNumber: null,
+          grade: null,
+          classNo: null,
+          number: null,
+          inactive: true,
+        },
+      ]);
+      const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
+      const parsed = new URL(url);
+      expect(parsed.origin + parsed.pathname).toBe('https://openapi.test/v1/students');
+      expect(parsed.searchParams.get('includeGraduates')).toBe('true');
+      expect(parsed.searchParams.get('includeWithdrawn')).toBe('true');
+      expect(parsed.searchParams.get('page')).toBe('0');
+      expect(new URL((fetch.mock.calls[1] as [string])[0]).searchParams.get('page')).toBe('1');
+      expect(init.headers).toEqual({ 'X-API-KEY': 'api-key' });
+    });
+
+    it('API 키가 없으면 요청하지 않고 null', async () => {
+      const fetch = vi.fn();
+      vi.stubGlobal('fetch', fetch);
+      const noKey = new DataGsmClient({
+        get: (key: string) => (key === 'DATAGSM_API_KEY' ? undefined : 'https://openapi.test'),
+      } as unknown as ConfigService<Env, true>);
+      expect(await noKey.listStudents()).toBeNull();
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('오류 응답이나 형식이 다른 응답은 실패시킨다', async () => {
+      vi.stubGlobal('fetch', mockFetch(401, {}));
+      await expect(client.listStudents()).rejects.toThrow('HTTP 401');
+      vi.stubGlobal('fetch', mockFetch(200, { data: { students: 'x' } }));
+      await expect(client.listStudents()).rejects.toThrow('형식');
+    });
   });
 });

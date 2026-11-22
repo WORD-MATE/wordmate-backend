@@ -133,8 +133,8 @@ describe('시즌 마감', () => {
   it('마감에 실패하면 FAILED로 남기고 다음 실행에서 다시 시도한다', async () => {
     await db.delete(rankingSeasons).where(eq(rankingSeasons.periodKey, threeWeeksAgo));
     vi.spyOn(
-      seasons as unknown as { snapshotRows: () => Promise<unknown> },
-      'snapshotRows',
+      seasons as unknown as { collect: () => Promise<unknown> },
+      'collect',
     ).mockRejectedValueOnce(new Error('valkey down'));
 
     expect((await seasons.closeEnded()).failed).toEqual([`WEEKLY ${threeWeeksAgo}`]);

@@ -48,8 +48,11 @@ export const rankingSnapshots = mysqlTable(
     userId: binaryUuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    // 공개 사용자 사이의 순위. 목록에 없던 사용자(비공개 등)도 자기를 끼워 넣은 순위를 남긴다
-    rank: int('rank').notNull(),
+    // 공개 사용자 사이의 순위. 목록에 없던 사용자(비공개 등)도 자기를 끼워 넣은 순위를 남긴다.
+    // 관리자가 시즌에서 제외한 사용자는 null
+    rank: int('rank'),
+    // 마감 시점 순서 (0부터). XP 동점의 도달 순서는 여기에만 남아서, 제외를 바꿔 순위를 다시 매길 때 쓴다
+    position: int('position').notNull(),
     xp: int('xp').notNull(),
     // 마감 시점에 랭킹 목록에 보였는지
     listed: boolean('listed').notNull(),
@@ -58,4 +61,21 @@ export const rankingSnapshots = mysqlTable(
     primaryKey({ columns: [t.seasonId, t.scope, t.userId] }),
     index('ranking_snapshots_user_idx').on(t.userId, t.seasonId),
   ],
+);
+
+/** 관리자가 시즌 순위에서 뺀 사용자. 마감을 다시 돌려도 다시 적용한다 */
+export const rankingSeasonExclusions = mysqlTable(
+  'ranking_season_exclusions',
+  {
+    seasonId: binaryUuid('season_id')
+      .notNull()
+      .references(() => rankingSeasons.id, { onDelete: 'cascade' }),
+    userId: binaryUuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    reason: varchar('reason', { length: 200 }).notNull(),
+    adminId: binaryUuid('admin_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [primaryKey({ columns: [t.seasonId, t.userId] })],
 );

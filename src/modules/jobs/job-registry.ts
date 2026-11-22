@@ -27,6 +27,7 @@ export const JOB_DEFINITIONS: Record<Job, { queue: string; name: string; schedul
     schedule: '월요일 08:00~12:00 매시',
   },
   RANK_DROP: { queue: 'scheduled-notifications', name: 'rank-drop', schedule: '매일 20:00' },
+  DATAGSM_SYNC: { queue: 'datagsm-sync', name: 'datagsm-sync', schedule: '매일 04:00' },
   SUSPICIOUS_DETECT: { queue: 'suspicious', name: 'detect-suspicious', schedule: '매일 04:30' },
 };
 

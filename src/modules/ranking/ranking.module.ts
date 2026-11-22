@@ -10,6 +10,6 @@ import { SeasonService } from './season.service.js';
   imports: [BullModule.registerQueue({ name: RANKING_QUEUE })],
   controllers: [RankingController],
   providers: [RankingService, RankingQueryService, SeasonService, RankingProcessor],
-  exports: [RankingService, RankingQueryService],
+  exports: [RankingService, RankingQueryService, SeasonService],
 })
 export class RankingModule {}

@@ -16,6 +16,8 @@ export const users = mysqlTable(
   {
     id: id(),
     datagsmId: varchar('datagsm_id', { length: 64 }).unique(),
+    // 학생 목록 OpenAPI는 계정 ID가 아닌 학생 ID를 준다. 탈퇴하면 datagsm_id와 함께 비워야 다시 가입할 수 있다
+    datagsmStudentId: varchar('datagsm_student_id', { length: 64 }).unique(),
     email: varchar('email', { length: 320 }),
     name: varchar('name', { length: 50 }).notNull(),
     role: mysqlEnum('role', ROLE).notNull(),

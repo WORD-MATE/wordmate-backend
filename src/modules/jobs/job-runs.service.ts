@@ -7,7 +7,7 @@ import { newId } from '../../infra/db/uuid.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 
 /** 실패하면 관리자에게 알리는 작업 */
-const ALERT_JOBS = new Set<Job>(['SEASON_CLOSE']);
+const ALERT_JOBS = new Set<Job>(['SEASON_CLOSE', 'DATAGSM_SYNC']);
 
 @Injectable()
 export class JobRunsService {

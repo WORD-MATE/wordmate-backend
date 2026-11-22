@@ -11,6 +11,7 @@ import { BattlesModule } from './modules/battles/battles.module.js';
 import { BlocksModule } from './modules/blocks/blocks.module.js';
 import { ChallengesModule } from './modules/challenges/challenges.module.js';
 import { ClassesModule } from './modules/classes/classes.module.js';
+import { DataGsmSyncModule } from './modules/datagsm-sync/datagsm-sync.module.js';
 import { DevicesModule } from './modules/devices/devices.module.js';
 import { FriendsModule } from './modules/friends/friends.module.js';
 import { HealthModule } from './modules/health/health.module.js';
@@ -56,6 +57,7 @@ import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
     WrongNotesModule,
     RecordsModule,
     MaintenanceModule,
+    DataGsmSyncModule,
     RankingModule,
     HomeModule,
     RealtimeModule,

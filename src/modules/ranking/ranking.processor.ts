@@ -7,6 +7,8 @@ import { type CloseResult, SeasonService } from './season.service.js';
 
 export const RANKING_QUEUE = 'ranking';
 export const CLOSE_SEASONS_JOB = 'close-seasons';
+/** 관리자가 실패한 시즌 하나를 다시 돌릴 때 넣는 작업 */
+export const CLOSE_SEASON_JOB = 'close-season';
 
 @Processor(RANKING_QUEUE)
 export class RankingProcessor extends WorkerHost implements OnApplicationBootstrap {
@@ -32,7 +34,8 @@ export class RankingProcessor extends WorkerHost implements OnApplicationBootstr
       .catch((error: unknown) => this.logger.error(`시즌 마감 스케줄 등록 실패: ${String(error)}`));
   }
 
-  async process(job: Job): Promise<CloseResult> {
+  async process(job: Job): Promise<CloseResult | { seasonId: string }> {
+    if (job.name === CLOSE_SEASON_JOB) return this.closeOne(job);
     if (job.name !== CLOSE_SEASONS_JOB) throw new Error(`알 수 없는 랭킹 작업: ${job.name}`);
     const result = await this.runs.track('SEASON_CLOSE', triggerOf(job.data), async () => {
       const closed = await this.seasons.closeEnded();
@@ -46,5 +49,15 @@ export class RankingProcessor extends WorkerHost implements OnApplicationBootstr
       this.logger.log(`${job.name} ${JSON.stringify(result)}`);
     }
     return result;
+  }
+
+  private async closeOne(job: Job): Promise<{ seasonId: string }> {
+    const { seasonId } = job.data as { seasonId: string };
+    return this.runs.track('SEASON_CLOSE', triggerOf(job.data), async () => {
+      if (!(await this.seasons.closeById(seasonId))) {
+        throw new Error(`시즌 마감 실패: ${seasonId}`);
+      }
+      return { seasonId };
+    });
   }
 }
