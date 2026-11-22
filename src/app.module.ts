@@ -33,6 +33,7 @@ import { StudyModule } from './modules/study/study.module.js';
 import { SupportModule } from './modules/support/support.module.js';
 import { SuspiciousModule } from './modules/suspicious/suspicious.module.js';
 import { UsersModule } from './modules/users/users.module.js';
+import { WithdrawalModule } from './modules/withdrawal/withdrawal.module.js';
 import { WordsModule } from './modules/words/words.module.js';
 import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
 
@@ -78,6 +79,7 @@ import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
     SuspiciousModule,
     PoliciesModule,
     UsersModule,
+    WithdrawalModule,
   ],
 })
 export class AppModule {}

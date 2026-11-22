@@ -18,6 +18,6 @@ import { NoticesService } from './notices.service.js';
     NoticesService,
     uploadRootProvider,
   ],
-  exports: [FaqsService, InquiriesService, NoticesService],
+  exports: [FaqsService, InquiriesService, InquiryImageStorage, NoticesService],
 })
 export class SupportModule {}
