@@ -70,7 +70,15 @@ describe('예약 알림', () => {
     await db.delete(notifications).where(inArray(notifications.userId, userIds));
     await db.delete(morningSentences).where(eq(morningSentences.publishDate, '2030-01-08'));
     await db.delete(rankingSeasons).where(eq(rankingSeasons.periodKey, '2029-12-31'));
-    await valkey.del('rank:weekly:2030-01-07:class:9-9');
+    await valkey.del(
+      'rank:weekly:2030-01-07:class:9-9',
+      'noti:reminder:2030-01-07:09:15',
+      'noti:morning:2030-01-08',
+      'noti:rank-weekly:2029-12-31',
+      'noti:rank-drop:2030-01-07',
+      'noti:rank-drop:2030-01-08',
+      'noti:rank-drop:ranks:2030-01-07',
+    );
     await app.close();
   });
 
