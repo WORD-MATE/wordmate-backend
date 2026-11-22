@@ -63,6 +63,8 @@ export const forbiddenWords = mysqlTable(
     id: id(),
     word: varchar('word', { length: 50 }).notNull(),
     type: mysqlEnum('type', FORBIDDEN_WORD_TYPE).notNull(),
+    // 등록한 관리자 (시드로 넣은 단어는 NULL)
+    createdBy: binaryUuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamps.createdAt,
   },
   (t) => [uniqueIndex('forbidden_words_word_type_uq').on(t.word, t.type)],
