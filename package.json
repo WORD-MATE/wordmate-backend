@@ -21,6 +21,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:seed": "nest build && node dist/seed.js",
+    "db:seed-morning": "nest build && node dist/seed-morning.js",
     "ranking:rebuild": "nest build && node dist/ranking-rebuild.js",
     "jwt:keygen": "node scripts/generate-jwt-key.mjs",
     "datagsm:login": "node scripts/datagsm-login.mjs"
