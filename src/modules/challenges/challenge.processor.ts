@@ -1,7 +1,9 @@
 import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger, type OnApplicationBootstrap } from '@nestjs/common';
-import type { Queue } from 'bullmq';
+import type { Job, Queue } from 'bullmq';
 import { kstDate } from '../../common/time/kst.js';
+import { triggerOf } from '../jobs/job-registry.js';
+import { JobRunsService } from '../jobs/job-runs.service.js';
 import { ChallengesService } from './challenges.service.js';
 
 export const CHALLENGE_QUEUE = 'challenge';
@@ -16,6 +18,7 @@ export class ChallengeProcessor extends WorkerHost implements OnApplicationBoots
   constructor(
     @InjectQueue(CHALLENGE_QUEUE) private readonly queue: Queue,
     private readonly challenges: ChallengesService,
+    private readonly runs: JobRunsService,
   ) {
     super();
   }
@@ -33,9 +36,11 @@ export class ChallengeProcessor extends WorkerHost implements OnApplicationBoots
       );
   }
 
-  async process(): Promise<string> {
-    const date = kstDate(new Date(Date.now() + HOUR_MS));
-    await this.challenges.ensure(date);
-    return date;
+  async process(job: Job): Promise<string> {
+    return this.runs.track('CHALLENGE_GENERATE', triggerOf(job.data), async () => {
+      const date = kstDate(new Date(Date.now() + HOUR_MS));
+      await this.challenges.ensure(date);
+      return date;
+    });
   }
 }
