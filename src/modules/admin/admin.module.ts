@@ -16,6 +16,7 @@ import { AdminAuditLogsService } from './admin-audit-logs.service.js';
 import { AdminFaqsController } from './admin-faqs.controller.js';
 import { AdminForbiddenWordsController } from './admin-forbidden-words.controller.js';
 import { AdminForbiddenWordsService } from './admin-forbidden-words.service.js';
+import { AdminInquiriesController } from './admin-inquiries.controller.js';
 import { AdminJobsController } from './admin-jobs.controller.js';
 import { AdminJobsService } from './admin-jobs.service.js';
 import { AdminMorningController } from './admin-morning.controller.js';
@@ -49,6 +50,7 @@ import { AdminUsersService } from './admin-users.service.js';
     AdminAuditLogsController,
     AdminFaqsController,
     AdminForbiddenWordsController,
+    AdminInquiriesController,
     AdminJobsController,
     AdminMorningController,
     AdminNoticesController,

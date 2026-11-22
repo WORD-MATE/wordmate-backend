@@ -42,6 +42,9 @@ export const envSchema = z.object({
   DATAGSM_RESOURCE_URL: z.url().default('https://oauth.resource.datagsm.kr'),
   // 웹 도메인이 생기기 전까지는 앱 스킴으로 공유 링크를 만든다
   SHARE_LINK_BASE: z.url().default('wordmate://'),
+  UPLOAD_DIR: z.string().min(1).default('./uploads'),
+  // 없으면 JWT_PRIVATE_KEY에서 유도한다. 바꾸면 이미 내준 이미지 주소는 무효가 된다
+  UPLOAD_SIGNING_SECRET: z.string().min(32).optional(),
   // 푸시 키. 없으면 그 플랫폼은 보내지 않고 기록만 남긴다
   APNS_KEY_P8: pem.optional(),
   APNS_KEY_ID: z.string().min(1).optional(),

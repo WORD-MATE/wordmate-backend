@@ -10,12 +10,7 @@ import {
   tinyint,
   varchar,
 } from 'drizzle-orm/mysql-core';
-import {
-  FAQ_CATEGORY,
-  INQUIRY_STATUS,
-  INQUIRY_TYPE,
-  PLATFORM,
-} from '../../../common/enums.js';
+import { FAQ_CATEGORY, INQUIRY_STATUS, INQUIRY_TYPE, PLATFORM } from '../../../common/enums.js';
 import { id, softDelete, timestamps } from '../columns.js';
 import { binaryUuid } from '../uuid.js';
 import { users } from './users.js';
