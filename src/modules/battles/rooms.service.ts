@@ -1,10 +1,11 @@
 import { randomInt } from 'node:crypto';
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { and, asc, count, desc, eq, inArray, lte, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lte, or } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { AppException, CommonErrors } from '../../common/errors/app-exception.js';
+import { KeyedSerializer } from '../../common/keyed-serializer.js';
 import type { Env } from '../../config/env.js';
 import { type Database, DB, type Transaction } from '../../infra/db/db.module.js';
 import { isDuplicateKeyError } from '../../infra/db/errors.js';
@@ -107,6 +108,8 @@ export class RoomsService {
     private readonly config: ConfigService<Env, true>,
     private readonly matchQueue: MatchQueue,
   ) {}
+
+  private readonly joinQueue = new KeyedSerializer();
 
   /** 만든 사람이 방장이자 첫 참가자 */
   async create(user: AuthUser, body: CreateRoom, rematch?: Rematch): Promise<Room> {
@@ -282,72 +285,73 @@ export class RoomsService {
     await this.expireIfOverdue(found);
     await this.releaseExpired(user.userId);
 
-    const [student] = await this.db
-      .select({ grade: users.grade, classNo: users.classNo })
-      .from(users)
-      .where(eq(users.id, user.userId));
+    // 반 소속 조회는 잠그기 전에 한다 (잠금을 쥐는 시간을 줄인다). 판정은 예전 순서대로 잠금 안에서
+    // 없는 방·이미 참가·강퇴·시작 확인 뒤에 해야 끝난 반 방의 코드도 404로 세어 코드 찔러보기를 막는다
+    const member = found.type !== 'CLASS' || (await this.inClass(found.classId, user.userId));
     let joined = false;
     try {
-      joined = await this.db.transaction(async (tx) => {
-        const [room] = await tx
-          .select()
-          .from(battleRooms)
-          .where(eq(battleRooms.id, found.id))
-          .for('update');
-        if (!room || room.status === 'EXPIRED' || room.status === 'FINISHED') {
-          throw RoomErrors.notFound();
-        }
-        const [mine] = await tx
-          .select()
-          .from(battleRoomParticipants)
-          .where(
-            and(
-              eq(battleRoomParticipants.roomId, room.id),
-              eq(battleRoomParticipants.userId, user.userId),
-            ),
-          );
-        if (mine?.active) return false;
-        if (mine?.state === 'KICKED') throw RoomErrors.kicked();
-        if (room.status !== 'WAITING') throw RoomErrors.alreadyStarted();
-        if (room.type === 'CLASS' && !(await this.inClass(tx, room.classId, student))) {
-          throw RoomErrors.classOnly();
-        }
-        const [occupied] = await tx
-          .select({ total: count() })
-          .from(battleRoomParticipants)
-          .where(
-            and(
-              eq(battleRoomParticipants.roomId, room.id),
-              eq(battleRoomParticipants.active, true),
-            ),
-          );
-        if ((occupied?.total ?? 0) >= room.maxParticipants) throw RoomErrors.full();
-
-        // 예전에 방장이었다 나간 사람이 다시 들어와도 방장 표시가 남지 않게 지운다
-        const values = {
-          state: 'CONNECTED' as const,
-          active: true,
-          isHost: false,
-          joinedAt: new Date(),
-          leftAt: null,
-        };
-        if (mine) {
-          await tx
-            .update(battleRoomParticipants)
-            .set(values)
+      // 같은 방 참가는 서버 안에서 먼저 줄을 세워, 방 잠금을 기다리는 동안 DB 연결을 붙잡지 않게 한다
+      joined = await this.joinQueue.run(found.id, () =>
+        this.db.transaction(async (tx) => {
+          const [room] = await tx
+            .select()
+            .from(battleRooms)
+            .where(eq(battleRooms.id, found.id))
+            .for('update');
+          if (!room || room.status === 'EXPIRED' || room.status === 'FINISHED') {
+            throw RoomErrors.notFound();
+          }
+          // 내 기록과 남아 있는 인원을 한 번에 읽는다
+          const rows = await tx
+            .select({
+              userId: battleRoomParticipants.userId,
+              active: battleRoomParticipants.active,
+              state: battleRoomParticipants.state,
+            })
+            .from(battleRoomParticipants)
             .where(
               and(
                 eq(battleRoomParticipants.roomId, room.id),
-                eq(battleRoomParticipants.userId, user.userId),
+                or(
+                  eq(battleRoomParticipants.active, true),
+                  eq(battleRoomParticipants.userId, user.userId),
+                ),
               ),
             );
-        } else {
-          await tx
-            .insert(battleRoomParticipants)
-            .values({ roomId: room.id, userId: user.userId, ...values });
-        }
-        return true;
-      });
+          const mine = rows.find((row) => row.userId === user.userId);
+          if (mine?.active) return false;
+          if (mine?.state === 'KICKED') throw RoomErrors.kicked();
+          if (room.status !== 'WAITING') throw RoomErrors.alreadyStarted();
+          if (!member) throw RoomErrors.classOnly();
+          const occupied = rows.filter((row) => row.active).length;
+          if (occupied >= room.maxParticipants) throw RoomErrors.full();
+
+          // 예전에 방장이었다 나간 사람이 다시 들어와도 방장 표시가 남지 않게 지운다
+          const values = {
+            state: 'CONNECTED' as const,
+            active: true,
+            isHost: false,
+            joinedAt: new Date(),
+            leftAt: null,
+          };
+          if (mine) {
+            await tx
+              .update(battleRoomParticipants)
+              .set(values)
+              .where(
+                and(
+                  eq(battleRoomParticipants.roomId, room.id),
+                  eq(battleRoomParticipants.userId, user.userId),
+                ),
+              );
+          } else {
+            await tx
+              .insert(battleRoomParticipants)
+              .values({ roomId: room.id, userId: user.userId, ...values });
+          }
+          return true;
+        }),
+      );
     } catch (error) {
       if (isDuplicateKeyError(error, ACTIVE_USER_INDEX)) {
         throw RoomErrors.alreadyJoined(await this.activeCodeOf(user.userId));
@@ -776,17 +780,14 @@ export class RoomsService {
     return row?.inviteCode ?? null;
   }
 
-  private async inClass(
-    tx: Transaction,
-    classId: string | null,
-    student: { grade: number | null; classNo: number | null } | undefined,
-  ): Promise<boolean> {
-    if (!classId || !student) return false;
-    const [cls] = await tx
-      .select({ grade: classes.grade, classNo: classes.classNo })
+  private async inClass(classId: string | null, userId: string): Promise<boolean> {
+    if (!classId) return false;
+    const [row] = await this.db
+      .select({ id: classes.id })
       .from(classes)
-      .where(eq(classes.id, classId));
-    return Boolean(cls && cls.grade === student.grade && cls.classNo === student.classNo);
+      .innerJoin(users, and(eq(users.grade, classes.grade), eq(users.classNo, classes.classNo)))
+      .where(and(eq(classes.id, classId), eq(users.id, userId)));
+    return Boolean(row);
   }
 
   private async countFailure(userId: string): Promise<void> {

@@ -371,6 +371,10 @@ describe('대결방 생성·조회·참가', () => {
     );
     expect(second.json().code).toBe('ROOM_ALREADY_JOINED');
 
+    // 끝난 반 방은 다른 반 학생에게도 404 (반 방인지 알려 주지 않고 코드 실패로 센다)
+    await db.update(battleRooms).set({ status: 'EXPIRED' }).where(eq(battleRooms.id, room.roomId));
+    expect((await join(outsider, room.inviteCode)).json().code).toBe('ROOM_NOT_FOUND');
+
     // 동시에 두 번 만들어도 진행 중인 반 방은 하나
     const busy = await makeUser({ role: 'TEACHER' });
     await db.insert(teacherClasses).values({ teacherId: busy.userId, classId });
