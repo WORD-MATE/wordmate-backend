@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, ne, or } from 'drizzle-orm';
 import {
   ACCESS_TOKEN_TTL_SECONDS,
   AccessTokenService,
@@ -11,6 +11,7 @@ import { CommonErrors } from '../../common/errors/app-exception.js';
 import type { Env } from '../../config/env.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import { classes, type User, users } from '../../infra/db/schema/index.js';
+import { RankingService } from '../ranking/ranking.service.js';
 import { type Me, toMe } from '../users/me.schema.js';
 import { NextStepService } from '../users/next-step.service.js';
 import { TeacherClassService } from '../users/teacher-class.service.js';
@@ -38,6 +39,7 @@ export class AuthService {
     private readonly accessTokens: AccessTokenService,
     private readonly nextStep: NextStepService,
     private readonly teacherClasses: TeacherClassService,
+    private readonly ranking: RankingService,
   ) {}
 
   async loginWithDataGsm(
@@ -101,22 +103,45 @@ export class AuthService {
       email: profile.email,
       name: profile.name,
       role: profile.role,
-      studentNumber: profile.studentNumber,
-      grade: profile.grade,
-      classNo: profile.classNo,
-      number: profile.number,
+      // 졸업·정보 수정 요청 중이라 비어 있으면 마지막 학적을 남긴다 (학적 동기화와 같은 규칙)
+      ...(profile.grade !== null && profile.classNo !== null && profile.number !== null
+        ? {
+            studentNumber: profile.studentNumber,
+            grade: profile.grade,
+            classNo: profile.classNo,
+            number: profile.number,
+          }
+        : {}),
       lastLoginAt: now,
+      ...(profile.datagsmStudentId ? { datagsmStudentId: profile.datagsmStudentId } : {}),
     };
 
-    const user = await this.db.transaction(async (tx) => {
+    const { user, previous } = await this.db.transaction(async (tx) => {
       const [existing] = await tx
         .select()
         .from(users)
         .where(eq(users.datagsmId, profile.datagsmId))
         .for('update');
 
+      if (profile.datagsmStudentId) {
+        // 학적 동기화가 이메일로 다른 계정에 붙인 학생 ID는 본인 로그인이 가져간다.
+        // 없는 값을 조건으로 UPDATE하면 갭 잠금이 걸려 동시 첫 로그인끼리 교착되므로 먼저 잠그지 않고 찾는다
+        const [holder] = await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(
+            and(
+              eq(users.datagsmStudentId, profile.datagsmStudentId),
+              or(isNull(users.datagsmId), ne(users.datagsmId, profile.datagsmId)),
+            ),
+          );
+        if (holder) {
+          await tx.update(users).set({ datagsmStudentId: null }).where(eq(users.id, holder.id));
+        }
+      }
+
       if (!existing) {
-        if (profile.inactive) return null;
+        if (profile.inactive) return { user: null, previous: null };
         await tx.insert(users).values({ datagsmId: profile.datagsmId, ...fields });
       } else {
         await tx
@@ -131,10 +156,16 @@ export class AuthService {
           .onDuplicateKeyUpdate({ set: { grade: profile.grade } });
       }
       const [saved] = await tx.select().from(users).where(eq(users.datagsmId, profile.datagsmId));
-      return saved ?? null;
+      return { user: saved ?? null, previous: existing ?? null };
     });
 
     if (!user) throw AuthErrors.accountInactive('GRADUATED_OR_LEFT');
+    if (
+      previous?.role === 'STUDENT' &&
+      (previous.grade !== user.grade || previous.classNo !== user.classNo)
+    ) {
+      await this.ranking.moveScopes(user.id, previous, user);
+    }
     this.assertActive(user);
     return user;
   }

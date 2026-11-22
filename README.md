@@ -125,6 +125,8 @@ create(@ZodBody(CreatePack) body: z.infer<typeof CreatePack>) { ... }
 | `DATAGSM_REDIRECT_URIS` | (필수)                                   | 허용할 redirectUri, 쉼표로 구분 (DataGSM에 등록한 값과 같아야 함)   |
 | `DATAGSM_AUTH_URL`      | `https://oauth.authorization.datagsm.kr` | DataGSM 인증 서버                                                   |
 | `DATAGSM_RESOURCE_URL`  | `https://oauth.resource.datagsm.kr`      | DataGSM 사용자 정보 서버                                            |
+| `DATAGSM_OPENAPI_URL`   | `https://openapi.datagsm.kr`             | DataGSM OpenAPI 서버 (학적 동기화)                                  |
+| `DATAGSM_API_KEY`       | (없음)                                   | DataGSM OpenAPI 키 (`student:read`). 없으면 학적 동기화를 건너뜀    |
 | `TRUST_PROXY`           | (없음)                                   | 신뢰할 리버스 프록시 IP·CIDR, 쉼표로 구분 (실제 클라이언트 IP 판별) |
 | `SWAGGER_ENABLED`       | `production`이 아니면 켜짐               | `true` / `false`로 Swagger 문서 강제 설정                           |
 | `SHARE_LINK_BASE`       | `wordmate://`                            | 공유 링크 앞부분. 웹 도메인이 생기면 `https://도메인`으로 바꿈      |
@@ -748,9 +750,24 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 
 ### 정기 작업
 
-- 정기 작업(정리, 시즌 마감, 챌린지 생성, 예약 알림)은 실행할 때마다 `job_runs`에 시작·끝·상태·오류·실행 방식(정기/수동)을 남기고, 7일 지난 기록은 매일 정리에서 지웁니다. 작업 목록은 `src/modules/jobs/job-registry.ts`입니다.
-- 시즌 마감이 실패하면(한 시즌이라도 확정하지 못하면) 실패로 남기고 활동 중인 관리자 모두에게 `ADMIN_ALERT`를 보냅니다(실패가 이어지는 동안은 처음 한 번만).
+- 정기 작업(정리, 시즌 마감, 챌린지 생성, 예약 알림, 학적 동기화)은 실행할 때마다 `job_runs`에 시작·끝·상태·오류·실행 방식(정기/수동)을 남기고, 7일 지난 기록은 매일 정리에서 지웁니다. 작업 목록은 `src/modules/jobs/job-registry.ts`입니다.
+- 시즌 마감이 실패하거나(한 시즌이라도 확정하지 못하면) 학적 동기화가 실패하면 실패로 남기고 활동 중인 관리자 모두에게 `ADMIN_ALERT`를 보냅니다(실패가 이어지는 동안은 처음 한 번만).
 - `GET /admin/jobs`: 작업마다 주기, 마지막 실행·상태·오류, 다음 정기 실행. `POST /admin/jobs/{job}/run`: 큐에 넣고 바로 202를 돌려주고, 실행 중이거나 30초 안에 다시 누르면 409 `ADMIN_JOB_RUNNING`, 정해진 시각에 보내는 알림 작업(리마인더·오늘의 문장 알림·주간 결과·순위 하락)은 409 `ADMIN_JOB_SCHEDULE_ONLY`입니다(1시간 넘게 RUNNING이면 서버가 꺼진 것으로 보고 다시 실행 가능).
+
+### 학적 동기화
+
+매일 04:00(KST, `datagsm-sync` 큐)에 DataGSM OpenAPI `GET /v1/students`(졸업생·자퇴생 포함, 1000명씩 페이지)로 학적을 맞춥니다. `POST /admin/jobs/DATAGSM_SYNC/run`으로 직접 실행할 수도 있습니다.
+
+- 우리 서비스에 가입한 학생만 맞추고 계정은 새로 만들지 않습니다. 교사는 건드리지 않습니다.
+- 학생 목록은 계정 ID가 아닌 학생 ID를 주므로 `users.datagsm_student_id`(로그인할 때 저장)로 찾고, 아직 없는 사용자는 이메일로 찾아 학생 ID를 채웁니다(같은 이메일의 계정이 여럿이면 맞추지 않음). 다른 계정에 붙은 학생 ID는 본인이 로그인할 때 가져옵니다.
+- 학년·반·번호가 모두 있을 때만 학년·반·번호·학번을 바꿉니다(DataGSM에서 정보 수정 요청 중인 재학생은 비어 있어 그대로 둠, 학번만 비어 있으면 학번은 남김). 이름도 맞춥니다.
+- 졸업·자퇴로 나온 활동 중 학생은 휴면(`INACTIVE`)으로 바꾸고 모든 기기에서 로그아웃시킵니다. 마지막 학년·반은 남깁니다. 휴면이던 학생이 재학으로 나오면 다시 `ACTIVE`입니다(로그인과 같은 규칙).
+- 목록에서 빠진 학생은 DataGSM 오류일 수 있어 휴면 처리하지 않습니다. 정지된 학생은 학적만 바꾸고 상태는 그대로, 탈퇴한 사용자는 건드리지 않습니다.
+- 재학생의 반이 `classes`에 없으면 만듭니다.
+- 학년·반이 바뀌면 이번 주·이번 달·전체 랭킹 점수를 옛 학년·반 키에서 새 키로 옮깁니다(학교 키 점수 기준). 동기화 전에 로그인해서 바뀐 경우도 로그인에서 옮깁니다.
+- 사용자마다 행을 잠근 트랜잭션으로 바꾸고, 200명씩 나눠 맞춥니다. 결과(`fetched`, `matched`, `updated`, `deactivated`, `reactivated`, `classesCreated`, `skipped`, `failed`)는 `job_runs.result`에 남고, 일부 사용자가 실패하면 같은 건수가 `job_runs.error` 메시지에 담깁니다. `skipped`는 탈퇴한 사용자와 학년·반·번호가 비어 학적을 그대로 둔 학생 수입니다. DataGSM 응답에서 형식이 틀린 학생은 건너뛰고 경고 로그만 남깁니다. 로그인도 학년·반·번호가 다 있을 때만 학적을 바꿉니다.
+  - 알려진 한계: 동기화가 학년·반을 옮기는 바로 그 순간에 XP가 더해지면 그 XP가 옛 반 점수에 남을 수 있고(학교 점수는 정확, `pnpm ranking:rebuild`로 복구), 동기화 도중 로그인한 학생은 시작할 때 받은 목록 값으로 다시 덮일 수 있습니다(다음 로그인·동기화 때 바로잡힘). 한 사용자 반영이 실패해도 나머지는 끝까지 반영하고, 실패한 사용자가 있으면 건수를 담아 실패로 남깁니다.
+- `DATAGSM_API_KEY`가 없으면 경고 로그만 남기고 성공(`{ disabled: true }`)으로 끝냅니다. DataGSM 요청이 하나라도 실패하면 아무것도 바꾸지 않고 실패로 남깁니다. 실패하면 관리자에게 알립니다.
 
 ## 고객지원
 
@@ -779,7 +796,7 @@ BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenan
 
 ## 학급·교사 담당 반
 
-- 학급은 마이그레이션으로 1~3학년 1~4반을 미리 만들고, 그 밖의 반은 학생이 로그인할 때 DataGSM 학년·반으로 자동 생성됩니다.
+- 학급은 마이그레이션으로 1~3학년 1~4반을 미리 만들고, 그 밖의 반은 학생이 로그인할 때와 학적 동기화 때 DataGSM 학년·반으로 자동 생성됩니다.
 - 담당 반이 없는 교사는 로그인 `nextStep`이 `TEACHER_CLASS_SELECT`이고, 반을 고르기 전까지 대부분의 API가 403 `TEACHER_CLASS_REQUIRED` (관리자 겸 교사는 제외)
 - 반 선택 화면: `GET /classes`로 목록을 받아 `PUT /teachers/me/classes { classIds }`로 저장(전체 교체). 응답의 `nextStep`으로 다음 화면 이동
 - 담당 반 변경은 감사 로그(`audit_logs`, `TEACHER_CLASS_CHANGE`)에 남습니다.
