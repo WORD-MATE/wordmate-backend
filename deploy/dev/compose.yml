@@ -35,6 +35,9 @@ services:
     mem_limit: 768m
     ports:
       - "3000:3000"
+    volumes:
+      # 1:1 문의 이미지 (UPLOAD_DIR 기본값 ./uploads)
+      - uploads:/app/uploads
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -114,3 +117,4 @@ networks:
 volumes:
   mysql-data:
   valkey-data:
+  uploads:

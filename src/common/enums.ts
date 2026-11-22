@@ -44,6 +44,7 @@ export const AUDIT_ACTION = [
   'SEASON_EXCLUSIONS_UPDATE',
   'SEASON_RERUN',
   'SUSPICIOUS_REVIEW',
+  'INQUIRY_ANSWER',
 ] as const;
 export type AuditAction = Values<typeof AUDIT_ACTION>;
 
