@@ -127,6 +127,17 @@ create(@ZodBody(CreatePack) body: z.infer<typeof CreatePack>) { ... }
 | `TRUST_PROXY`           | (없음)                                   | 신뢰할 리버스 프록시 IP·CIDR, 쉼표로 구분 (실제 클라이언트 IP 판별) |
 | `SWAGGER_ENABLED`       | `production`이 아니면 켜짐               | `true` / `false`로 Swagger 문서 강제 설정                           |
 | `SHARE_LINK_BASE`       | `wordmate://`                            | 공유 링크 앞부분. 웹 도메인이 생기면 `https://도메인`으로 바꿈      |
+| `APNS_KEY_P8`           | (없음)                                   | APNs 인증 키(.p8) PEM. 한 줄로 넣을 때는 줄바꿈을 `\n`으로          |
+| `APNS_KEY_ID`           | (없음)                                   | APNs 키 ID                                                          |
+| `APNS_TEAM_ID`          | (없음)                                   | Apple 팀 ID                                                         |
+| `APNS_BUNDLE_ID`        | (없음)                                   | iOS 앱 번들 ID (apns-topic)                                         |
+| `APNS_SANDBOX`          | `false`                                  | `true`면 APNs 개발 서버로 보냄                                      |
+| `FCM_PROJECT_ID`        | (없음)                                   | Firebase 프로젝트 ID                                                |
+| `FCM_CLIENT_EMAIL`      | (없음)                                   | FCM 서비스 계정 이메일                                              |
+| `FCM_PRIVATE_KEY`       | (없음)                                   | FCM 서비스 계정 비공개 키 PEM                                       |
+| `VAPID_PUBLIC_KEY`      | (없음)                                   | Web Push VAPID 공개 키                                              |
+| `VAPID_PRIVATE_KEY`     | (없음)                                   | Web Push VAPID 비공개 키                                            |
+| `VAPID_SUBJECT`         | (없음)                                   | VAPID 연락처 (`mailto:` 또는 URL)                                   |
 
 값이 없거나 형식이 틀리면 서버가 시작되지 않습니다.
 
@@ -551,6 +562,15 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
 - 약관 재동의 전·교사 담당 반 선택 전에도 알림 API는 쓸 수 있습니다(끌 수 없는 알림·약관 변경 공지를 볼 수 있게). 마케팅 동의를 철회하면 설정 조회에서 광고성이 꺼진 것으로 보입니다.
 - `notification_settings`는 계정 단위(모든 기기 공통)입니다. 행이 없으면 기본값: 광고성만 끄고 모두 켬, 학습 리마인더 시간 없음(보내지 않음), 요일은 매일.
 - 학습 리마인더 시간은 KST `HH:mm`, 07:00~22:00만(400 `NOTI_REMINDER_TIME_OUT_OF_RANGE`). 광고성을 켜려면 마케팅 수신 동의가 있어야 합니다(400 `NOTI_MARKETING_AGREEMENT_REQUIRED`).
+
+## 푸시
+
+- APNs(HTTP/2 토큰 인증)·FCM(HTTP v1, 서비스 계정 OAuth)·Web Push(VAPID)를 서버가 직접 보냅니다. 키는 환경 변수이고, **키가 없는 플랫폼은 보내지 않고 기록만** 합니다(알림 목록에는 그대로 저장).
+- 알림을 저장하면(`NotificationsService.notify`) 받는 사람의 쓰는 기기(로그아웃하지 않았고 푸시를 등록한 기기)마다 `push` 큐에 작업을 넣고, 작업이 기기별로 보냅니다(3번까지 재시도).
+  - 야간(22:00~07:00 KST)에는 보내지 않고, 광고성은 21:00~08:00에 보내지 않습니다. 미뤄 보내지 않으며 알림 목록에만 남습니다. 재시도하다 금지 시간에 들어가도 보내지 않습니다.
+  - 해지된 토큰(APNs 410, FCM `UNREGISTERED`, Web Push 404·410, 암호화할 수 없는 구독 키)이면 그 기기의 푸시 등록을 지웁니다. APNs `BadDeviceToken`·`DeviceTokenNotForTopic`과 FCM 404·`SENDER_ID_MISMATCH`는 서버·번들 ID·프로젝트 설정이 틀려도 모든 토큰에 오므로 지우지 않고 기록만 합니다. 보내는 사이 새 토큰으로 바뀌었으면 지우지 않습니다.
+  - 속도 제한·서버 오류·인증 토큰 만료는 재시도하고, 다시 보내도 안 되는 오류는 기록만 합니다.
+- 로그아웃·탈퇴하면 기기의 푸시 등록이 함께 지워집니다. 웹 푸시 구독은 등록할 때 키 길이(p256dh 65바이트, auth 16바이트)를 검사합니다. 시작할 때 키가 빠진 플랫폼을 경고로 남깁니다.
 
 ## 정리 작업
 
