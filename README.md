@@ -726,6 +726,11 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 - `GET /faqs`: 로그인 없이(점검 중에도) 분류 순, 분류 안에서는 순서대로 보여 줍니다. 분류로 거를 수 있습니다.
 - `POST /admin/faqs`, `PATCH/DELETE /admin/faqs/{faqId}`: 순서를 비우면 그 분류의 맨 뒤에 붙습니다. 수정은 보낸 항목만 바꾸고, 바꿀 때마다 감사 로그가 남습니다.
 
+### 공지
+
+- `GET /notices`: 고정 공지 먼저, 그다음 최신순(커서 `(pinned, id)`), 읽음 여부 포함. `GET /notices/{noticeId}`는 열면 읽음 처리하고, 삭제·비공개 공지는 404 `NOTICE_NOT_FOUND`입니다.
+- 관리자: `GET /admin/notices`(초안 포함), `POST`(Markdown, 고정·공개 여부, 푸시 선택), `PATCH`, `DELETE`(소프트 삭제). 푸시를 고르면 공개 공지일 때 활동 중인 모든 사용자에게 `NOTICE` 알림을 보냅니다(공지 알림을 끈 사람은 알림 설정에서 걸러짐, 1000명씩 나눠 저장). 바꿀 때마다 감사 로그가 남습니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.
