@@ -29,7 +29,7 @@ export class AdminPoliciesController {
   @ApiOperation({
     summary: '약관 새 버전 등록',
     description:
-      '시행일은 지금 이후. 시행일이 되면 현재 약관이 되고, 재동의가 필요하면 다음 요청부터 안내(서버마다 최대 1분 늦을 수 있음). 고지 공지는 따로 등록. 409 POLICY_VERSION_EXISTS',
+      '시행일은 지금 이후. 시행일이 되면 현재 약관이 되고, 재동의가 필요하면 다음 요청부터 안내(서버마다 최대 1분 늦을 수 있음). 고지 공지는 따로 등록. 409 POLICY_VERSION_EXISTS / POLICY_EFFECTIVE_AT_EXISTS(같은 시행일)',
   })
   @Post()
   @ZodResponse(PolicyCreated, { status: 201 })

@@ -716,7 +716,7 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 
 ### 약관 버전
 
-- `GET /admin/policies`(시행 전 버전 포함)와 `POST /admin/policies`(종류·버전·제목·내용·시행일·재동의 필요 여부). 시행일은 지금 이후만 받고, 필수 여부를 비우면 같은 종류의 직전 버전을 따릅니다. 같은 종류에 같은 버전은 409 `POLICY_VERSION_EXISTS`입니다.
+- `GET /admin/policies`(시행 전 버전 포함)와 `POST /admin/policies`(종류·버전·제목·내용·시행일·재동의 필요 여부). 시행일은 지금 이후만 받습니다. 필수 여부를 비우면 새 버전 바로 앞 버전을 따릅니다. 같은 종류에 같은 버전은 409 `POLICY_VERSION_EXISTS`, 같은 시행일은 409 `POLICY_EFFECTIVE_AT_EXISTS`입니다.
 - 시행일이 되면 현재 약관이 되고, 재동의가 필요한 버전이면 그 뒤 첫 요청부터 약관 재동의를 안내합니다(서버마다 약관 캐시 1분). 고지 공지(시행 7일 전, 불리한 변경은 30일 전)는 공지로 따로 등록합니다.
 
 ## 정리 작업

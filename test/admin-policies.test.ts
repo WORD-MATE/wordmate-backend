@@ -97,6 +97,17 @@ describe('관리자 약관 버전', () => {
         })
       ).json().code,
     ).toBe('POLICY_VERSION_EXISTS');
+    expect(
+      (
+        await create({
+          type: 'TERMS',
+          version: version(),
+          title: '같은 시행일',
+          content: '내용',
+          effectiveAt: '2099-01-01T00:00:00.000Z',
+        })
+      ).json().code,
+    ).toBe('POLICY_EFFECTIVE_AT_EXISTS');
   });
 
   it('필수 여부를 비우면 직전 버전을 따르고, 지난 시행일은 거절한다', async () => {

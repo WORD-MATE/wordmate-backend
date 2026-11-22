@@ -1,5 +1,5 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, lt } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { AuditLogService } from '../../common/audit/audit-log.service.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
@@ -13,6 +13,12 @@ import { PoliciesService } from '../policies/policies.service.js';
 import type { CreatePolicy } from './admin-policies.schemas.js';
 
 export const AdminPolicyErrors = {
+  sameEffectiveAt: () =>
+    new AppException(
+      'POLICY_EFFECTIVE_AT_EXISTS',
+      '같은 종류에 같은 시행일의 버전이 이미 있습니다.',
+      HttpStatus.CONFLICT,
+    ),
   versionExists: () =>
     new AppException(
       'POLICY_VERSION_EXISTS',
@@ -54,10 +60,18 @@ export class AdminPoliciesService {
     body: CreatePolicy,
     request: FastifyRequest,
   ): Promise<{ version: string }> {
+    const effectiveAt = new Date(body.effectiveAt);
+    // 시행일이 같으면 어느 쪽이 현재 약관인지 정해지지 않는다
+    const [clash] = await this.db
+      .select({ id: policies.id })
+      .from(policies)
+      .where(and(eq(policies.type, body.type), eq(policies.effectiveAt, effectiveAt)));
+    if (clash) throw AdminPolicyErrors.sameEffectiveAt();
+    // 새 버전 바로 앞 버전을 따른다 (나중에 시행될 버전이 아니라)
     const [previous] = await this.db
       .select({ required: policies.required })
       .from(policies)
-      .where(eq(policies.type, body.type))
+      .where(and(eq(policies.type, body.type), lt(policies.effectiveAt, effectiveAt)))
       .orderBy(desc(policies.effectiveAt))
       .limit(1);
     const required = body.required ?? previous?.required ?? body.type !== 'MARKETING';
@@ -72,7 +86,7 @@ export class AdminPoliciesService {
           content: body.content,
           required,
           requireReagreement: body.requireReagreement,
-          effectiveAt: new Date(body.effectiveAt),
+          effectiveAt,
         });
         await this.audit.record(
           {
