@@ -69,7 +69,12 @@ describe('FAQ', () => {
   });
 
   it('로그인 없이 분류별로 순서대로 보여 주고, 순서를 비우면 맨 뒤에 붙는다', async () => {
-    const first = await create({ category: 'STUDY', question: '복습은 언제?', answer: '매일' });
+    const first = await create({
+      category: 'STUDY',
+      question: '복습은 언제?',
+      answer: '매일',
+      order: 10,
+    });
     const second = await create({ category: 'STUDY', question: '오답노트는?', answer: '자동' });
     const top = await create({ category: 'STUDY', question: '맨 앞', answer: '먼저', order: 0 });
 
