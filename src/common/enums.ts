@@ -129,6 +129,17 @@ export type XpBlockReason = Values<typeof XP_BLOCK_REASON>;
 export const MISSION_PERIOD = ['DAILY', 'WEEKLY'] as const;
 export type MissionPeriod = Values<typeof MISSION_PERIOD>;
 
+/** 미션이 세는 활동 */
+export const MISSION_METRIC = [
+  'STUDY_COMPLETE',
+  'WORDS_STUDIED',
+  'BATTLE_FINISH',
+  'BATTLE_WIN',
+  'MORNING_COMPLETE',
+  'XP_EARNED',
+] as const;
+export type MissionMetric = Values<typeof MISSION_METRIC>;
+
 export const MISSION_STATUS = ['IN_PROGRESS', 'CLAIMABLE', 'CLAIMED', 'EXPIRED'] as const;
 export type MissionStatus = Values<typeof MISSION_STATUS>;
 
