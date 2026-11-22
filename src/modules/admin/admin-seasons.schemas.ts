@@ -21,6 +21,10 @@ export const AdminSeason = z
       .number()
       .int()
       .describe('이 시즌 학교 순위에 든 사용자가 대상인 처리 전 신고 묶음 수 (지금 기준)'),
+    suspiciousCount: z
+      .number()
+      .int()
+      .describe('이 시즌 학교 순위에 든 사용자 가운데 시즌 기간에 부정 의심 표시가 있는 사람 수'),
     closedAt: z.iso.datetime().nullable().describe('확정 시각'),
   })
   .meta({ id: 'AdminSeason' });
@@ -38,6 +42,7 @@ export const AdminSeasonDetail = AdminSeason.extend({
         xp: z.number().int(),
         listed: z.boolean().describe('마감 시점에 랭킹 목록에 보였는지 (비공개 등은 false)'),
         excluded: z.boolean(),
+        suspicious: z.boolean().describe('시즌 기간에 부정 의심 표시가 있는지'),
       }),
     )
     .describe('학교 범위 상위 100위까지, 마감 순서. 그 사이의 제외된 사용자도 함께'),

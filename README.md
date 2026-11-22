@@ -752,7 +752,7 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 ### 시즌 관리
 
 - 시즌은 기간이 끝나면 자동으로 마감·확정합니다(관리자 확정 없음). 관리자는 결과를 보고 제외 대상을 정하거나 실패한 마감을 다시 돌립니다.
-- `GET /admin/seasons`(주간·월간, 상태 필터, 최근 시즌순): `endDate`는 마지막 날(포함), `closedAt`은 확정 시각입니다. `pendingReportCount`는 그 시즌 학교 순위에 든 사용자(제외된 사용자 포함)가 대상인 처리 전(`RECEIVED`·`IN_REVIEW`) 신고 묶음 수로, 조회할 때 기준입니다.
+- `GET /admin/seasons`(주간·월간, 상태 필터, 최근 시즌순): `endDate`는 마지막 날(포함), `closedAt`은 확정 시각입니다. `pendingReportCount`는 그 시즌 학교 순위에 든 사용자(제외된 사용자 포함)가 대상인 처리 전(`RECEIVED`·`IN_REVIEW`) 신고 묶음 수로, 조회할 때 기준입니다. 시즌 기간에 부정 의심 표시가 있는 순위 사용자 수(`suspiciousCount`)와, 상세 순위마다 의심 여부(`suspicious`)도 보여 줍니다.
 - `GET /admin/seasons/{seasonId}`: 학교 범위를 마감 순서대로 100위까지(그 사이의 제외된 사용자도 `rank: null`, `excluded: true`로 함께), 제외 대상 전체(사유·관리자·시각), FAILED일 때 실패 사유. 없으면 404 `ADMIN_SEASON_NOT_FOUND`입니다.
 - `PUT /admin/seasons/{seasonId}/exclusions`: 제외 대상을 통째로 바꿉니다(최대 100명, 사유 필수, 빈 배열이면 모두 해제). 상태와 관계없이 바꿀 수 있고, 같은 트랜잭션에서 그 시즌의 학교·학년·반 순위를 마감과 같은 규칙으로 다시 매깁니다. 계속 제외되는 사용자는 처음 사유를 그대로 두고, 없는 사용자는 404 `USER_NOT_FOUND`입니다.
 - `POST /admin/seasons/{seasonId}/rerun`: `FAILED`만(409 `ADMIN_SEASON_NOT_FAILED`) `ranking` 큐에 `close-season` 작업으로 넣고 202를 돌려줍니다. 진행은 `GET /admin/jobs`의 `SEASON_CLOSE`에서 봅니다. 따라잡는 기간보다 오래된 시즌도 다시 돌릴 수 있지만, 지난 ZSET이 만료됐으면 빈 스냅샷으로 확정됩니다.

@@ -13,6 +13,7 @@ import {
   rankingSeasons,
   rankingSnapshots,
   reportGroups,
+  suspiciousFlags,
   users,
 } from '../src/infra/db/schema/index.js';
 import { newId } from '../src/infra/db/uuid.js';
@@ -150,6 +151,7 @@ describe('관리자 시즌 관리', () => {
   afterAll(async () => {
     await db.delete(rankingSeasons).where(inArray(rankingSeasons.id, [weeklyId, monthlyId]));
     await db.delete(reportGroups).where(inArray(reportGroups.targetId, userIds));
+    await db.delete(suspiciousFlags).where(inArray(suspiciousFlags.userId, userIds));
     await db.delete(auditLogs).where(inArray(auditLogs.actorId, userIds));
     await db.delete(notifications).where(inArray(notifications.userId, userIds));
     await db
@@ -160,6 +162,11 @@ describe('관리자 시즌 관리', () => {
   });
 
   it('목록: 주기·상태로 거르고, 순위에 든 사용자가 대상인 처리 전 신고 수를 보여 준다', async () => {
+    // 시즌 기간 안의 부정 의심만 센다 (끝 다음 날 것은 빼고)
+    await db.insert(suspiciousFlags).values([
+      { id: newId(), userId: s1.userId, reason: 'XP_SPIKE', date: '2001-01-03', detail: {} },
+      { id: newId(), userId: s2.userId, reason: 'XP_SPIKE', date: '2001-01-08', detail: {} },
+    ]);
     const res = await call(admin, 'GET', '/admin/seasons?period=WEEKLY&status=CONFIRMED&size=100');
     expect(res.statusCode).toBe(200);
     const items = res.json().items as { seasonId: string; period: string }[];
@@ -172,6 +179,7 @@ describe('관리자 시즌 관리', () => {
       endDate: '2001-01-07',
       status: 'CONFIRMED',
       pendingReportCount: 1,
+      suspiciousCount: 1,
       closedAt: '2001-01-08T00:10:00.000Z',
     });
     expect(items.some((s) => s.seasonId === monthlyId)).toBe(false);
@@ -199,7 +207,10 @@ describe('관리자 시즌 관리', () => {
       [s3.userId, 3, true],
       [s4.userId, 4, true],
     ]);
-    expect(body.ranking[0]).toMatchObject({ xp: 500, excluded: false });
+    expect(body.ranking[0]).toMatchObject({ xp: 500, excluded: false, suspicious: true });
+    expect(
+      body.ranking.find((r: { user: { userId: string } }) => r.user.userId === s2.userId),
+    ).toMatchObject({ suspicious: false });
 
     const failed = (await call(admin, 'GET', `/admin/seasons/${monthlyId}`)).json();
     expect(failed).toMatchObject({ status: 'FAILED', error: 'Error: valkey down', ranking: [] });

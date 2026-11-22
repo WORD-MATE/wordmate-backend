@@ -1,7 +1,7 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import type { Queue } from 'bullmq';
-import { and, asc, count, countDistinct, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, asc, count, countDistinct, desc, eq, gte, inArray, lt, ne } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { AuditLogService } from '../../common/audit/audit-log.service.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
@@ -14,6 +14,7 @@ import {
   rankingSeasons,
   rankingSnapshots,
   reportGroups,
+  suspiciousFlags,
   type User,
   users,
 } from '../../infra/db/schema/index.js';
@@ -65,17 +66,25 @@ export class AdminSeasonsService {
       .orderBy(desc(rankingSeasons.startsOn), asc(rankingSeasons.period), desc(rankingSeasons.id))
       .limit(query.size)
       .offset(query.page * query.size);
-    const pending = await this.pendingReportCounts(rows.map((row) => row.id));
+    const ids = rows.map((row) => row.id);
+    const [pending, suspicious] = await Promise.all([
+      this.pendingReportCounts(ids),
+      this.suspiciousCounts(ids),
+    ]);
     return {
       totalCount: total?.value ?? 0,
-      items: rows.map((row) => this.view(row, pending.get(row.id) ?? 0)),
+      items: rows.map((row) =>
+        this.view(row, pending.get(row.id) ?? 0, suspicious.get(row.id) ?? 0),
+      ),
     };
   }
 
   async detail(seasonId: string): Promise<AdminSeasonDetail> {
     const season = await this.find(seasonId);
-    const [pending, school, exclusions] = await Promise.all([
+    const [pending, suspiciousCount, flagged, school, exclusions] = await Promise.all([
       this.pendingReportCounts([seasonId]),
+      this.suspiciousCounts([seasonId]),
+      this.suspiciousUsers(season),
       this.db
         .select()
         .from(rankingSnapshots)
@@ -99,7 +108,7 @@ export class AdminSeasonsService {
     ]);
     const excluded = new Set(exclusions.map((e) => e.userId));
     return {
-      ...this.view(season, pending.get(seasonId) ?? 0),
+      ...this.view(season, pending.get(seasonId) ?? 0, suspiciousCount.get(seasonId) ?? 0),
       attempts: season.attempts,
       error: season.status === 'FAILED' ? season.lastError : null,
       ranking: top.flatMap((row) => {
@@ -112,6 +121,7 @@ export class AdminSeasonsService {
             xp: row.xp,
             listed: row.listed,
             excluded: excluded.has(row.userId),
+            suspicious: flagged.has(row.userId),
           },
         ];
       }),
@@ -228,7 +238,11 @@ export class AdminSeasonsService {
     return season;
   }
 
-  private view(season: RankingSeason, pendingReportCount: number): AdminSeason {
+  private view(
+    season: RankingSeason,
+    pendingReportCount: number,
+    suspiciousCount: number,
+  ): AdminSeason {
     return {
       seasonId: season.id,
       period: season.period,
@@ -237,6 +251,7 @@ export class AdminSeasonsService {
       endDate: Temporal.PlainDate.from(season.endsOn).subtract({ days: 1 }).toString(),
       status: season.status,
       pendingReportCount,
+      suspiciousCount,
       closedAt: season.confirmedAt?.toISOString() ?? null,
     };
   }
@@ -257,6 +272,36 @@ export class AdminSeasonsService {
       .where(and(inArray(rankingSnapshots.seasonId, seasonIds), eq(rankingSnapshots.scope, SCHOOL)))
       .groupBy(rankingSnapshots.seasonId);
     return new Map(rows.map((row) => [row.seasonId, row.value]));
+  }
+
+  /** 시즌 기간(시작일 포함, 끝 다음 날 제외)에 부정 의심 표시가 있는 학교 순위 사용자 수 */
+  private async suspiciousCounts(seasonIds: string[]): Promise<Map<string, number>> {
+    if (seasonIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({ seasonId: rankingSnapshots.seasonId, value: countDistinct(suspiciousFlags.userId) })
+      .from(rankingSnapshots)
+      .innerJoin(rankingSeasons, eq(rankingSeasons.id, rankingSnapshots.seasonId))
+      .innerJoin(
+        suspiciousFlags,
+        and(
+          eq(suspiciousFlags.userId, rankingSnapshots.userId),
+          gte(suspiciousFlags.date, rankingSeasons.startsOn),
+          lt(suspiciousFlags.date, rankingSeasons.endsOn),
+        ),
+      )
+      .where(and(inArray(rankingSnapshots.seasonId, seasonIds), eq(rankingSnapshots.scope, SCHOOL)))
+      .groupBy(rankingSnapshots.seasonId);
+    return new Map(rows.map((row) => [row.seasonId, row.value]));
+  }
+
+  private async suspiciousUsers(season: RankingSeason): Promise<Set<string>> {
+    const rows = await this.db
+      .selectDistinct({ userId: suspiciousFlags.userId })
+      .from(suspiciousFlags)
+      .where(
+        and(gte(suspiciousFlags.date, season.startsOn), lt(suspiciousFlags.date, season.endsOn)),
+      );
+    return new Set(rows.map((row) => row.userId));
   }
 
   private async users(ids: string[]): Promise<Map<string, User>> {
