@@ -55,6 +55,12 @@ describe('planSync', () => {
     expect(plan?.classChanged).toBe(true);
   });
 
+  it('학번이 비어 있으면 저장된 학번은 남긴다', () => {
+    expect(planSync(user, { ...student, classNo: 4, studentNumber: null })?.changes).toEqual({
+      classNo: 4,
+    });
+  });
+
   it('번호만 바뀌면 반 변경이 아니다', () => {
     const plan = planSync(user, { ...student, number: 8, studentNumber: '2308' });
     expect(plan?.changes).toEqual({ number: 8, studentNumber: '2308' });

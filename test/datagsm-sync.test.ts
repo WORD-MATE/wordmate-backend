@@ -18,11 +18,16 @@ import {
 } from '../src/infra/db/schema/index.js';
 import { newId } from '../src/infra/db/uuid.js';
 import { VALKEY } from '../src/infra/valkey/valkey.module.js';
-import { DataGsmClient, type DataGsmStudent } from '../src/modules/auth/datagsm/datagsm.client.js';
+import {
+  DataGsmClient,
+  type DataGsmProfile,
+  type DataGsmStudent,
+} from '../src/modules/auth/datagsm/datagsm.client.js';
 import { DataGsmSyncService } from '../src/modules/datagsm-sync/datagsm-sync.service.js';
 import { JobRunsService } from '../src/modules/jobs/job-runs.service.js';
 import { rankKey } from '../src/modules/ranking/ranking-keys.js';
 import { createTestApp, inject } from './support/create-test-app.js';
+import { TEST_REDIRECT_URI } from './support/test-env.js';
 
 // 다른 테스트의 반·랭킹 키와 겹치지 않는 학년
 const OLD_GRADE = 7;
@@ -33,14 +38,13 @@ describe('DataGSM 학적 동기화', () => {
   let db: Database;
   let valkey: Redis;
   let listStudents: () => Promise<DataGsmStudent[] | null> = async () => [];
+  let profile: DataGsmProfile | null = null;
   const userIds: string[] = [];
   const tag = randomUUID().slice(0, 8);
 
   const fakeDataGsm = {
     exchangeCode: async () => 'at',
-    getProfile: async () => {
-      throw new Error('사용하지 않음');
-    },
+    getProfile: async () => profile,
     listStudents: () => listStudents(),
   };
 
@@ -130,6 +134,9 @@ describe('DataGSM 학적 동기화', () => {
       number: null,
       studentNumber: null,
     });
+    // 같은 이메일의 계정이 둘이면 누구인지 알 수 없어 맞추지 않는다
+    const dupA = await makeUser({ email: `${tag}-dup@gsm.hs.kr` });
+    const dupB = await makeUser({ email: `${tag}-dup@gsm.hs.kr` });
     await db.insert(devices).values({ userId: byEmail, platform: 'IOS', lastUsedAt: new Date() });
 
     // 이번 기간 점수: 학교·학년·반 키에 같은 점수가 있다
@@ -144,17 +151,19 @@ describe('DataGSM 학적 동기화', () => {
       graduated(`${tag}-susp`),
       enrolled(`${tag}-teacher`),
       enrolled(`${tag}-nobody`, { grade: OLD_GRADE, classNo: 2 }),
+      enrolled(`${tag}-dup`),
     ];
 
     const result = await app.get(DataGsmSyncService).sync();
     expect(result).toEqual({
-      fetched: 6,
+      fetched: 7,
       matched: 4,
       updated: 4,
       deactivated: 1,
       reactivated: 1,
       classesCreated: 3,
       skipped: 0,
+      failed: 0,
     });
 
     expect(await userOf(moved)).toMatchObject({
@@ -177,6 +186,9 @@ describe('DataGSM 학적 동기화', () => {
     expect((await userOf(suspended))?.status).toBe('SUSPENDED');
     expect(await userOf(missing)).toMatchObject({ status: 'ACTIVE', grade: OLD_GRADE });
     expect(await userOf(teacher)).toMatchObject({ role: 'TEACHER', grade: null });
+    for (const id of [dupA, dupB]) {
+      expect(await userOf(id)).toMatchObject({ grade: OLD_GRADE, datagsmStudentId: null });
+    }
 
     const created = await db
       .select({ grade: classes.grade, classNo: classes.classNo })
@@ -207,6 +219,50 @@ describe('DataGSM 학적 동기화', () => {
       reactivated: 0,
       classesCreated: 0,
     });
+  });
+
+  it('로그인으로 학년·반이 바뀌어도 랭킹 범위를 옮기고, 다른 계정에 붙은 학생 ID를 가져온다', async () => {
+    const datagsmId = `${tag}-login`;
+    const loginUser = await makeUser({ datagsmId });
+    const wrongOwner = await makeUser({ datagsmStudentId: `${tag}-login-sid` });
+    for (const scope of scopes.slice(0, 3)) {
+      for (const key of keysOf(scope)) await valkey.zadd(key, '777', loginUser);
+    }
+    profile = {
+      datagsmId,
+      datagsmStudentId: `${tag}-login-sid`,
+      email: `${datagsmId}@gsm.hs.kr`,
+      role: 'STUDENT',
+      name: '김학생',
+      studentNumber: `${NEW_GRADE}302`,
+      grade: NEW_GRADE,
+      classNo: 3,
+      number: 2,
+      inactive: false,
+      pending: false,
+    };
+
+    const res = await inject(app, {
+      method: 'POST',
+      url: '/auth/datagsm',
+      remoteAddress: '10.127.0.1',
+      headers: { 'x-client-platform': 'IOS' },
+      payload: { code: 'auth-code', codeVerifier: 'v'.repeat(43), redirectUri: TEST_REDIRECT_URI },
+    });
+    expect(res.statusCode).toBe(200);
+
+    expect(await userOf(loginUser)).toMatchObject({
+      grade: NEW_GRADE,
+      classNo: 3,
+      datagsmStudentId: `${tag}-login-sid`,
+    });
+    expect((await userOf(wrongOwner))?.datagsmStudentId).toBeNull();
+    for (const [scope, expected] of [
+      [`class:${OLD_GRADE}-1`, null],
+      [`class:${NEW_GRADE}-3`, '777'],
+    ] as const) {
+      for (const key of keysOf(scope)) expect(await valkey.zscore(key, loginUser)).toBe(expected);
+    }
   });
 
   it('API 키가 없으면 건너뛰고, 관리자가 직접 실행할 수 있다', async () => {
