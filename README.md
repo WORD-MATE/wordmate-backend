@@ -698,6 +698,12 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
   - 정지 기간이 지나면 다음 로그인 때 활동 상태로 돌아옵니다.
 - `PATCH /admin/users/{userId}/status`: 정지는 제재와 같은 처리(기간이 없으면 영구 정지)이고, 해제(`ACTIVE`)는 정지와 차단 표시만 풉니다(409 `ADMIN_NOT_SUSPENDED`). 제재 이력은 사용자 상세에 최신순으로 나옵니다.
 
+### 신고 처리
+
+- 신고는 대상별 묶음(`report_groups`)에 쌓입니다. 대상마다 열린 묶음은 하나이고(`(대상, open_key)` 유니크, 동시에 신고해도 하나만 생김), 처리를 끝내면 묶음을 닫아 그 뒤의 신고는 새 묶음이 됩니다.
+- `GET /admin/reports`(상태·사유·마지막 신고 기간 필터, 최근 신고순)와 `GET /admin/reports/{reportGroupId}`(개별 신고, 대상이 받은 신고 전체 수와 제재 이력, 처리 결과·변경 이력). 신고한 사람은 관리자에게도 보여 주지 않습니다.
+- `PATCH /admin/reports/{reportGroupId}`: 완료(`RESOLVED`)에는 결과·메모가 필수입니다. 처음 완료할 때 신고한 사람들에게 `REPORT_RESULT` 알림을 한 번 보냅니다(문제 없음 / 조치함). 완료한 뒤에는 결과·메모만 고칠 수 있고(409 `REPORT_ALREADY_RESOLVED`), 바꿀 때마다 이력·감사 로그가 남습니다. 제재는 `POST /admin/sanctions`를 `reportGroupId`와 함께 따로 호출합니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.
