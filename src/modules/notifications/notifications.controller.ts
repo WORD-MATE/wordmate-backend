@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { SkipTeacherClassCheck, SkipTermsCheck } from '../../common/auth/onboarding.decorator.js';
 import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import {
   NotificationListQuery,
@@ -15,7 +16,10 @@ import { NotificationsService } from './notifications.service.js';
 
 const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 
+// 약관 재동의·담당 반 선택 전에도 알림(끌 수 없는 제재·새 기기 로그인, 약관 변경 공지 등)은 볼 수 있어야 한다
 @ApiTags('notifications')
+@SkipTermsCheck()
+@SkipTeacherClassCheck()
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notifications: NotificationsService) {}

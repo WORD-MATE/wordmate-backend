@@ -6,7 +6,7 @@ import type { NotificationCategory, NotificationType } from '../../common/enums.
 import { AppException } from '../../common/errors/app-exception.js';
 import { decodeCursor, toCursorPage } from '../../common/pagination.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
-import { notificationSettings, notifications } from '../../infra/db/schema/index.js';
+import { notificationSettings, notifications, users } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
 import { AgreementService } from '../users/agreement.service.js';
 import {
@@ -26,6 +26,7 @@ import type {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ListCursor = z.object({ id: z.uuid() });
+const NOTIFY_CHUNK = 1000;
 
 export const NotificationErrors = {
   notFound: () =>
@@ -74,18 +75,36 @@ export class NotificationsService {
    * 다른 기능은 이것으로 알림을 보낸다. 저장한 알림을 돌려준다 (푸시 발송에 쓴다)
    */
   async notify(userIds: string[], notification: NewNotification): Promise<StoredNotification[]> {
-    const recipients = await this.allowed([...new Set(userIds)], notification.type);
-    if (recipients.length === 0) return [];
-    const rows = recipients.map((userId) => ({
-      id: newId(),
-      userId,
-      type: notification.type,
-      title: notification.title,
-      body: notification.body,
-      route: notification.route ?? null,
-    }));
-    await this.db.insert(notifications).values(rows);
-    return rows;
+    const stored: StoredNotification[] = [];
+    const unique = [...new Set(userIds)];
+    // 전체 공지처럼 받는 사람이 많아도 한 문장이 너무 커지지 않게 나눠 처리한다
+    for (let i = 0; i < unique.length; i += NOTIFY_CHUNK) {
+      const active = await this.activeUsers(unique.slice(i, i + NOTIFY_CHUNK));
+      const recipients = await this.allowed(active, notification.type);
+      if (recipients.length === 0) continue;
+      const rows = recipients.map((userId) => ({
+        id: newId(),
+        userId,
+        type: notification.type,
+        title: notification.title,
+        body: notification.body,
+        route: notification.route ?? null,
+      }));
+      await this.db.insert(notifications).values(rows);
+      stored.push(...rows);
+    }
+    return stored;
+  }
+
+  /** 지금 쓰는 계정만 (탈퇴·정지·휴면 계정과 없는 사용자는 빼서 외래 키 오류로 전체가 실패하지 않게) */
+  private async activeUsers(userIds: string[]): Promise<string[]> {
+    if (userIds.length === 0) return [];
+    const rows = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(inArray(users.id, userIds), eq(users.status, 'ACTIVE')));
+    const active = new Set(rows.map((row) => row.id));
+    return userIds.filter((userId) => active.has(userId));
   }
 
   async list(user: AuthUser, query: NotificationListQuery) {
@@ -128,9 +147,13 @@ export class NotificationsService {
     return { count: row?.total ?? 0 };
   }
 
-  /** 남의 알림이면 404. 이미 읽었으면 그대로 둔다 */
+  /** 남의 알림·보관 기간이 지난 알림이면 404. 이미 읽었으면 그대로 둔다 */
   async read(user: AuthUser, notificationId: string): Promise<void> {
-    const mine = and(eq(notifications.id, notificationId), eq(notifications.userId, user.userId));
+    const mine = and(
+      eq(notifications.id, notificationId),
+      eq(notifications.userId, user.userId),
+      gt(notifications.createdAt, this.retentionStart()),
+    );
     const [row] = await this.db.select({ id: notifications.id }).from(notifications).where(mine);
     if (!row) throw NotificationErrors.notFound();
     await this.db
@@ -143,7 +166,13 @@ export class NotificationsService {
     await this.db
       .update(notifications)
       .set({ readAt: new Date() })
-      .where(and(eq(notifications.userId, user.userId), isNull(notifications.readAt)));
+      .where(
+        and(
+          eq(notifications.userId, user.userId),
+          isNull(notifications.readAt),
+          gt(notifications.createdAt, this.retentionStart()),
+        ),
+      );
   }
 
   async settings(user: AuthUser): Promise<NotificationSettings> {
@@ -151,13 +180,17 @@ export class NotificationsService {
       .select()
       .from(notificationSettings)
       .where(eq(notificationSettings.userId, user.userId));
+    const marketingAgreed = await this.agreements.marketingAgreed(user.userId);
+    const categories = row ? this.categoriesOf(row) : { ...DEFAULT_CATEGORIES };
+    // 동의를 철회했으면 광고성은 실제로 받지 않으므로 꺼진 것으로 보여 준다 (그대로 다시 저장해도 막히지 않게)
+    categories.MARKETING = categories.MARKETING && marketingAgreed;
     return {
-      categories: row ? this.categoriesOf(row) : { ...DEFAULT_CATEGORIES },
+      categories,
       reminder: {
         time: row?.reminderTime ?? null,
         weekdays: row?.reminderWeekdays ?? [...DEFAULT_REMINDER_WEEKDAYS],
       },
-      marketingAgreed: await this.agreements.marketingAgreed(user.userId),
+      marketingAgreed,
     };
   }
 
@@ -212,7 +245,7 @@ export class NotificationsService {
     );
     if (category !== 'MARKETING') return enabled;
     // 광고성은 마케팅 동의를 철회했으면 켜 둔 설정과 상관없이 보내지 않는다
-    const agreed = await Promise.all(enabled.map((id) => this.agreements.marketingAgreed(id)));
-    return enabled.filter((_, i) => agreed[i]);
+    const agreed = await this.agreements.marketingAgreedAmong(enabled);
+    return enabled.filter((userId) => agreed.has(userId));
   }
 }
