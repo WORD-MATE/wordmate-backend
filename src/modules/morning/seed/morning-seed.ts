@@ -62,7 +62,12 @@ export async function applyMorningSeed(
       if (existing) {
         await tx
           .update(morningSentences)
-          .set({ sentence: item.sentence, translation: item.translation, status: 'PUBLISHED' })
+          .set({
+            sentence: item.sentence,
+            translation: item.translation,
+            status: 'PUBLISHED',
+            updatedBy: null,
+          })
           .where(eq(morningSentences.id, sentenceId));
         updated++;
       } else {

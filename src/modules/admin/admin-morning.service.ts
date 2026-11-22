@@ -195,23 +195,35 @@ export class AdminMorningService {
         const next: MorningContent = {
           sentence,
           translation: body.translation ?? current.translation,
-          keywords: body.keywords ? withHighlights(sentence, body.keywords) : current.keywords,
+          // 문장만 바뀌면 예전 강조 위치가 엉뚱한 곳을 가리키므로 새 문장에서 다시 찾는다
+          keywords: withHighlights(
+            sentence,
+            body.keywords ??
+              (body.sentence === undefined
+                ? current.keywords
+                : current.keywords.map(({ highlight: _, ...keyword }) => keyword)),
+          ),
           quizzes: body.quizzes ?? current.quizzes,
         };
         if (row.status !== 'PENDING_REVIEW') {
           const issues = contentIssues(next);
           if (issues.length > 0) throw AdminMorningErrors.invalid(issues);
         }
+        // 예약된 문장을 오늘(06:00 기준) 이전 날짜로 옮기면 다음 06:00을 기다리지 않고 바로 게시한다
+        const date = body.date ?? row.publishDate;
+        const status =
+          row.status === 'SCHEDULED' && date <= morningDate() ? 'PUBLISHED' : undefined;
         await tx
           .update(morningSentences)
           .set({
             publishDate: body.date,
             sentence: body.sentence,
             translation: body.translation,
+            status,
             updatedBy: admin.userId,
           })
           .where(eq(morningSentences.id, morningId));
-        if (body.keywords || body.quizzes) {
+        if (body.keywords || body.quizzes || body.sentence !== undefined) {
           await replaceContent(tx, morningId, next.keywords, next.quizzes);
         }
         await this.record(

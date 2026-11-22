@@ -42,7 +42,10 @@ export type ContentIssue = {
   message: string;
 };
 
-/** 강조 위치가 없는 어휘는 문장에서 처음 나오는 위치(대소문자 무시)로, 못 찾으면 빈 위치로 둔다 */
+/**
+ * 강조 위치가 없는 어휘는 문장에서 처음 나오는 위치(대소문자 무시)로, 못 찾으면 빈 위치로 둔다.
+ * 다른 단어 안에 든 경우("monkey"의 "key")보다 단어 단위로 나오는 위치를 먼저 쓴다
+ */
 export function withHighlights(
   sentence: string,
   keywords: MorningKeywordInput[],
@@ -50,7 +53,10 @@ export function withHighlights(
   const lower = sentence.toLowerCase();
   return keywords.map((keyword) => {
     if (keyword.highlight) return { ...keyword, highlight: keyword.highlight };
-    const start = lower.indexOf(keyword.english.toLowerCase());
+    const target = keyword.english.toLowerCase();
+    const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const word = new RegExp(`(?<![a-z])${escaped}(?![a-z])`).exec(lower);
+    const start = word ? word.index : lower.indexOf(target);
     return {
       ...keyword,
       highlight: start < 0 ? { start: 0, end: 0 } : { start, end: start + keyword.english.length },
