@@ -6,6 +6,7 @@ import { ForbiddenWordsModule } from '../forbidden-words/forbidden-words.module.
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { RankingModule } from '../ranking/ranking.module.js';
 import { UsersModule } from '../users/users.module.js';
+import { AdminAppConfigController } from './admin-app-config.controller.js';
 import { AdminAuditLogsController } from './admin-audit-logs.controller.js';
 import { AdminAuditLogsService } from './admin-audit-logs.service.js';
 import { AdminForbiddenWordsController } from './admin-forbidden-words.controller.js';
@@ -28,6 +29,7 @@ import { AdminUsersService } from './admin-users.service.js';
     UsersModule,
   ],
   controllers: [
+    AdminAppConfigController,
     AdminAuditLogsController,
     AdminForbiddenWordsController,
     AdminReportsController,

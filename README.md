@@ -709,6 +709,11 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 - `GET/POST /admin/forbidden-words`, `PATCH/DELETE /admin/forbidden-words/{wordId}`: 금칙어(`FORBIDDEN`)와 오탐 방지용 허용 단어(`ALLOWED`). 앞뒤 공백을 지우고, 같은 종류에 같은 단어는 409 `ADMIN_FORBIDDEN_WORD_DUPLICATE`입니다. 등록한 관리자와 감사 로그가 남습니다.
 - 바꾸면 Valkey의 `forbidden-words:version`을 새 무작위 값으로 바꿉니다. 서버마다 가진 금칙어 캐시는 이 버전을 1초에 한 번 확인해 바뀌었으면 다시 읽습니다(바꾼 서버는 즉시, 다른 서버는 1초 안에 반영). 버전을 읽지 못하면 5초 동안 다시 묻지 않고 1분 만료로 갱신합니다.
 
+### 앱 설정
+
+- `GET/PUT /admin/app-config`: 점검 모드(켜기·문구·끝나는 시각), 플랫폼별 최소·최신 버전, 스토어 주소를 통째로 바꿉니다. 버전 형식과 최소 ≤ 최신을 검사합니다(400). 바꾸면 감사 로그에 이전·이후 값이 남고, 서버마다 5초 캐시라 모든 서버에 5초 안에 반영됩니다.
+- 점검 중에도 관리자는 모든 API를 쓸 수 있어 점검을 풀 수 있습니다(`GET /app/status`와 로그인도 열려 있음).
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.

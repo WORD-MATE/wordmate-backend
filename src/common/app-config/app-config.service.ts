@@ -33,8 +33,9 @@ export class AppConfigService {
 
   constructor(@Inject(VALKEY) private readonly valkey: Redis) {}
 
-  async get(): Promise<AppConfig> {
-    if (this.cache && this.cache.expiresAt > Date.now()) return this.cache.value;
+  /** fresh면 캐시를 건너뛰고 Valkey에서 읽는다 (관리자 화면용) */
+  async get(fresh = false): Promise<AppConfig> {
+    if (!fresh && this.cache && this.cache.expiresAt > Date.now()) return this.cache.value;
 
     let value: AppConfig;
     try {
