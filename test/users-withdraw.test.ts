@@ -8,6 +8,8 @@ import type { AuthUser } from '../src/common/auth/auth-user.js';
 import { kstDate } from '../src/common/time/kst.js';
 import { type Database, DB } from '../src/infra/db/db.module.js';
 import {
+  battleAnswers,
+  battleQuestions,
   battleResults,
   battleRoomParticipants,
   battleRooms,
@@ -32,6 +34,7 @@ import { newId } from '../src/infra/db/uuid.js';
 import { VALKEY } from '../src/infra/valkey/valkey.module.js';
 import type { DataGsmProfile } from '../src/modules/auth/datagsm/datagsm.client.js';
 import { DataGsmClient } from '../src/modules/auth/datagsm/datagsm.client.js';
+import { BattleFinishService } from '../src/modules/battles/battle-finish.service.js';
 import { RankingService } from '../src/modules/ranking/ranking.service.js';
 import { rankKey } from '../src/modules/ranking/ranking-keys.js';
 import { InquiryImageStorage } from '../src/modules/support/inquiry-image.storage.js';
@@ -469,5 +472,87 @@ describe('회원 탈퇴', () => {
     } finally {
       await db.update(users).set({ isAdmin: false }).where(eq(users.id, next.userId));
     }
+  });
+
+  it('대결 중에 탈퇴한 사람은 대결이 끝나도 결과 행만 남고 XP·오답노트가 다시 생기지 않는다', async () => {
+    const me = await signUp();
+    const other = await makeUser();
+    const pack = await insertPack(other.userId);
+    const roomId = await insertRoom(pack.packId, 'FINISHED', other.userId);
+    const startedAt = new Date(Date.now() - 60 * 1000);
+    const battleId = newId();
+    await db.insert(battles).values({
+      id: battleId,
+      roomId,
+      questionCount: 1,
+      timeLimitSec: 15,
+      phase: 'QUESTION',
+      startedAt,
+    });
+    await db.insert(battleQuestions).values({
+      battleId,
+      idx: 0,
+      wordId: pack.wordId,
+      questionType: 'EN_TO_KO_CHOICE',
+      prompt: 'leave',
+      choices: ['떠나다', '오다', '가다', '보다'],
+      answerIndex: 0,
+    });
+    await db.insert(battleRoomParticipants).values([
+      { roomId, userId: other.userId, isHost: true, joinedAt: startedAt },
+      { roomId, userId: me.userId, joinedAt: startedAt },
+    ]);
+    await db.insert(battleAnswers).values(
+      [me.userId, other.userId].map((userId) => ({
+        battleId,
+        idx: 0,
+        userId,
+        choiceIndex: 1,
+        elapsedMs: 1000,
+        correct: false,
+        score: 0,
+      })),
+    );
+    // 나가기 처리 전에 대결이 끝나는 경우: 아직 방에 남아 있는 상태로 끝난다
+    expect((await withdraw(me.accessToken, { confirm: true })).statusCode).toBe(204);
+    await db
+      .update(battleRoomParticipants)
+      .set({ active: true, state: 'CONNECTED', leftAt: null })
+      .where(
+        and(
+          eq(battleRoomParticipants.roomId, roomId),
+          eq(battleRoomParticipants.userId, me.userId),
+        ),
+      );
+
+    const [room] = await db.select().from(battleRooms).where(eq(battleRooms.id, roomId));
+    const [battle] = await db.select().from(battles).where(eq(battles.id, battleId));
+    const finish = app.get(BattleFinishService);
+    await db.transaction((tx) =>
+      finish.finalize(
+        tx,
+        room as typeof battleRooms.$inferSelect,
+        battle as typeof battles.$inferSelect,
+        new Date(),
+      ),
+    );
+
+    expect(
+      await db
+        .select()
+        .from(battleResults)
+        .where(and(eq(battleResults.battleId, battleId), eq(battleResults.userId, me.userId))),
+    ).toHaveLength(1);
+    expect(await db.select().from(wrongNotes).where(eq(wrongNotes.userId, me.userId))).toHaveLength(
+      0,
+    );
+    expect(await db.select().from(xpLedger).where(eq(xpLedger.userId, me.userId))).toHaveLength(0);
+    expect(
+      await db.select().from(wrongNotes).where(eq(wrongNotes.userId, other.userId)),
+    ).toHaveLength(1);
+    await db
+      .update(battleRoomParticipants)
+      .set({ active: false })
+      .where(eq(battleRoomParticipants.roomId, roomId));
   });
 });

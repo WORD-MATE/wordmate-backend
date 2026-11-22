@@ -36,12 +36,14 @@ export class BattleFinishService {
     const ids = players.map((player) => player.userId).sort();
     // 사용자 행을 먼저 같은 순서로 배타 잠금한다. 쌍 횟수·결과를 넣을 때 외래 키 검사로 공유 잠금을 잡은 뒤
     // XP 지급에서 배타 잠금으로 올리면, 그사이 같은 사용자를 잠그려는 다른 트랜잭션과 교착될 수 있다
-    await tx
-      .select({ id: users.id })
+    const locked = await tx
+      .select({ id: users.id, status: users.status })
       .from(users)
       .where(inArray(users.id, ids))
       .orderBy(asc(users.id))
       .for('update');
+    // 대결 중에 탈퇴한 사람은 결과 행만 남기고 XP·미션·오답노트를 다시 만들지 않는다
+    const withdrawn = new Set(locked.filter((u) => u.status === 'WITHDRAWN').map((u) => u.id));
     const limitMs = battle.timeLimitSec * 1000;
     const totals = await tx
       .select({
@@ -71,7 +73,9 @@ export class BattleFinishService {
       }),
     );
 
-    const finishers = results.filter((result) => result.completed).map((r) => r.userId);
+    const finishers = results
+      .filter((result) => result.completed && !withdrawn.has(result.userId))
+      .map((r) => r.userId);
     const limited = await this.countPairs(tx, finishers, kstDate(finishedAt));
     const earned: XpEarned[] = [];
     const rows = [];
@@ -79,9 +83,11 @@ export class BattleFinishService {
     for (const result of [...results].sort((a, b) => a.userId.localeCompare(b.userId))) {
       // 한 문항도 답하지 않은 완주자는 자리만 지킨 것으로 보고 XP를 주지 않는다 (순위·결과는 그대로)
       const idle = Number(totalOf.get(result.userId)?.responded ?? 0) === 0;
-      const xp = idle
-        ? { amount: 0, blockedReason: 'NOT_COMPLETED' as const }
-        : battleXpOf(result.outcome, limited.has(result.userId));
+      const gone = withdrawn.has(result.userId);
+      const xp =
+        idle || gone
+          ? { amount: 0, blockedReason: 'NOT_COMPLETED' as const }
+          : battleXpOf(result.outcome, limited.has(result.userId));
       let xpEarned = 0;
       let blockedReason = xp.blockedReason;
       if (xp.amount > 0) {
@@ -94,12 +100,12 @@ export class BattleFinishService {
         xpEarned = grant.earned;
         if (grant.capped) blockedReason = 'DAILY_CAP';
         earned.push({ userId: result.userId, earned: grant.earned });
-      } else if (result.completed) {
+      } else if (result.completed && !gone) {
         // XP가 없어도 결과는 남으므로 배지 평가 대상에 넣는다 (랭킹은 0이면 건너뜀)
         earned.push({ userId: result.userId, earned: 0 });
       }
       // 기권승은 XP가 없는 것처럼 승리로 세지 않는다
-      if (result.completed && !idle) {
+      if (result.completed && !idle && !gone) {
         await addMissionProgress(tx, result.userId, 'BATTLE_FINISH', 1, finishedAt);
         if (result.outcome === 'WIN') {
           await addMissionProgress(tx, result.userId, 'BATTLE_WIN', 1, finishedAt);
@@ -119,7 +125,13 @@ export class BattleFinishService {
       });
     }
     await tx.insert(battleResults).values(rows);
-    await this.saveWrongWords(tx, room, battle, ids, finishedAt);
+    await this.saveWrongWords(
+      tx,
+      room,
+      battle,
+      ids.filter((id) => !withdrawn.has(id)),
+      finishedAt,
+    );
     return earned;
   }
 
@@ -190,6 +202,7 @@ export class BattleFinishService {
     userIds: string[],
     now: Date,
   ): Promise<void> {
+    if (userIds.length === 0) return;
     const wrong = await tx
       .selectDistinct({ userId: battleAnswers.userId, wordId: battleQuestions.wordId })
       .from(battleAnswers)
