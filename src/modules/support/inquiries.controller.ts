@@ -14,9 +14,9 @@ import { ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js'
 import { IMAGE_URL_TTL_SECONDS } from './image-url-signer.js';
 import { ImageUrlQuery, InquiryCreated, InquiryDetail, InquiryList } from './inquiries.schemas.js';
 import {
+  InquiriesService,
   INQUIRY_RATE_LIMIT,
   INQUIRY_RATE_WINDOW_SECONDS,
-  InquiriesService,
 } from './inquiries.service.js';
 import { readInquiryForm } from './inquiry-form.js';
 import { INQUIRY_IMAGE_MAX_COUNT } from './inquiry-image.js';
