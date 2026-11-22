@@ -1,9 +1,8 @@
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { and, count, desc, eq, like, max, or, type SQL, sql, sum } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { AuditLogService } from '../../common/audit/audit-log.service.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
-import { AppException } from '../../common/errors/app-exception.js';
 import type { Page } from '../../common/pagination.js';
 import { kstDate } from '../../common/time/kst.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
@@ -23,31 +22,14 @@ import { RankingService } from '../ranking/ranking.service.js';
 import { levelOf } from '../users/me.schema.js';
 import { TeacherClassService } from '../users/teacher-class.service.js';
 import { toUserSummary } from '../users/user-summary.js';
+import { AdminUserErrors } from './admin-errors.js';
+import { AdminSanctionsService } from './admin-sanctions.service.js';
 import type {
   AdminUserDetail,
   AdminUserItem,
   AdminUserQuery,
   XpAdjustment,
 } from './admin-users.schemas.js';
-
-export const AdminUserErrors = {
-  userNotFound: () =>
-    new AppException('USER_NOT_FOUND', '사용자를 찾을 수 없습니다.', HttpStatus.NOT_FOUND),
-  lastAdmin: () =>
-    new AppException(
-      'ADMIN_LAST_ADMIN',
-      '마지막 관리자의 권한은 회수할 수 없습니다.',
-      HttpStatus.CONFLICT,
-    ),
-  notTeacher: () =>
-    new AppException('ADMIN_NOT_TEACHER', '교사만 지정할 수 있습니다.', HttpStatus.CONFLICT),
-  xpNegative: () =>
-    new AppException(
-      'ADMIN_XP_NEGATIVE',
-      '조정한 뒤 XP가 0보다 작아집니다.',
-      HttpStatus.BAD_REQUEST,
-    ),
-};
 
 const toItem = (user: User): AdminUserItem => ({
   user: toUserSummary(user),
@@ -68,6 +50,7 @@ export class AdminUsersService {
     private readonly classes: ClassesService,
     private readonly ranking: RankingService,
     private readonly badges: BadgesService,
+    private readonly sanctions: AdminSanctionsService,
   ) {}
 
   /** 조회도 감사 로그에 남긴다 (개인정보 열람 기록) */
@@ -109,7 +92,7 @@ export class AdminUsersService {
 
   async detail(admin: AuthUser, userId: string, request: FastifyRequest): Promise<AdminUserDetail> {
     const user = await this.find(userId);
-    const [classes, study, lastRecord, battle, reported] = await Promise.all([
+    const [classes, study, lastRecord, battle, reported, sanctionHistory] = await Promise.all([
       user.role === 'TEACHER' ? this.teacherClasses.list(userId) : Promise.resolve([]),
       this.db
         .select({
@@ -135,6 +118,7 @@ export class AdminUsersService {
         .select({ value: count() })
         .from(reports)
         .where(and(eq(reports.targetType, 'USER'), eq(reports.targetId, userId))),
+      this.sanctions.historyOf(userId),
     ]);
     await this.audit.record(
       {
@@ -165,6 +149,7 @@ export class AdminUsersService {
         leftCount: Number(battle[0]?.left ?? 0),
       },
       reportCount: reported[0]?.value ?? 0,
+      sanctions: sanctionHistory,
     };
   }
 
