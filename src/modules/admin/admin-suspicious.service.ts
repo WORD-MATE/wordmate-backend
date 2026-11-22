@@ -45,15 +45,20 @@ export class AdminSuspiciousService {
         ? undefined
         : sql`MIN(${flags.reviewed}) = ${query.reviewed ? 1 : 0}`,
     );
-    const grouped = () =>
-      this.db
-        .select({ userId: flags.userId, date: flags.date, detectedAt: min(flags.detectedAt) })
-        .from(flags)
-        .where(where)
-        .groupBy(flags.userId, flags.date)
-        .having(having);
-    const [total] = await this.db.select({ value: count() }).from(grouped().as('g'));
-    const groups = await grouped()
+    const counted = this.db
+      .select({ userId: flags.userId })
+      .from(flags)
+      .where(where)
+      .groupBy(flags.userId, flags.date)
+      .having(having)
+      .as('g');
+    const [total] = await this.db.select({ value: count() }).from(counted);
+    const groups = await this.db
+      .select({ userId: flags.userId, date: flags.date, detectedAt: min(flags.detectedAt) })
+      .from(flags)
+      .where(where)
+      .groupBy(flags.userId, flags.date)
+      .having(having)
       .orderBy(desc(flags.date), desc(min(flags.detectedAt)), asc(flags.userId))
       .limit(query.size)
       .offset(query.page * query.size);
