@@ -633,13 +633,13 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 | `WEEKLY_WIN`    | 주간 | 대결 승리                | 3    | 30      |
 | `WEEKLY_XP`     | 주간 | 얻은 XP (미션 보상 제외) | 300  | 50      |
 
-- 진행(`user_missions`)은 기간 키(일일은 KST 날짜, 주간은 그 주 월요일)마다 한 줄이라, 자정·월요일 자정이 지나면 따로 초기화하지 않아도 새로 셉니다. 목록은 이번 기간만 보여 주므로 `EXPIRED`는 나오지 않습니다.
+- 진행(`user_missions`)은 기간 키(일일은 KST 날짜, 주간은 그 주 월요일)마다 한 줄이라, 자정·월요일 자정이 지나면 따로 초기화하지 않아도 새로 셉니다. 단, 오늘의 문장 미션은 문장이 바뀌는 06:00 기준 날짜로 셉니다(같은 문장을 두 날에 세지 않게). 목록은 이번 기간만 보여 주므로 `EXPIRED`는 나오지 않습니다.
 - 활동이 생긴 트랜잭션 안에서 `addMissionProgress`로 진행을 올립니다(목표에서 멈춤).
   - 학습: 답을 낸 학습을 끝냈을 때 1회, 그 학습에서 답한 수만큼 단어 수.
   - 대결: 한 문항이라도 답하고 끝까지 남았을 때 완주, `WIN`일 때 승리(기권승은 세지 않음).
   - 오늘의 문장: 오늘 문장을 처음 끝냈을 때.
   - XP: `XpService.grant`에서 실제로 받은 양(미션 보상 제외).
-- 보상(`POST /missions/{missionId}/claim`)은 이번 기간에 한 번입니다. 사용자 행을 잠근 뒤 `claimed_at IS NULL AND progress >= target` 조건부 업데이트로 두 번 받지 않게 하고, XP(출처 `MISSION`, 하루 500 상한 포함)를 같은 트랜잭션에서 줍니다. 상한에 걸려 일부만 받아도 받은 것으로 끝납니다.
+- 보상(`POST /missions/{missionId}/claim`)은 이번 기간에 한 번입니다. 사용자 행을 잠근 뒤 `claimed_at IS NULL AND progress >= target` 조건부 업데이트로 두 번 받지 않게 하고, XP(출처 `MISSION`, 하루 500 상한 포함)를 같은 트랜잭션에서 줍니다. 상한에 걸려 일부만 받아도 받은 것으로 끝납니다. 404 `MISSION_NOT_FOUND`, 409 `MISSION_NOT_CLAIMABLE` / `MISSION_ALREADY_CLAIMED`.
 - 진행을 올리는 쪽도 사용자 행을 먼저 잠가, 보상 수령과 잠그는 순서가 같습니다. 홈 화면 `missions`는 일일 미션입니다(교사는 null).
 
 ## 정리 작업
