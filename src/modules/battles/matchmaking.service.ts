@@ -8,7 +8,7 @@ import { RealtimeService } from '../realtime/realtime.service.js';
 import { BattleQueue } from './battle.queue.js';
 import type { CreateRoom } from './battle.schemas.js';
 import { LobbyService } from './lobby.service.js';
-import { MATCH_TIMEOUT_MS, MatchQueue } from './match-queue.js';
+import { type EnqueueResult, MATCH_TIMEOUT_MS, MatchQueue } from './match-queue.js';
 import { MIN_BATTLE_WORDS, RoomsService } from './rooms.service.js';
 
 /** 빠른 매칭 기본 설정: 기본 단어팩, 한→영 4지선다, 10문항, 10초, 1:1 */
@@ -91,22 +91,50 @@ export class MatchmakingService implements OnModuleInit {
       queuedAt: new Date(now).toISOString(),
       timeoutAt: new Date(now + MATCH_TIMEOUT_MS).toISOString(),
     };
-    // 짝지은 상대를 쓸 수 없으면(연결이 끊겼거나 그사이 다른 방에 들어감) 빼고 다음 대기자를 본다
+    const first = await this.matchQueue.enqueue(user.userId, xp, now, excluded);
+    if (first.kind === 'ALREADY') throw MatchErrors.alreadyQueued();
+    if (first.kind === 'QUEUED') {
+      await this.scheduleTimeout(user.userId, now);
+      return ticket;
+    }
+    // 성사된 뒤의 방 만들기·시작은 응답을 기다리게 하지 않는다 (결과는 MATCH_FOUND로 간다).
+    // 동시에 많이 성사돼도 요청이 DB 연결을 기다리며 쌓이지 않는다
+    const waiting = { userId: user.userId, xp, now, excluded };
+    void this.completePairing(waiting, first, pack).catch(async (error: unknown) => {
+      this.logger.error(`빠른 매칭 성사 처리 실패 (${user.userId}): ${String(error)}`);
+      // 기다리던 상대는 pair()가 되돌렸으므로 요청한 사람도 다시 줄 세운다
+      await this.matchQueue.requeue(user.userId, xp, now).catch(() => {});
+      await this.scheduleTimeout(user.userId, now);
+    });
+    return ticket;
+  }
+
+  /** 짝지은 상대를 쓸 수 없으면(연결이 끊겼거나 그사이 다른 방에 들어감) 빼고 다음 대기자를 본다 */
+  private async completePairing(
+    waiting: { userId: string; xp: number; now: number; excluded: string[] },
+    matched: EnqueueResult,
+    pack: NonNullable<Awaited<ReturnType<MatchmakingService['defaultPack']>>>,
+  ): Promise<void> {
+    let result = matched;
     for (let attempt = 0; attempt < PAIR_ATTEMPTS; attempt++) {
-      const result = await this.matchQueue.enqueue(user.userId, xp, now, excluded);
-      if (result.kind === 'ALREADY') throw MatchErrors.alreadyQueued();
+      if (result.kind === 'ALREADY') return;
       if (result.kind === 'QUEUED') {
-        await this.scheduleTimeout(user.userId, now);
-        return ticket;
+        await this.scheduleTimeout(waiting.userId, waiting.now);
+        return;
       }
-      if (await this.pair(result.opponentId, result.opponentQueuedAt, user.userId, pack)) {
-        return ticket;
+      if (await this.pair(result.opponentId, result.opponentQueuedAt, waiting.userId, pack)) {
+        return;
       }
+      result = await this.matchQueue.enqueue(
+        waiting.userId,
+        waiting.xp,
+        waiting.now,
+        waiting.excluded,
+      );
     }
     // 계속 실패하면 대기만 한다 (다음에 들어오는 사람과 짝지어진다)
-    await this.matchQueue.requeue(user.userId, xp, now);
-    await this.scheduleTimeout(user.userId, now);
-    return ticket;
+    await this.matchQueue.requeue(waiting.userId, waiting.xp, waiting.now);
+    await this.scheduleTimeout(waiting.userId, waiting.now);
   }
 
   /**
