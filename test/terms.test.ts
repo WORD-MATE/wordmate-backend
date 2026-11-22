@@ -185,4 +185,13 @@ describe('약관 동의·nextStep·내 정보', () => {
     await agree([{ type: 'TERMS', version: '2.0', agreed: true }]);
     expect((await authed('/test-terms')).statusCode).toBe(200);
   });
+
+  it('재동의 없이 선택 약관이 필수로 바뀌면 캐시와 상관없이 바로 막힌다', async () => {
+    expect((await authed('/test-terms')).statusCode).toBe(200);
+    await addPolicy(policy('MARKETING', '1.1', { required: true }));
+    expect((await authed('/test-terms')).statusCode).toBe(403);
+
+    await agree([{ type: 'MARKETING', version: '1.1', agreed: true }]);
+    expect((await authed('/test-terms')).statusCode).toBe(200);
+  });
 });
