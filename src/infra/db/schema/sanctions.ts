@@ -1,12 +1,4 @@
-import {
-  boolean,
-  datetime,
-  index,
-  int,
-  mysqlEnum,
-  mysqlTable,
-  varchar,
-} from 'drizzle-orm/mysql-core';
+import { datetime, index, int, mysqlEnum, mysqlTable, varchar } from 'drizzle-orm/mysql-core';
 import { SANCTION_TYPE } from '../../../common/enums.js';
 import { id, timestamps } from '../columns.js';
 import { binaryUuid } from '../uuid.js';
@@ -24,7 +16,6 @@ export const sanctions = mysqlTable(
     reason: varchar('reason', { length: 200 }).notNull(),
     suspendedUntil: datetime('suspended_until', { mode: 'date', fsp: 3 }),
     revokedXp: int('revoked_xp'),
-    excludeFromSeason: boolean('exclude_from_season').notNull().default(false),
     reportGroupId: varchar('report_group_id', { length: 100 }),
     adminId: binaryUuid('admin_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamps.createdAt,

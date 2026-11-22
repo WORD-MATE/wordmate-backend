@@ -1,4 +1,4 @@
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { desc, eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { AuditLogService } from '../../common/audit/audit-log.service.js';
@@ -31,6 +31,8 @@ const TYPE_NAMES = {
 
 @Injectable()
 export class AdminSanctionsService {
+  private readonly logger = new Logger(AdminSanctionsService.name);
+
   constructor(
     @Inject(DB) private readonly db: Database,
     private readonly audit: AuditLogService,
@@ -52,82 +54,97 @@ export class AdminSanctionsService {
     if (body.userId === admin.userId) throw SanctionErrors.self();
     const now = new Date();
     const sanctionId = newId();
-    const result = await this.db.transaction(async (tx) => {
-      const [user] = await tx.select().from(users).where(eq(users.id, body.userId)).for('update');
-      if (!user || user.status === 'WITHDRAWN') throw AdminUserErrors.userNotFound();
+    const suspends = body.type === 'SUSPEND' || body.type === 'BAN';
+    // 커밋과 차단 사이에 실패해 남은 토큰이 살아 있지 않도록 먼저 막고, 롤백되면 푼다
+    const [current] = await this.db
+      .select({ status: users.status })
+      .from(users)
+      .where(eq(users.id, body.userId));
+    const alreadySuspended = current?.status === 'SUSPENDED';
+    if (suspends) await this.blocks.block(body.userId);
+    const result = await this.db
+      .transaction(async (tx) => {
+        const [user] = await tx.select().from(users).where(eq(users.id, body.userId)).for('update');
+        if (!user || user.status === 'WITHDRAWN') throw AdminUserErrors.userNotFound();
 
-      let revokedXp: number | null = null;
-      if (body.type === 'XP_REVOKE') {
-        // 가진 것보다 많이 회수하지 않는다
-        revokedXp = Math.min(body.revokeXp ?? 0, user.totalXp);
-        if (revokedXp > 0) {
+        let revokedXp: number | null = null;
+        if (body.type === 'XP_REVOKE') {
+          // 가진 것보다 많이 회수하지 않는다
+          revokedXp = Math.min(body.revokeXp ?? 0, user.totalXp);
+          if (revokedXp > 0) {
+            await tx
+              .update(users)
+              .set({ totalXp: user.totalXp - revokedXp })
+              .where(eq(users.id, user.id));
+            const ledgerId = newId();
+            await tx.insert(xpLedger).values({
+              id: ledgerId,
+              userId: user.id,
+              source: 'ADMIN_ADJUST',
+              refKey: `sanction:${sanctionId}`,
+              amount: -revokedXp,
+              date: kstDate(now),
+            });
+          }
+        }
+        const until = body.type === 'SUSPEND' ? new Date(body.suspendedUntil as string) : null;
+        if (suspends) {
           await tx
             .update(users)
-            .set({ totalXp: user.totalXp - revokedXp })
+            .set({ status: 'SUSPENDED', suspendedUntil: until, suspendReason: body.reason })
             .where(eq(users.id, user.id));
-          const ledgerId = newId();
-          await tx.insert(xpLedger).values({
-            id: ledgerId,
-            userId: user.id,
-            source: 'ADMIN_ADJUST',
-            refKey: `sanction:${sanctionId}`,
-            amount: -revokedXp,
-            date: kstDate(now),
-          });
+          await this.sessions.revokeAll(user.id, tx);
         }
-      }
-      const suspends = body.type === 'SUSPEND' || body.type === 'BAN';
-      const until = body.type === 'SUSPEND' ? new Date(body.suspendedUntil as string) : null;
-      if (suspends) {
-        await tx
-          .update(users)
-          .set({ status: 'SUSPENDED', suspendedUntil: until, suspendReason: body.reason })
-          .where(eq(users.id, user.id));
-      }
-      await tx.insert(sanctions).values({
-        id: sanctionId,
-        userId: user.id,
-        type: body.type,
-        reason: body.reason,
-        suspendedUntil: until,
-        revokedXp,
-        excludeFromSeason: body.excludeFromSeason ?? false,
-        reportGroupId: body.reportGroupId ?? null,
-        adminId: admin.userId,
-      });
-      await this.audit.record(
-        {
-          actorId: admin.userId,
-          action: 'SANCTION_APPLY',
-          targetType: 'USER',
-          targetId: user.id,
-          detail: {
-            sanctionId,
-            type: body.type,
-            reason: body.reason,
-            suspendedUntil: until?.toISOString() ?? null,
-            revokedXp,
-            reportGroupId: body.reportGroupId ?? null,
+        await tx.insert(sanctions).values({
+          id: sanctionId,
+          userId: user.id,
+          type: body.type,
+          reason: body.reason,
+          suspendedUntil: until,
+          revokedXp,
+          reportGroupId: body.reportGroupId ?? null,
+          adminId: admin.userId,
+        });
+        await this.audit.record(
+          {
+            actorId: admin.userId,
+            action: 'SANCTION_APPLY',
+            targetType: 'USER',
+            targetId: user.id,
+            detail: {
+              sanctionId,
+              type: body.type,
+              reason: body.reason,
+              suspendedUntil: until?.toISOString() ?? null,
+              revokedXp,
+              reportGroupId: body.reportGroupId ?? null,
+            },
           },
-        },
-        request,
-        tx,
-      );
-      return { suspends, revokedXp };
-    });
+          request,
+          tx,
+        );
+        return { revokedXp };
+      })
+      .catch(async (error: unknown) => {
+        if (suspends && !alreadySuspended) {
+          await this.blocks.unblock(body.userId).catch(() => undefined);
+        }
+        throw error;
+      });
 
-    if (result.suspends) {
-      await this.blocks.block(body.userId);
-      await this.sessions.revokeAll(body.userId);
-    } else {
+    if (!suspends) {
       if (result.revokedXp) await this.ranking.adjustXp(body.userId, -result.revokedXp, now);
       const extra = result.revokedXp ? ` (XP ${result.revokedXp} 회수)` : '';
-      await this.notifications.notify([body.userId], {
-        type: 'SANCTION',
-        title: TYPE_NAMES[body.type],
-        body: `${body.reason}${extra}`,
-        route: '/notifications',
-      });
+      await this.notifications
+        .notify([body.userId], {
+          type: 'SANCTION',
+          title: TYPE_NAMES[body.type],
+          body: `${body.reason}${extra}`,
+          route: '/notifications',
+        })
+        .catch((error: unknown) =>
+          this.logger.warn(`제재 알림 실패 (${body.userId}): ${String(error)}`),
+        );
     }
     return { sanctionId };
   }

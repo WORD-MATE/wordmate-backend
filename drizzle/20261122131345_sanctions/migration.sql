@@ -5,7 +5,6 @@ CREATE TABLE `sanctions` (
 	`reason` varchar(200) NOT NULL,
 	`suspended_until` datetime(3),
 	`revoked_xp` int,
-	`exclude_from_season` boolean NOT NULL DEFAULT false,
 	`report_group_id` varchar(100),
 	`admin_id` binary(16),
 	`created_at` datetime(3) NOT NULL DEFAULT (CURRENT_TIMESTAMP(3)),

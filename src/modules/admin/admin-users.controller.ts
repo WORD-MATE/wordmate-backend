@@ -59,6 +59,7 @@ export class AdminUsersController {
   })
   @Patch(':userId/status')
   @HttpCode(204)
+  @Idempotent()
   async setStatus(
     @UserIdParam() userId: string,
     @ZodBody(SetUserStatus) body: z.infer<typeof SetUserStatus>,

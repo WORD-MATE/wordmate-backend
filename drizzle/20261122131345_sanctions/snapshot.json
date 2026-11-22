@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "mysql",
-  "id": "b42dc4c7-f79b-4ba2-96ad-3e57a90238bb",
+  "id": "0b0d562d-e397-481e-a18c-c90b7465ad57",
   "prevIds": [
     "56a5cf4a-353c-445d-9f23-2dde5fcfcdcf"
   ],
@@ -4234,20 +4234,6 @@
       "notNull": false,
       "autoIncrement": false,
       "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "sanctions",
-      "name": "exclude_from_season",
-      "type": "boolean",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": "false",
       "onUpdateNow": false,
       "onUpdateNowFsp": null,
       "charSet": null,

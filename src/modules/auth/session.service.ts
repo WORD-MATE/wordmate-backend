@@ -25,7 +25,7 @@ export interface Session {
   refreshToken: string;
 }
 
-type Executor = Pick<Database, 'insert'>;
+type Executor = Pick<Database, 'insert' | 'update'>;
 
 @Injectable()
 export class SessionService {
@@ -84,8 +84,8 @@ export class SessionService {
   }
 
   /** 정지할 때 그 사용자의 모든 기기에서 로그아웃한다 */
-  async revokeAll(userId: string): Promise<number> {
-    const [result] = await this.db
+  async revokeAll(userId: string, executor: Executor = this.db): Promise<number> {
+    const [result] = await executor
       .update(devices)
       .set({ revokedAt: new Date(), ...CLEARED_PUSH })
       .where(and(eq(devices.userId, userId), isNull(devices.revokedAt)));

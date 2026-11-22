@@ -15,7 +15,9 @@ import {
 } from '../src/infra/db/schema/index.js';
 import { newId } from '../src/infra/db/uuid.js';
 import { SessionService } from '../src/modules/auth/session.service.js';
+import { ACCOUNT_SUSPENDED_CLOSE_CODE } from '../src/modules/realtime/realtime.service.js';
 import { createTestApp, inject } from './support/create-test-app.js';
+import { connectAs } from './support/ws-client.js';
 
 describe('제재', () => {
   let app: NestFastifyApplication;
@@ -62,6 +64,7 @@ describe('제재', () => {
   beforeAll(async () => {
     app = await createTestApp();
     db = app.get(DB);
+    await app.listen(0, '127.0.0.1');
     admin = await makeUser({ role: 'TEACHER', isAdmin: true });
   });
 
@@ -109,6 +112,7 @@ describe('제재', () => {
   it('정지하면 모든 세션과 남은 액세스 토큰을 막고, 해제하면 다시 쓸 수 있다', async () => {
     const user = await makeUser();
     await app.get(SessionService).create(user.userId, 'IOS');
+    const socket = await connectAs(app, user);
     expect((await call(user, 'GET', '/users/me')).statusCode).toBe(200);
 
     const until = inAnHour();
@@ -130,6 +134,9 @@ describe('제재', () => {
     const blocked = await call(user, 'GET', '/users/me');
     expect(blocked.statusCode).toBe(403);
     expect(blocked.json().code).toBe('ACCOUNT_SUSPENDED');
+    // 이미 열린 연결은 다음 메시지에서 끊긴다
+    socket.send('PING');
+    expect(await socket.closed).toBe(ACCOUNT_SUSPENDED_CLOSE_CODE);
 
     const detail = (await call(admin, 'GET', `/admin/users/${user.userId}`)).json();
     expect(detail).toMatchObject({ status: 'SUSPENDED', suspendedUntil: until });

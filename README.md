@@ -692,9 +692,9 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 
 ### 제재
 
-- `POST /admin/sanctions`: 경고·XP 회수·정지(기간 필수)·영구 정지. 사유는 필수이고 사용자에게 안내됩니다. 자기 자신은 409 `ADMIN_SELF_ACTION`입니다.
+- `POST /admin/sanctions`(Idempotency-Key): 경고·XP 회수·정지(기간 필수)·영구 정지. 사유는 필수이고 사용자에게 안내됩니다. 자기 자신은 409 `ADMIN_SELF_ACTION`입니다.
   - 경고·XP 회수는 `SANCTION` 알림을 보냅니다. XP 회수는 가진 만큼만 `ADMIN_ADJUST`(음수)로 회수하고 랭킹에도 반영합니다.
-  - 정지·영구 정지는 계정을 `SUSPENDED`로 바꾸고 모든 기기에서 로그아웃시킵니다. 이미 받은 액세스 토큰도 Valkey 차단 표시(`auth:blocked:{userId}`, 토큰 수명만큼)로 바로 막습니다(403 `ACCOUNT_SUSPENDED`). 사유와 기간은 로그인할 때 안내됩니다.
+  - 정지·영구 정지는 계정을 `SUSPENDED`로 바꾸고 모든 기기에서 로그아웃시킵니다. 이미 받은 액세스 토큰도 Valkey 차단 표시(`auth:blocked:{userId}`, 토큰 수명만큼)로 바로 막고(403 `ACCOUNT_SUSPENDED`), 열린 WebSocket은 다음 메시지에서 끊습니다(닫힘 코드 4403). 차단 표시는 커밋 전에 두고 실패하면 지웁니다. Valkey가 응답하지 않으면 차단 확인은 통과시킵니다(리프레시는 계정 상태로 막힘). 사유와 기간은 로그인할 때 안내됩니다.
   - 정지 기간이 지나면 다음 로그인 때 활동 상태로 돌아옵니다.
 - `PATCH /admin/users/{userId}/status`: 정지는 제재와 같은 처리(기간이 없으면 영구 정지)이고, 해제(`ACTIVE`)는 정지와 차단 표시만 풉니다(409 `ADMIN_NOT_SUSPENDED`). 제재 이력은 사용자 상세에 최신순으로 나옵니다.
 

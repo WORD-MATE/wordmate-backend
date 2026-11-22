@@ -13,7 +13,6 @@ export const ApplySanction = z
     reason,
     suspendedUntil: future.optional().describe('SUSPEND만, 필수'),
     revokeXp: z.number().int().min(1).max(100_000).optional().describe('XP_REVOKE만, 필수'),
-    excludeFromSeason: z.boolean().optional().describe('이번 시즌 순위에서 제외'),
     reportGroupId: z.string().min(1).max(100).optional().describe('처리한 신고 묶음'),
   })
   .superRefine((body, ctx) => {
