@@ -690,6 +690,14 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 - 교사 담당 반은 교사가 직접 바꾸는 것과 같은 처리를 쓰고, 감사 로그 행위자는 관리자입니다.
 - XP 조정(`POST /admin/users/{userId}/xp-adjustments`, Idempotency-Key)은 한 번에 ±100,000까지, 사유 필수, 조정 뒤 0 미만이면 400 `ADMIN_XP_NEGATIVE`입니다. 원장에 `ADMIN_ADJUST`로 남고, 하루 상한을 적용하지 않으며 상한 계산과 결과 화면의 오늘 합계(`todayTotal`)에도 넣지 않습니다(XP 내역·랭킹 재구성에는 들어감). 랭킹은 0 아래로 내려가지 않게 조정하고 늘어날 때만 도달 시각을 바꿉니다.
 
+### 제재
+
+- `POST /admin/sanctions`: 경고·XP 회수·정지(기간 필수)·영구 정지. 사유는 필수이고 사용자에게 안내됩니다. 자기 자신은 409 `ADMIN_SELF_ACTION`입니다.
+  - 경고·XP 회수는 `SANCTION` 알림을 보냅니다. XP 회수는 가진 만큼만 `ADMIN_ADJUST`(음수)로 회수하고 랭킹에도 반영합니다.
+  - 정지·영구 정지는 계정을 `SUSPENDED`로 바꾸고 모든 기기에서 로그아웃시킵니다. 이미 받은 액세스 토큰도 Valkey 차단 표시(`auth:blocked:{userId}`, 토큰 수명만큼)로 바로 막습니다(403 `ACCOUNT_SUSPENDED`). 사유와 기간은 로그인할 때 안내됩니다.
+  - 정지 기간이 지나면 다음 로그인 때 활동 상태로 돌아옵니다.
+- `PATCH /admin/users/{userId}/status`: 정지는 제재와 같은 처리(기간이 없으면 영구 정지)이고, 해제(`ACTIVE`)는 정지와 차단 표시만 풉니다(409 `ADMIN_NOT_SUSPENDED`). 제재 이력은 사용자 상세에 최신순으로 나옵니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.
