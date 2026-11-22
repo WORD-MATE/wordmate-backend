@@ -21,6 +21,7 @@ import { PracticeModule } from './modules/practice/practice.module.js';
 import { RankingModule } from './modules/ranking/ranking.module.js';
 import { RealtimeModule } from './modules/realtime/realtime.module.js';
 import { RecordsModule } from './modules/records/records.module.js';
+import { ReportsModule } from './modules/reports/reports.module.js';
 import { StudyModule } from './modules/study/study.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { WordsModule } from './modules/words/words.module.js';
@@ -56,6 +57,7 @@ import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
     NotificationsModule,
     FriendsModule,
     BlocksModule,
+    ReportsModule,
     PoliciesModule,
     UsersModule,
   ],
