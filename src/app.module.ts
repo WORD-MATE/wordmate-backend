@@ -28,6 +28,7 @@ import { RecordsModule } from './modules/records/records.module.js';
 import { ReportsModule } from './modules/reports/reports.module.js';
 import { ScheduledNotificationsModule } from './modules/scheduled-notifications/scheduled-notifications.module.js';
 import { StudyModule } from './modules/study/study.module.js';
+import { SupportModule } from './modules/support/support.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { WordsModule } from './modules/words/words.module.js';
 import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
@@ -68,6 +69,7 @@ import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
     BadgesModule,
     ScheduledNotificationsModule,
     AdminModule,
+    SupportModule,
     PoliciesModule,
     UsersModule,
   ],

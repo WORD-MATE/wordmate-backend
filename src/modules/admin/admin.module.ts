@@ -6,10 +6,12 @@ import { ForbiddenWordsModule } from '../forbidden-words/forbidden-words.module.
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { PoliciesModule } from '../policies/policies.module.js';
 import { RankingModule } from '../ranking/ranking.module.js';
+import { SupportModule } from '../support/support.module.js';
 import { UsersModule } from '../users/users.module.js';
 import { AdminAppConfigController } from './admin-app-config.controller.js';
 import { AdminAuditLogsController } from './admin-audit-logs.controller.js';
 import { AdminAuditLogsService } from './admin-audit-logs.service.js';
+import { AdminFaqsController } from './admin-faqs.controller.js';
 import { AdminForbiddenWordsController } from './admin-forbidden-words.controller.js';
 import { AdminForbiddenWordsService } from './admin-forbidden-words.service.js';
 import { AdminPoliciesController } from './admin-policies.controller.js';
@@ -30,11 +32,13 @@ import { AdminUsersService } from './admin-users.service.js';
     NotificationsModule,
     PoliciesModule,
     RankingModule,
+    SupportModule,
     UsersModule,
   ],
   controllers: [
     AdminAppConfigController,
     AdminAuditLogsController,
+    AdminFaqsController,
     AdminForbiddenWordsController,
     AdminPoliciesController,
     AdminReportsController,
