@@ -714,6 +714,11 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 - `GET/PUT /admin/app-config`: 점검 모드(켜기·문구·끝나는 시각), 플랫폼별 최소·최신 버전, 스토어 주소를 통째로 바꿉니다. 버전 형식과 최소 ≤ 최신을 검사합니다(400). 바꾸면 감사 로그에 이전·이후 값이 남고, 서버마다 5초 캐시라 모든 서버에 5초 안에 반영됩니다.
 - 점검 중에도 관리자는 모든 API를 쓸 수 있어 점검을 풀 수 있습니다(`GET /app/status`와 로그인도 열려 있음).
 
+### 약관 버전
+
+- `GET /admin/policies`(시행 전 버전 포함)와 `POST /admin/policies`(종류·버전·제목·내용·시행일·재동의 필요 여부). 시행일은 지금 이후만 받고, 필수 여부를 비우면 같은 종류의 직전 버전을 따릅니다. 같은 종류에 같은 버전은 409 `POLICY_VERSION_EXISTS`입니다.
+- 시행일이 되면 현재 약관이 되고, 재동의가 필요한 버전이면 그 뒤 첫 요청부터 약관 재동의를 안내합니다(서버마다 약관 캐시 1분). 고지 공지(시행 7일 전, 불리한 변경은 30일 전)는 공지로 따로 등록합니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.
