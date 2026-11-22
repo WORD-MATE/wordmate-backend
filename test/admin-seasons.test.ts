@@ -291,7 +291,8 @@ describe('관리자 시즌 관리', () => {
   });
 
   it('실패한 시즌을 다시 마감하면 저장된 제외 대상을 반영해 스냅샷을 만든다', async () => {
-    const at = new Date('2001-02-10T00:00:00Z');
+    // 점수의 도달 시각은 기준점(2026년) 뒤여야 XP가 그대로 읽힌다. 키의 기간과는 상관없다
+    const at = new Date('2026-02-10T00:00:00Z');
     for (const key of MONTH_KEYS) {
       await valkey.zadd(
         key,

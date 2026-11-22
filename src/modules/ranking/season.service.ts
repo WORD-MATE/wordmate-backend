@@ -145,7 +145,9 @@ export class SeasonService {
     const excluded = new Set(exclusions.map((e) => e.userId));
     const byScope = new Map<string, SnapshotMember[]>();
     for (const member of members) {
-      byScope.set(member.scope, [...(byScope.get(member.scope) ?? []), member]);
+      const scoped = byScope.get(member.scope);
+      if (scoped) scoped.push(member);
+      else byScope.set(member.scope, [member]);
     }
     const rows = [...byScope.values()].flatMap((scoped) =>
       snapshotRanks(scoped, excluded).map((member) => ({ seasonId, ...member })),
