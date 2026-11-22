@@ -40,6 +40,7 @@ export const AUDIT_ACTION = [
   'MORNING_UPDATE',
   'MORNING_PUBLISH',
   'MORNING_UNPUBLISH',
+  'JOB_RUN',
 ] as const;
 export type AuditAction = Values<typeof AUDIT_ACTION>;
 
@@ -255,11 +256,22 @@ export type SeasonPeriod = Values<typeof SEASON_PERIOD>;
 export const SEASON_STATUS = ['CLOSED_PENDING', 'CONFIRMED', 'FAILED'] as const;
 export type SeasonStatus = Values<typeof SEASON_STATUS>;
 
+/** 관리자가 상태를 보고 직접 실행할 수 있는 정기 작업 */
 export const JOB = [
-  'DATAGSM_SYNC',
+  'EXPIRE_STUDY_SESSIONS',
+  'DAILY_CLEANUP',
   'SEASON_CLOSE',
+  'CHALLENGE_GENERATE',
   'STUDY_REMINDER',
   'MORNING_PUBLISH',
-  'RANKING_SNAPSHOT',
+  'MORNING_SENTENCE',
+  'RANK_WEEKLY_RESULT',
+  'RANK_DROP',
 ] as const;
+
+export const JOB_RUN_STATUS = ['RUNNING', 'SUCCEEDED', 'FAILED'] as const;
+export type JobRunStatus = Values<typeof JOB_RUN_STATUS>;
+
+export const JOB_TRIGGER = ['SCHEDULE', 'MANUAL'] as const;
+export type JobTrigger = Values<typeof JOB_TRIGGER>;
 export type Job = Values<typeof JOB>;

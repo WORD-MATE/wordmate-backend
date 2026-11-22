@@ -1,4 +1,5 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { Job } from 'bullmq';
 import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessTokenService } from '../src/common/auth/access-token.service.js';
@@ -15,7 +16,10 @@ import {
   xpLedger,
 } from '../src/infra/db/schema/index.js';
 import { newId } from '../src/infra/db/uuid.js';
-import { ChallengeProcessor } from '../src/modules/challenges/challenge.processor.js';
+import {
+  ChallengeProcessor,
+  GENERATE_CHALLENGE,
+} from '../src/modules/challenges/challenge.processor.js';
 import { createTestApp, inject } from './support/create-test-app.js';
 
 type Question = { index: number; prompt: string; choices: string[] };
@@ -238,7 +242,9 @@ describe('오늘의 챌린지', () => {
     const date = kstDate(new Date(Date.now() + 60 * 60 * 1000));
     await db.delete(challengeAttempts).where(eq(challengeAttempts.date, date));
     await db.delete(dailyChallenges).where(eq(dailyChallenges.date, date));
-    expect(await app.get(ChallengeProcessor).process()).toBe(date);
+    expect(await app.get(ChallengeProcessor).process({ name: GENERATE_CHALLENGE } as Job)).toBe(
+      date,
+    );
     const [created] = await db.select().from(dailyChallenges).where(eq(dailyChallenges.date, date));
     expect(created?.questions).toHaveLength(10);
   });

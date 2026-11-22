@@ -1,6 +1,8 @@
 import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import type { Job, Queue } from 'bullmq';
+import { jobOf, triggerOf } from '../jobs/job-registry.js';
+import { JobRunsService } from '../jobs/job-runs.service.js';
 import { MaintenanceService } from './maintenance.service.js';
 
 export const MAINTENANCE_QUEUE = 'maintenance';
@@ -21,6 +23,7 @@ export class MaintenanceProcessor extends WorkerHost implements OnApplicationBoo
   constructor(
     @InjectQueue(MAINTENANCE_QUEUE) private readonly queue: Queue,
     private readonly maintenance: MaintenanceService,
+    private readonly runs: JobRunsService,
   ) {
     super();
   }
@@ -51,7 +54,10 @@ export class MaintenanceProcessor extends WorkerHost implements OnApplicationBoo
   }
 
   async process(job: Job): Promise<Record<string, number>> {
-    const result = await this.run(job.name);
+    const name = jobOf(MAINTENANCE_QUEUE, job.name);
+    const result = name
+      ? await this.runs.track(name, triggerOf(job.data), () => this.run(job.name))
+      : await this.run(job.name);
     this.logger.log(`${job.name} ${JSON.stringify(result)}`);
     return result;
   }
@@ -67,6 +73,7 @@ export class MaintenanceProcessor extends WorkerHost implements OnApplicationBoo
           purgedPractices: await this.maintenance.purgePracticeSessions(),
           purgedNotifications: await this.maintenance.purgeNotifications(),
           purgedFavorites: await this.maintenance.purgeDeletedWordFavorites(),
+          purgedJobRuns: await this.maintenance.purgeJobRuns(),
         };
       default:
         // 같은 큐에 작업을 추가하고 여기 처리를 빠뜨리면 조용히 다른 작업이 돌지 않게 실패시킨다

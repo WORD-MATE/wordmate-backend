@@ -1,6 +1,8 @@
 import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import type { Job, Queue } from 'bullmq';
+import { triggerOf } from '../jobs/job-registry.js';
+import { JobRunsService } from '../jobs/job-runs.service.js';
 import { type CloseResult, SeasonService } from './season.service.js';
 
 export const RANKING_QUEUE = 'ranking';
@@ -13,6 +15,7 @@ export class RankingProcessor extends WorkerHost implements OnApplicationBootstr
   constructor(
     @InjectQueue(RANKING_QUEUE) private readonly queue: Queue,
     private readonly seasons: SeasonService,
+    private readonly runs: JobRunsService,
   ) {
     super();
   }
@@ -31,7 +34,14 @@ export class RankingProcessor extends WorkerHost implements OnApplicationBootstr
 
   async process(job: Job): Promise<CloseResult> {
     if (job.name !== CLOSE_SEASONS_JOB) throw new Error(`알 수 없는 랭킹 작업: ${job.name}`);
-    const result = await this.seasons.closeEnded();
+    const result = await this.runs.track('SEASON_CLOSE', triggerOf(job.data), async () => {
+      const closed = await this.seasons.closeEnded();
+      // 실패한 시즌은 다음 시각에 다시 시도하지만, 실패로 남겨 관리자에게 알린다
+      if (closed.failed.length > 0) {
+        throw new Error(`시즌 마감 실패: ${closed.failed.join(', ')}`);
+      }
+      return closed;
+    });
     if (result.confirmed.length > 0 || result.failed.length > 0) {
       this.logger.log(`${job.name} ${JSON.stringify(result)}`);
     }

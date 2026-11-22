@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import {
+  jobRuns,
   notifications,
   practiceSessions,
   studySessions,
@@ -14,6 +15,9 @@ import { NOTIFICATION_RETENTION_DAYS } from '../notifications/notification-rules
 export const ENDED_SESSION_RETENTION_DAYS = 7;
 const BATCH = 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** 정기 작업 실행 기록 보관 기간 */
+const JOB_RUN_RETENTION_DAYS = 7;
 
 /** 한 번에 오래 잠그지 않도록 BATCH개씩 끝날 때까지 반복한다 */
 async function inBatches(run: () => Promise<number>): Promise<number> {
@@ -95,6 +99,26 @@ export class MaintenanceService {
       const [result] = await this.db.delete(notifications).where(
         inArray(
           notifications.id,
+          rows.map((row) => row.id),
+        ),
+      );
+      return result.affectedRows;
+    });
+  }
+
+  /** 정기 작업 실행 기록은 7일만 둔다 (학습 리마인더가 매분 돌아 많이 쌓인다) */
+  async purgeJobRuns(now = new Date()): Promise<number> {
+    const before = new Date(now.getTime() - JOB_RUN_RETENTION_DAYS * DAY_MS);
+    return inBatches(async () => {
+      const rows = await this.db
+        .select({ id: jobRuns.id })
+        .from(jobRuns)
+        .where(lt(jobRuns.startedAt, before))
+        .limit(BATCH);
+      if (rows.length === 0) return 0;
+      const [result] = await this.db.delete(jobRuns).where(
+        inArray(
+          jobRuns.id,
           rows.map((row) => row.id),
         ),
       );

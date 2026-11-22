@@ -1,6 +1,8 @@
 import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import type { Job, Queue } from 'bullmq';
+import { jobOf, triggerOf } from '../jobs/job-registry.js';
+import { JobRunsService } from '../jobs/job-runs.service.js';
 import { ScheduledNotificationsService } from './scheduled-notifications.service.js';
 
 export const SCHEDULED_NOTIFICATIONS_QUEUE = 'scheduled-notifications';
@@ -22,6 +24,7 @@ export class ScheduledNotificationsProcessor extends WorkerHost implements OnApp
   constructor(
     @InjectQueue(SCHEDULED_NOTIFICATIONS_QUEUE) private readonly queue: Queue,
     private readonly scheduled: ScheduledNotificationsService,
+    private readonly runs: JobRunsService,
   ) {
     super();
   }
@@ -53,7 +56,8 @@ export class ScheduledNotificationsProcessor extends WorkerHost implements OnApp
     };
     const run = runs[job.name as JobName];
     if (!run) throw new Error(`알 수 없는 예약 알림 작업: ${job.name}`);
-    const count = await run();
+    const name = jobOf(SCHEDULED_NOTIFICATIONS_QUEUE, job.name);
+    const count = name ? await this.runs.track(name, triggerOf(job.data), run) : await run();
     if (count > 0 && job.name !== 'study-reminder') this.logger.log(`${job.name} ${count}`);
     return count;
   }
