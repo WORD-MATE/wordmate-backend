@@ -206,6 +206,7 @@ describe('정리 작업', () => {
       'purgedNotifications',
       'purgedPractices',
       'purgedSessions',
+      'purgedWithdrawnSuspensions',
     ]);
     await expect(processor.process({ name: 'unknown-job' } as Job)).rejects.toThrow('unknown-job');
     expect(

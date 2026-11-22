@@ -1,11 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, lt, lte, sql } from 'drizzle-orm';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import {
   jobRuns,
   notifications,
   practiceSessions,
   studySessions,
+  withdrawnSuspensions,
   wordFavorites,
   words,
 } from '../../infra/db/schema/index.js';
@@ -124,6 +125,14 @@ export class MaintenanceService {
       );
       return result.affectedRows;
     });
+  }
+
+  /** 정지 기간이 끝난 탈퇴자의 DataGSM 식별값은 더 둘 이유가 없다 (영구 정지는 남긴다) */
+  async purgeWithdrawnSuspensions(now = new Date()): Promise<number> {
+    const [result] = await this.db
+      .delete(withdrawnSuspensions)
+      .where(lte(withdrawnSuspensions.suspendedUntil, now));
+    return result.affectedRows;
   }
 
   /** 삭제된 단어의 즐겨찾기는 목록에 나오지 않으므로 지운다 */

@@ -10,11 +10,12 @@ import type { NextStep, Platform } from '../../common/enums.js';
 import { CommonErrors } from '../../common/errors/app-exception.js';
 import type { Env } from '../../config/env.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
-import { classes, type User, users } from '../../infra/db/schema/index.js';
+import { classes, type User, users, withdrawnSuspensions } from '../../infra/db/schema/index.js';
 import { RankingService } from '../ranking/ranking.service.js';
 import { type Me, toMe } from '../users/me.schema.js';
 import { NextStepService } from '../users/next-step.service.js';
 import { TeacherClassService } from '../users/teacher-class.service.js';
+import { suspensionActive } from '../withdrawal/withdrawal-rules.js';
 import { DataGsmClient, type DataGsmProfile } from './datagsm/datagsm.client.js';
 import { SessionService } from './session.service.js';
 
@@ -56,6 +57,7 @@ export class AuthService {
     const datagsmToken = await this.datagsm.exchangeCode(input);
     const profile = await this.datagsm.getProfile(datagsmToken);
     if (profile.pending) throw AuthErrors.accountInactive('DATAGSM_PENDING');
+    await this.assertNotWithdrawnWhileSuspended(profile.datagsmId);
 
     const user = await this.syncUser(profile);
     const session = await this.sessions.create(user.id, platform);
@@ -168,6 +170,17 @@ export class AuthService {
     }
     this.assertActive(user);
     return user;
+  }
+
+  /** 정지 중에 탈퇴했으면 정지 기간이 끝날 때까지 새로 가입하지 못한다 (끝난 행은 정리 작업이 지운다) */
+  private async assertNotWithdrawnWhileSuspended(datagsmId: string): Promise<void> {
+    const [row] = await this.db
+      .select({ suspendedUntil: withdrawnSuspensions.suspendedUntil })
+      .from(withdrawnSuspensions)
+      .where(eq(withdrawnSuspensions.datagsmId, datagsmId));
+    if (row && suspensionActive(row.suspendedUntil, new Date())) {
+      throw AuthErrors.withdrawnSuspended(row.suspendedUntil);
+    }
   }
 
   private assertActive(user: User): void {
