@@ -39,6 +39,8 @@ export const users = mysqlTable(
     index('users_class_idx').on(t.grade, t.classNo, t.number),
     index('users_status_idx').on(t.status),
     index('users_name_idx').on(t.name),
+    // 마지막 관리자 확인에서 관리자 행만 잠그게 한다
+    index('users_admin_idx').on(t.isAdmin),
   ],
 );
 

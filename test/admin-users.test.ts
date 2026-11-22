@@ -1,5 +1,5 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessTokenService } from '../src/common/auth/access-token.service.js';
@@ -73,7 +73,8 @@ describe('관리자 사용자 관리', () => {
 
   it('학번·이름으로 찾고 상세를 보며, 조회도 감사 로그에 남는다', async () => {
     const studentNumber = `9${newId().replace(/\D/g, '').slice(-3)}`;
-    const target = await makeUser({ studentNumber, name: '찾을학생가나' });
+    const tag = newId().slice(-6);
+    const target = await makeUser({ studentNumber, name: `찾을학생${tag}` });
     const byNumber = (
       await call(admin, 'GET', `/admin/users?q=${studentNumber.slice(0, 3)}`)
     ).json();
@@ -81,7 +82,11 @@ describe('관리자 사용자 관리', () => {
       target.userId,
     );
     const byName = (
-      await call(admin, 'GET', `/admin/users?q=${encodeURIComponent('찾을학생')}&role=STUDENT`)
+      await call(
+        admin,
+        'GET',
+        `/admin/users?q=${encodeURIComponent(`찾을학생${tag}`)}&role=STUDENT`,
+      )
     ).json();
     expect(byName.items).toEqual([
       expect.objectContaining({
@@ -173,7 +178,11 @@ describe('관리자 사용자 관리', () => {
     });
     expect((await call(admin, 'POST', url, { delta: 10 })).statusCode).toBe(400);
 
-    const ledger = await db.select().from(xpLedger).where(eq(xpLedger.userId, student.userId));
+    const ledger = await db
+      .select()
+      .from(xpLedger)
+      .where(eq(xpLedger.userId, student.userId))
+      .orderBy(asc(xpLedger.id));
     expect(ledger.map((l) => [l.source, l.amount])).toEqual([
       ['ADMIN_ADJUST', 600],
       ['ADMIN_ADJUST', -100],

@@ -56,8 +56,8 @@ export const XpAdjustment = z
     delta: z
       .number()
       .int()
-      .min(-1_000_000)
-      .max(1_000_000)
+      .min(-100_000)
+      .max(100_000)
       .refine((value) => value !== 0, '0은 조정할 수 없습니다.')
       .describe('양수 적립, 음수 차감'),
     reason: z.string().trim().min(1).max(200),
