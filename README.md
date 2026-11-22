@@ -765,7 +765,8 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 - 목록에서 빠진 학생은 DataGSM 오류일 수 있어 휴면 처리하지 않습니다. 정지된 학생은 학적만 바꾸고 상태는 그대로, 탈퇴한 사용자는 건드리지 않습니다.
 - 재학생의 반이 `classes`에 없으면 만듭니다.
 - 학년·반이 바뀌면 이번 주·이번 달·전체 랭킹 점수를 옛 학년·반 키에서 새 키로 옮깁니다(학교 키 점수 기준). 동기화 전에 로그인해서 바뀐 경우도 로그인에서 옮깁니다.
-- 사용자마다 행을 잠근 트랜잭션으로 바꾸고, 200명씩 나눠 맞춥니다. 결과(`fetched`, `matched`, `updated`, `deactivated`, `reactivated`, `classesCreated`, `skipped`, `failed`)는 `job_runs.result`에 남습니다. `skipped`는 탈퇴한 사용자와 학번이 비어 학적을 그대로 둔 학생 수입니다. 한 사용자 반영이 실패해도 나머지는 끝까지 반영하고, 실패한 사용자가 있으면 건수를 담아 실패로 남깁니다.
+- 사용자마다 행을 잠근 트랜잭션으로 바꾸고, 200명씩 나눠 맞춥니다. 결과(`fetched`, `matched`, `updated`, `deactivated`, `reactivated`, `classesCreated`, `skipped`, `failed`)는 `job_runs.result`에 남고, 일부 사용자가 실패하면 같은 건수가 `job_runs.error` 메시지에 담깁니다. `skipped`는 탈퇴한 사용자와 학년·반·번호가 비어 학적을 그대로 둔 학생 수입니다. DataGSM 응답에서 형식이 틀린 학생은 건너뛰고 경고 로그만 남깁니다. 로그인도 학년·반·번호가 다 있을 때만 학적을 바꿉니다.
+  - 알려진 한계: 동기화가 학년·반을 옮기는 바로 그 순간에 XP가 더해지면 그 XP가 옛 반 점수에 남을 수 있고(학교 점수는 정확, `pnpm ranking:rebuild`로 복구), 동기화 도중 로그인한 학생은 시작할 때 받은 목록 값으로 다시 덮일 수 있습니다(다음 로그인·동기화 때 바로잡힘). 한 사용자 반영이 실패해도 나머지는 끝까지 반영하고, 실패한 사용자가 있으면 건수를 담아 실패로 남깁니다.
 - `DATAGSM_API_KEY`가 없으면 경고 로그만 남기고 성공(`{ disabled: true }`)으로 끝냅니다. DataGSM 요청이 하나라도 실패하면 아무것도 바꾸지 않고 실패로 남깁니다. 실패하면 관리자에게 알립니다.
 
 ## 고객지원

@@ -29,10 +29,12 @@ const UserInfo = z.object({
   teacher: z.object({ name: z.string() }).nullish(),
 });
 
+const ListedStudent = Student.extend({ id: z.number().int() });
+
 const StudentPage = z.object({
   data: z.object({
     totalPages: z.number().int(),
-    students: z.array(Student.extend({ id: z.number().int() })),
+    students: z.array(z.unknown()),
   }),
 });
 
@@ -154,7 +156,18 @@ export class DataGsmClient {
       if (!response.ok) throw new Error(`DataGSM 학생 목록 응답 HTTP ${response.status}`);
       const parsed = StudentPage.safeParse(await response.json().catch(() => null));
       if (!parsed.success) throw new Error('DataGSM 학생 목록 응답 형식이 다릅니다.');
-      students.push(...parsed.data.data.students.map(toStudent));
+      // 형식이 틀린 학생 하나 때문에 전체 동기화가 매일 실패하지 않게 그 학생만 건너뛴다
+      let invalid = 0;
+      for (const item of parsed.data.data.students) {
+        const student = ListedStudent.safeParse(item);
+        if (student.success) students.push(toStudent(student.data));
+        else invalid++;
+      }
+      if (invalid > 0) {
+        this.logger.warn(
+          `DataGSM 학생 목록 ${page + 1}페이지에서 형식이 틀린 ${invalid}명을 건너뜀`,
+        );
+      }
       if (page + 1 >= parsed.data.data.totalPages) return students;
     }
     throw new Error(`DataGSM 학생 목록이 ${MAX_STUDENT_PAGES}페이지를 넘습니다.`);
