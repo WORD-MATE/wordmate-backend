@@ -3,6 +3,7 @@ export * from './badges.js';
 export * from './battles.js';
 export * from './classes.js';
 export * from './devices.js';
+export * from './job-runs.js';
 export * from './missions.js';
 export * from './morning.js';
 export * from './notifications.js';
