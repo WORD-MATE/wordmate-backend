@@ -124,10 +124,18 @@ describe('관리자 금칙어', () => {
     await db.insert(forbiddenWords).values({ id: newId(), type: 'FORBIDDEN', word });
     // 캐시가 남아 있으면 아직 통과한다
     await expect(service.assertClean({ name: word })).resolves.toBeUndefined();
-    await app.get<Redis>(VALKEY).incr('forbidden-words:version');
-    await expect(service.assertClean({ name: word })).rejects.toMatchObject({
-      code: 'FORBIDDEN_WORD',
-    });
+    await app.get<Redis>(VALKEY).set('forbidden-words:version', newId());
+    // 버전은 1초에 한 번만 확인하므로 곧 반영된다
+    await expect
+      .poll(
+        () =>
+          service.assertClean({ name: word }).then(
+            () => 'clean',
+            (error: { code?: string }) => error.code,
+          ),
+        { timeout: 5_000, interval: 300 },
+      )
+      .toBe('FORBIDDEN_WORD');
   });
 
   it('관리자만 쓸 수 있다', async () => {

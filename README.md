@@ -707,7 +707,7 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 ### 금칙어 관리
 
 - `GET/POST /admin/forbidden-words`, `PATCH/DELETE /admin/forbidden-words/{wordId}`: 금칙어(`FORBIDDEN`)와 오탐 방지용 허용 단어(`ALLOWED`). 앞뒤 공백을 지우고, 같은 종류에 같은 단어는 409 `ADMIN_FORBIDDEN_WORD_DUPLICATE`입니다. 등록한 관리자와 감사 로그가 남습니다.
-- 바꾸면 Valkey의 `forbidden-words:version`을 올립니다. 서버마다 가진 금칙어 캐시는 검사할 때 이 버전을 보고 바뀌었으면 다시 읽어, 모든 서버에 바로 반영됩니다(Valkey를 읽지 못하면 1분 만료로 갱신).
+- 바꾸면 Valkey의 `forbidden-words:version`을 새 무작위 값으로 바꿉니다. 서버마다 가진 금칙어 캐시는 이 버전을 1초에 한 번 확인해 바뀌었으면 다시 읽습니다(바꾼 서버는 즉시, 다른 서버는 1초 안에 반영). 버전을 읽지 못하면 5초 동안 다시 묻지 않고 1분 만료로 갱신합니다.
 
 ## 정리 작업
 
