@@ -83,6 +83,15 @@ export class SessionService {
     if (token) await this.revoke(token.deviceId);
   }
 
+  /** 정지할 때 그 사용자의 모든 기기에서 로그아웃한다 */
+  async revokeAll(userId: string): Promise<number> {
+    const [result] = await this.db
+      .update(devices)
+      .set({ revokedAt: new Date(), ...CLEARED_PUSH })
+      .where(and(eq(devices.userId, userId), isNull(devices.revokedAt)));
+    return result.affectedRows;
+  }
+
   async revoke(deviceId: string): Promise<void> {
     await this.db
       .update(devices)

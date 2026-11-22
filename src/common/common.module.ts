@@ -6,6 +6,7 @@ import { VALKEY } from '../infra/valkey/valkey.module.js';
 import { AppConfigService } from './app-config/app-config.service.js';
 import { AuditLogService } from './audit/audit-log.service.js';
 import { AccessTokenService } from './auth/access-token.service.js';
+import { AccountBlockService } from './auth/account-block.service.js';
 import { AuthGuard } from './auth/auth.guard.js';
 import { AuthenticationGuard } from './auth/authentication.guard.js';
 import { ClientGuard } from './client/client.guard.js';
@@ -27,6 +28,7 @@ import { ValkeyThrottlerStorage } from './rate-limit/valkey-throttler.storage.js
   providers: [
     AppConfigService,
     AccessTokenService,
+    AccountBlockService,
     AuditLogService,
     { provide: APP_GUARD, useClass: AuthenticationGuard },
     { provide: APP_GUARD, useClass: AppThrottlerGuard },
@@ -34,6 +36,6 @@ import { ValkeyThrottlerStorage } from './rate-limit/valkey-throttler.storage.js
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
   ],
-  exports: [AppConfigService, AccessTokenService, AuditLogService],
+  exports: [AppConfigService, AccessTokenService, AccountBlockService, AuditLogService],
 })
 export class CommonModule {}
