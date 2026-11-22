@@ -1,4 +1,11 @@
-import { HttpStatus, Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import {
+  type BeforeApplicationShutdown,
+  HttpStatus,
+  Inject,
+  Injectable,
+  Logger,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { and, asc, eq, gte, isNull } from 'drizzle-orm';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { AppException } from '../../common/errors/app-exception.js';
@@ -8,7 +15,12 @@ import { RealtimeService } from '../realtime/realtime.service.js';
 import { BattleQueue } from './battle.queue.js';
 import type { CreateRoom } from './battle.schemas.js';
 import { LobbyService } from './lobby.service.js';
-import { type EnqueueResult, MATCH_TIMEOUT_MS, MatchQueue } from './match-queue.js';
+import {
+  type EnqueueResult,
+  MATCH_TIMEOUT_MS,
+  MatchQueue,
+  PENDING_STALE_MS,
+} from './match-queue.js';
 import { MIN_BATTLE_WORDS, RoomsService } from './rooms.service.js';
 
 /** 빠른 매칭 기본 설정: 기본 단어팩, 한→영 4지선다, 10문항, 10초, 1:1 */
@@ -56,8 +68,9 @@ export const MatchErrors = {
 export type MatchTicket = { queuedAt: string; timeoutAt: string };
 
 @Injectable()
-export class MatchmakingService implements OnModuleInit {
+export class MatchmakingService implements OnModuleInit, BeforeApplicationShutdown {
   private readonly logger = new Logger(MatchmakingService.name);
+  private readonly inFlight = new Set<Promise<void>>();
 
   constructor(
     @Inject(DB) private readonly db: Database,
@@ -100,13 +113,43 @@ export class MatchmakingService implements OnModuleInit {
     // 성사된 뒤의 방 만들기·시작은 응답을 기다리게 하지 않는다 (결과는 MATCH_FOUND로 간다).
     // 동시에 많이 성사돼도 요청이 DB 연결을 기다리며 쌓이지 않는다
     const waiting = { userId: user.userId, xp, now, excluded };
-    void this.completePairing(waiting, first, pack).catch(async (error: unknown) => {
-      this.logger.error(`빠른 매칭 성사 처리 실패 (${user.userId}): ${String(error)}`);
-      // 기다리던 상대는 pair()가 되돌렸으므로 요청한 사람도 다시 줄 세운다
-      await this.matchQueue.requeue(user.userId, xp, now).catch(() => {});
-      await this.scheduleTimeout(user.userId, now);
-    });
+    const running = this.completePairing(waiting, first, pack)
+      .catch(async (error: unknown) => {
+        this.logger.error(`빠른 매칭 성사 처리 실패 (${user.userId}): ${String(error)}`);
+        await this.requeueOrDrop(waiting);
+      })
+      .finally(() => this.inFlight.delete(running));
+    this.inFlight.add(running);
     return ticket;
+  }
+
+  /** 배포 등으로 꺼질 때 진행 중인 성사 처리를 끝낸 뒤 DB·Valkey 연결이 닫히게 한다 */
+  async beforeApplicationShutdown(): Promise<void> {
+    await Promise.allSettled([...this.inFlight]);
+  }
+
+  /**
+   * 처리에 실패하면 원래 대기 시각으로 다시 줄 세운다(처리 중 표시도 함께 지운다).
+   * 그사이 직접 다른 방에 들어갔으면 줄 세우지 않고 표시만 지운다
+   */
+  private async requeueOrDrop(waiting: { userId: string; xp: number; now: number }): Promise<void> {
+    try {
+      if (await this.isFree(waiting.userId)) {
+        await this.matchQueue.requeue(waiting.userId, waiting.xp, waiting.now);
+        await this.scheduleTimeout(waiting.userId, waiting.now);
+      } else {
+        await this.matchQueue.clearFound([waiting.userId]);
+      }
+    } catch (error) {
+      this.logger.warn(`빠른 매칭 대기 복구 실패 (${waiting.userId}): ${String(error)}`);
+    }
+  }
+
+  private async isFree(userId: string): Promise<boolean> {
+    return this.rooms.assertFree(userId).then(
+      () => true,
+      () => false,
+    );
   }
 
   /** 짝지은 상대를 쓸 수 없으면(연결이 끊겼거나 그사이 다른 방에 들어감) 빼고 다음 대기자를 본다 */
@@ -125,16 +168,22 @@ export class MatchmakingService implements OnModuleInit {
       if (await this.pair(result.opponentId, result.opponentQueuedAt, waiting.userId, pack)) {
         return;
       }
+      // 그사이 직접 다른 방에 들어갔으면 더 찾지 않는다
+      if (!(await this.isFree(waiting.userId))) {
+        await this.matchQueue.clearFound([waiting.userId]);
+        return;
+      }
+      // 처리 중 표시는 그대로 둔 채(취소 요청이 사이에 끼어도 처리 중으로 보이게) 다음 대기자를 본다
       result = await this.matchQueue.enqueue(
         waiting.userId,
         waiting.xp,
         waiting.now,
         waiting.excluded,
+        true,
       );
     }
     // 계속 실패하면 대기만 한다 (다음에 들어오는 사람과 짝지어진다)
-    await this.matchQueue.requeue(waiting.userId, waiting.xp, waiting.now);
-    await this.scheduleTimeout(waiting.userId, waiting.now);
+    await this.requeueOrDrop(waiting);
   }
 
   /**
@@ -146,7 +195,8 @@ export class MatchmakingService implements OnModuleInit {
       const result = await this.matchQueue.cancel(user.userId);
       if (result.kind === 'CANCELLED') return;
       if (result.kind === 'NONE') throw MatchErrors.notQueued();
-      if (result.kind === 'FOUND' || waited >= PENDING_WAIT_MS) {
+      const stale = result.kind === 'PENDING' && Date.now() - result.since > PENDING_STALE_MS;
+      if (result.kind === 'FOUND' || stale) {
         const room = await this.rooms.activeRoomOf(user.userId);
         if (room && (result.kind !== 'FOUND' || room.roomId === result.roomId)) {
           throw MatchErrors.alreadyFound(room);
@@ -154,6 +204,8 @@ export class MatchmakingService implements OnModuleInit {
         await this.matchQueue.clearFound([user.userId]);
         throw MatchErrors.notQueued();
       }
+      // 방을 만드는 중이면 잠깐 기다려 보고, 그래도 안 끝났으면 이미 성사된 것으로 답한다 (MATCH_FOUND가 곧 간다)
+      if (waited >= PENDING_WAIT_MS) throw MatchErrors.alreadyFound(null);
       await new Promise((resolve) => setTimeout(resolve, PENDING_POLL_MS));
     }
   }
@@ -175,8 +227,9 @@ export class MatchmakingService implements OnModuleInit {
     guestId: string,
     pack: NonNullable<Awaited<ReturnType<MatchmakingService['defaultPack']>>>,
   ): Promise<boolean> {
+    // 요청한 사람의 처리 중 표시는 다음 상대를 찾을 때까지 그대로 둔다
     if (!(await this.realtime.isOnline(hostId))) {
-      await this.matchQueue.clearFound([hostId, guestId]);
+      await this.matchQueue.clearFound([hostId]);
       return false;
     }
     let room: { roomId: string; inviteCode: string };
@@ -192,13 +245,12 @@ export class MatchmakingService implements OnModuleInit {
         () => true,
       );
       if (hostBusy) {
-        await this.matchQueue.clearFound([hostId, guestId]);
+        await this.matchQueue.clearFound([hostId]);
         return false;
       }
       // 방을 만들다 실패하면 기다리던 상대는 원래 대기 시각으로 되돌리고 요청한 사람에게 에러를 돌려준다
       await this.matchQueue.requeue(hostId, await this.xpOf(hostId), hostQueuedAt);
       await this.scheduleTimeout(hostId, hostQueuedAt);
-      await this.matchQueue.clearFound([guestId]);
       throw error;
     }
     // 기록에 실패해도 알림은 보낸다 (취소 요청은 방에 들어가 있는지로 다시 확인한다)
