@@ -10,7 +10,7 @@ export const SCHEDULED_NOTIFICATION_JOBS = {
   'study-reminder': '* * * * *',
   'morning-publish': '0 6 * * *',
   'morning-sentence': '0 7 * * *',
-  'rank-weekly-result': '0 8 * * 1',
+  'rank-weekly-result': '0 8-12 * * 1',
   'rank-drop': '0 20 * * *',
 } as const;
 type JobName = keyof typeof SCHEDULED_NOTIFICATION_JOBS;
@@ -42,12 +42,14 @@ export class ScheduledNotificationsProcessor extends WorkerHost implements OnApp
   }
 
   async process(job: Job): Promise<number> {
+    // 늦게 처리되거나(재시작·밀림) 시계가 조금 어긋나도 예정된 시각 기준으로 보낸다
+    const at = new Date(job.timestamp + (job.opts.delay ?? 0));
     const runs: Record<JobName, () => Promise<number>> = {
-      'study-reminder': () => this.scheduled.studyReminders(),
-      'morning-publish': () => this.scheduled.publishMorning(),
-      'morning-sentence': () => this.scheduled.morningSentence(),
-      'rank-weekly-result': () => this.scheduled.weeklyRankResult(),
-      'rank-drop': () => this.scheduled.rankDrops(),
+      'study-reminder': () => this.scheduled.studyReminders(at),
+      'morning-publish': () => this.scheduled.publishMorning(at),
+      'morning-sentence': () => this.scheduled.morningSentence(at),
+      'rank-weekly-result': () => this.scheduled.weeklyRankResult(at),
+      'rank-drop': () => this.scheduled.rankDrops(at),
     };
     const run = runs[job.name as JobName];
     if (!run) throw new Error(`알 수 없는 예약 알림 작업: ${job.name}`);

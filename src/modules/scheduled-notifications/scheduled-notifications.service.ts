@@ -17,6 +17,7 @@ import { VALKEY } from '../../infra/valkey/valkey.module.js';
 import { morningDate } from '../morning/morning-rules.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { periodKey, previousPeriodDate, xpOfScore } from '../ranking/ranking-keys.js';
+import { listable } from '../ranking/ranking-query.service.js';
 
 /** 주간 반 순위가 이만큼 이상 내려가면 알린다 (임시값) */
 export const RANK_DROP_MIN_PLACES = 3;
@@ -132,7 +133,7 @@ export class ScheduledNotificationsService {
     });
   }
 
-  /** 월요일 08:00. 지난주 시즌이 확정됐으면 지난주 학교 순위를 알린다 */
+  /** 월요일 08:00~12:00 매시. 지난주 시즌이 확정됐으면 지난주 학교 순위를 한 번 알린다 (마감이 늦어도 그 사이에 보냄) */
   async weeklyRankResult(now = new Date()): Promise<number> {
     const lastWeek = periodKey('WEEKLY', previousPeriodDate('WEEKLY', kstDate(now)) as string);
     const [season] = await this.db
@@ -180,18 +181,20 @@ export class ScheduledNotificationsService {
       const dropped: string[] = [];
       for (const key of await this.scan(`rank:weekly:${week}:class:*`)) {
         const flat = await this.valkey.zrevrange(key, 0, -1, 'WITHSCORES');
-        let rank = 0;
+        const members: string[] = [];
         for (let i = 0; i < flat.length; i += 2) {
-          if (xpOfScore(Number(flat[i + 1])) <= 0) continue;
+          if (xpOfScore(Number(flat[i + 1])) > 0) members.push(flat[i] as string);
+        }
+        // 랭킹 화면처럼 목록에 보이는 사용자 사이의 순위로 센다 (비공개·정지·탈퇴는 빼고 알리지도 않음)
+        const visible = await this.listableAmong(members);
+        let rank = 0;
+        for (const userId of members) {
+          if (!visible.has(userId)) continue;
           rank++;
-          const userId = flat[i] as string;
           current[userId] = String(rank);
           const before = Number(previous[userId] ?? 0);
           if (before > 0 && rank - before >= RANK_DROP_MIN_PLACES) dropped.push(userId);
         }
-      }
-      if (Object.keys(current).length > 0) {
-        await this.valkey.multi().hset(stateKey, current).expire(stateKey, ONCE_TTL_SECONDS).exec();
       }
       let sent = 0;
       for (const userId of dropped) {
@@ -204,11 +207,21 @@ export class ScheduledNotificationsService {
           })
         ).length;
       }
+      // 알린 뒤에 기준을 바꿔, 중간에 실패하면 다음 실행이 같은 하락을 다시 볼 수 있게 한다
+      if (Object.keys(current).length > 0) {
+        await this.valkey.multi().hset(stateKey, current).expire(stateKey, ONCE_TTL_SECONDS).exec();
+      }
       return sent;
     });
   }
 
-  /** 같은 키로는 한 번만 실행한다. 실패하면 키를 지워 재시도가 다시 보내게 한다 */
+  private async listableAmong(ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) return new Set();
+    const rows = await this.db.select().from(users).where(inArray(users.id, ids));
+    return new Set(rows.filter(listable).map((row) => row.id));
+  }
+
+  /** 같은 키로는 한 번만 실행한다. 실패하면 키를 지워 다음 실행에서 다시 보낼 수 있게 한다 */
   private async onceRun(key: string, run: () => Promise<number>): Promise<number> {
     if ((await this.valkey.set(key, '1', 'EX', ONCE_TTL_SECONDS, 'NX')) !== 'OK') return 0;
     try {
