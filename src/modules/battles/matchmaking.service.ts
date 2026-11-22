@@ -174,7 +174,9 @@ export class MatchmakingService implements OnModuleInit, BeforeApplicationShutdo
         await this.matchQueue.clearFound([waiting.userId]);
         return;
       }
-      // 처리 중 표시는 그대로 둔 채(취소 요청이 사이에 끼어도 처리 중으로 보이게) 다음 대기자를 본다
+      // 처리 중 표시는 그대로 둔 채(취소 요청이 사이에 끼어도 처리 중으로 보이게) 다음 대기자를 본다.
+      // 그사이 생긴 차단도 반영한다
+      waiting.excluded = await this.excluded(waiting.userId);
       result = await this.matchQueue.enqueue(
         waiting.userId,
         waiting.xp,
