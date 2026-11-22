@@ -5,6 +5,7 @@ import { AppException, CommonErrors } from '../../common/errors/app-exception.js
 import { type Database, DB, type Transaction } from '../../infra/db/db.module.js';
 import { friendRequests, friendships, users } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
+import { isBlockedBetween } from '../blocks/block-queries.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { toUserSummary } from '../users/user-summary.js';
 import type { FriendRequestQuery } from './friends.schemas.js';
@@ -101,6 +102,7 @@ export class FriendsService {
         .where(eq(users.id, targetId));
       if (target?.status !== 'ACTIVE') throw FriendErrors.userNotFound();
       if (target.role !== 'STUDENT') throw FriendErrors.notAllowed();
+      if (await isBlockedBetween(tx, user.userId, targetId)) throw FriendErrors.notAllowed();
       if (await this.areFriends(tx, user.userId, targetId)) throw FriendErrors.already();
 
       const [mine] = await tx
@@ -186,6 +188,28 @@ export class FriendsService {
     if (result.affectedRows === 0) throw FriendErrors.notFound();
   }
 
+  /** 차단할 때 두 사람의 친구 관계와 대기 중인 요청을 모두 지운다. 사용자 행은 호출하는 쪽이 잠근다 */
+  async severInTx(tx: Transaction, a: string, b: string): Promise<void> {
+    await tx
+      .delete(friendships)
+      .where(
+        or(
+          and(eq(friendships.userId, a), eq(friendships.friendId, b)),
+          and(eq(friendships.userId, b), eq(friendships.friendId, a)),
+        ),
+      );
+    await tx.delete(friendRequests).where(or(this.requestBetween(a, b), this.requestBetween(b, a)));
+  }
+
+  async lockUsers(tx: Transaction, ids: string[]): Promise<void> {
+    await tx
+      .select({ id: users.id })
+      .from(users)
+      .where(inArray(users.id, ids))
+      .orderBy(asc(users.id))
+      .for('update');
+  }
+
   private async findRequest(executor: Database | Transaction, requestId: string) {
     const [request] = await executor
       .select()
@@ -205,15 +229,6 @@ export class FriendsService {
       eq(friendRequests.requesterId, requesterId),
       eq(friendRequests.receiverId, receiverId),
     );
-  }
-
-  private async lockUsers(tx: Transaction, ids: string[]): Promise<void> {
-    await tx
-      .select({ id: users.id })
-      .from(users)
-      .where(inArray(users.id, ids))
-      .orderBy(asc(users.id))
-      .for('update');
   }
 
   private async areFriends(tx: Transaction, a: string, b: string): Promise<boolean> {

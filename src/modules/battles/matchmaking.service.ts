@@ -11,6 +11,7 @@ import type { AuthUser } from '../../common/auth/auth-user.js';
 import { AppException } from '../../common/errors/app-exception.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import { packs, users } from '../../infra/db/schema/index.js';
+import { blockedEitherWay } from '../blocks/block-queries.js';
 import { RealtimeService } from '../realtime/realtime.service.js';
 import { BattleQueue } from './battle.queue.js';
 import type { CreateRoom } from './battle.schemas.js';
@@ -173,7 +174,9 @@ export class MatchmakingService implements OnModuleInit, BeforeApplicationShutdo
         await this.matchQueue.clearFound([waiting.userId]);
         return;
       }
-      // 처리 중 표시는 그대로 둔 채(취소 요청이 사이에 끼어도 처리 중으로 보이게) 다음 대기자를 본다
+      // 처리 중 표시는 그대로 둔 채(취소 요청이 사이에 끼어도 처리 중으로 보이게) 다음 대기자를 본다.
+      // 그사이 생긴 차단도 반영한다
+      waiting.excluded = await this.excluded(waiting.userId);
       result = await this.matchQueue.enqueue(
         waiting.userId,
         waiting.xp,
@@ -302,8 +305,9 @@ export class MatchmakingService implements OnModuleInit, BeforeApplicationShutdo
   }
 
   /** 차단 관계(양방향)인 사용자. 차단 기능이 생기면 여기서 돌려준다 */
-  private async excluded(_userId: string): Promise<string[]> {
-    return [];
+  /** 내가 차단했거나 나를 차단한 사용자와는 짝짓지 않는다 */
+  private excluded(userId: string): Promise<string[]> {
+    return blockedEitherWay(this.db, userId);
   }
 
   private async scheduleTimeout(userId: string, queuedAt: number): Promise<void> {

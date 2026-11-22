@@ -7,6 +7,7 @@ import { type Database, DB } from '../src/infra/db/db.module.js';
 import {
   battleRoomParticipants,
   battleRooms,
+  blocks,
   classes,
   type NewUser,
   packs,
@@ -107,6 +108,7 @@ describe('대결 대기실', () => {
 
   afterAll(async () => {
     for (const client of clients) client.socket.terminate();
+    await db.delete(blocks).where(inArray(blocks.blockerId, userIds));
     const rooms = await db
       .select({ id: battleRooms.id })
       .from(battleRooms)
@@ -339,6 +341,21 @@ describe('대결 대기실', () => {
     expect(guest.has('REACTION_RECEIVED')).toBe(false);
     guest.send('REACTION_SEND', { roomId: room.roomId, reaction: 'NOPE' });
     await guest.waitFor('ERROR', { code: 'INVALID_REQUEST' });
+  });
+
+  it('보낸 사람을 차단한 사람은 리액션을 받지 않는다', async () => {
+    const { room, host, guests } = await setup(2);
+    const [sender, other] = guests as [WsClient, WsClient];
+    await db.insert(blocks).values({ blockerId: host.user.userId, blockedId: sender.user.userId });
+    sender.send('REACTION_SEND', { roomId: room.roomId, reaction: 'FIRE' });
+    expect((await other.waitFor('REACTION_RECEIVED')).payload).toEqual({
+      userId: sender.user.userId,
+      reaction: 'FIRE',
+    });
+    // 같은 경로로 오는 다음 리액션을 받은 뒤에 확인해야 늦게 도착한 것과 구분된다
+    other.send('REACTION_SEND', { roomId: room.roomId, reaction: 'CLAP' });
+    await host.waitFor('REACTION_RECEIVED', { userId: other.user.userId });
+    expect(host.has('REACTION_RECEIVED', { userId: sender.user.userId })).toBe(false);
   });
 
   it('교사용 반 방: 교사가 진행하고, 교사가 나가면 방이 닫힌다', async () => {
