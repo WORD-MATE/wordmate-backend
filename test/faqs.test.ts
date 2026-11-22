@@ -86,6 +86,7 @@ describe('FAQ', () => {
       category: 'STUDY',
       question: '복습은 언제?',
       answer: '매일',
+      order: 10,
     });
   });
 

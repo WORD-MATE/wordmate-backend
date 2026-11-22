@@ -9,6 +9,7 @@ export const FaqItem = z
     category: z.enum(FAQ_CATEGORY),
     question: z.string(),
     answer: z.string().describe('Markdown'),
+    order: z.number().int().describe('분류 안 순서'),
   })
   .meta({ id: 'Faq' });
 export const FaqList = z.array(FaqItem).meta({ id: 'FaqList' });

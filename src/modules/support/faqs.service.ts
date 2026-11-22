@@ -34,6 +34,7 @@ export class FaqsService {
       category: row.category,
       question: row.question,
       answer: row.answer,
+      order: row.sortOrder,
     }));
   }
 
