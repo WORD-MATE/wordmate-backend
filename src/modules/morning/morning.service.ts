@@ -11,10 +11,10 @@ import {
 } from '../../common/pagination.js';
 import { type Database, DB, type Transaction } from '../../infra/db/db.module.js';
 import {
+  type MorningSentenceRow,
   morningCompletions,
   morningKeywords,
   morningQuizzes,
-  type MorningSentenceRow,
   morningSentences,
   userStreaks,
 } from '../../infra/db/schema/index.js';
