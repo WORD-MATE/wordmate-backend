@@ -11,6 +11,7 @@ import {
   battleRooms,
 } from '../../infra/db/schema/index.js';
 import { VALKEY } from '../../infra/valkey/valkey.module.js';
+import { blockersAmong } from '../blocks/block-queries.js';
 import {
   type RealtimeContext,
   RealtimeErrors,
@@ -371,7 +372,7 @@ export class LobbyService implements OnModuleInit {
     return true;
   }
 
-  /** 3초에 한 번. 차단 기능이 생기면 받는 사람에서 차단 관계를 뺀다 */
+  /** 3초에 한 번. 보낸 사람을 차단한 사람에게는 보내지 않는다 */
   async react(userId: string, roomId: string, reaction: string): Promise<void> {
     const { room } = await this.membership(this.db, roomId, userId, false);
     const allowed = await this.valkey.set(
@@ -383,8 +384,13 @@ export class LobbyService implements OnModuleInit {
     );
     if (!allowed) throw RealtimeErrors.rateLimited();
     const others = (await roomMembers(this.db, room)).filter((id) => id !== userId);
+    const blockers = await blockersAmong(this.db, userId, others);
     await this.publish([
-      { userIds: others, type: 'REACTION_RECEIVED', payload: { userId, reaction } },
+      {
+        userIds: others.filter((id) => !blockers.has(id)),
+        type: 'REACTION_RECEIVED',
+        payload: { userId, reaction },
+      },
     ]);
   }
 
