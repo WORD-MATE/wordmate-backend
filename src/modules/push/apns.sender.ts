@@ -14,7 +14,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
 export class ApnsSender implements OnModuleDestroy {
   private readonly logger = new Logger(ApnsSender.name);
   private session: ClientHttp2Session | null = null;
-  private token: { value: string; at: number } | null = null;
+  private token: { value: Promise<string>; at: number } | null = null;
 
   constructor(private readonly config: ConfigService<Env, true>) {}
 
@@ -44,16 +44,24 @@ export class ApnsSender implements OnModuleDestroy {
     this.session?.close();
   }
 
-  private async providerToken(): Promise<string> {
+  /** 동시에 보내도 토큰은 하나만 만든다 (자주 바꾸면 APNs가 TooManyProviderTokenUpdates로 거절) */
+  private providerToken(): Promise<string> {
     if (this.token && Date.now() - this.token.at < TOKEN_TTL_MS) return this.token.value;
+    const value = this.signToken();
+    this.token = { value, at: Date.now() };
+    value.catch(() => {
+      if (this.token?.value === value) this.token = null;
+    });
+    return value;
+  }
+
+  private async signToken(): Promise<string> {
     const key = await importPKCS8(this.config.get('APNS_KEY_P8', { infer: true }) ?? '', 'ES256');
-    const value = await new SignJWT({})
+    return new SignJWT({})
       .setProtectedHeader({ alg: 'ES256', kid: this.config.get('APNS_KEY_ID', { infer: true }) })
       .setIssuer(this.config.get('APNS_TEAM_ID', { infer: true }) ?? '')
       .setIssuedAt()
       .sign(key);
-    this.token = { value, at: Date.now() };
-    return value;
   }
 
   private connection(): ClientHttp2Session {

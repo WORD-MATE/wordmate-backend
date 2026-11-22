@@ -1,5 +1,5 @@
 import { InjectQueue } from '@nestjs/bullmq';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { type Database, DB } from '../../infra/db/db.module.js';
@@ -18,7 +18,7 @@ type Recipient = { userId: string } & PushMessage;
 
 /** 저장된 알림을 받는 사람의 기기마다 푸시 작업으로 넣고, 작업이 기기별로 보낸다 */
 @Injectable()
-export class PushService {
+export class PushService implements OnApplicationBootstrap {
   private readonly logger = new Logger(PushService.name);
 
   constructor(
@@ -28,6 +28,18 @@ export class PushService {
     private readonly fcm: FcmSender,
     private readonly webPush: WebPushSender,
   ) {}
+
+  /** 키가 빠져 꺼진 플랫폼을 시작할 때 알린다 (일부만 넣으면 조용히 꺼지므로) */
+  onApplicationBootstrap(): void {
+    const off = [
+      ['APNs', this.apns.configured],
+      ['FCM', this.fcm.configured],
+      ['Web Push', this.webPush.configured],
+    ]
+      .filter(([, configured]) => !configured)
+      .map(([name]) => name);
+    if (off.length > 0) this.logger.warn(`푸시 키가 없어 보내지 않는 플랫폼: ${off.join(', ')}`);
+  }
 
   /** 야간·광고성 금지 시간이면 보내지 않는다 (알림은 이미 목록에 저장돼 있다) */
   async dispatch(notifications: Recipient[], now = new Date()): Promise<number> {

@@ -8,6 +8,8 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 const REQUEST_TIMEOUT_MS = 10_000;
 
+type FcmErrorBody = { error?: { status?: string; details?: { errorCode?: string }[] } };
+
 /** FCM HTTP v1 (서비스 계정으로 받은 OAuth 토큰). 키가 없으면 configured=false */
 @Injectable()
 export class FcmSender {
@@ -42,14 +44,17 @@ export class FcmSender {
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-    let errorStatus: string | undefined;
-    if (!res.ok) {
-      const body = (await res.json().catch(() => null)) as { error?: { status?: string } } | null;
-      errorStatus = body?.error?.status;
+    let errorCode: string | undefined;
+    if (res.ok) {
+      // 연결을 바로 돌려주도록 본문을 비운다
+      await res.body?.cancel();
+    } else {
+      const body = (await res.json().catch(() => null)) as FcmErrorBody | null;
+      errorCode = body?.error?.details?.find((detail) => detail.errorCode)?.errorCode;
       if (res.status === 401) this.accessToken = null;
     }
-    const outcome = classifyFcm(res.status, errorStatus);
-    if (outcome === 'FAILED') this.logger.warn(`FCM 실패 ${res.status} ${errorStatus ?? ''}`);
+    const outcome = classifyFcm(res.status, errorCode);
+    if (outcome === 'FAILED') this.logger.warn(`FCM 실패 ${res.status} ${errorCode ?? ''}`);
     return outcome;
   }
 

@@ -2,7 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import webpush, { WebPushError } from 'web-push';
 import type { Env } from '../../config/env.js';
-import { classifyWebPush, type PushMessage, type PushOutcome, pushData } from './push-rules.js';
+import {
+  classifyWebPush,
+  NETWORK_ERROR_CODES,
+  type PushMessage,
+  type PushOutcome,
+  pushData,
+} from './push-rules.js';
 
 export type WebPushSubscription = { endpoint: string; p256dh: string; auth: string };
 
@@ -50,8 +56,15 @@ export class WebPushSender {
         if (outcome === 'FAILED') this.logger.warn(`Web Push 실패 ${error.statusCode}`);
         return outcome;
       }
-      // 네트워크 오류는 다시 보낸다
-      return 'RETRY';
+      // 네트워크 오류만 다시 보낸다
+      const code = (error as { code?: string }).code;
+      if (code && NETWORK_ERROR_CODES.has(code)) return 'RETRY';
+      const text = String((error as Error).message ?? error);
+      if (/timeout/i.test(text)) return 'RETRY';
+      // 구독 키가 잘못되어 암호화할 수 없으면 그 구독은 쓸 수 없다. 그 밖(VAPID 설정 등)은 기록만
+      if (/subscription|p256dh|auth secret/i.test(text)) return 'INVALID_TOKEN';
+      this.logger.warn(`Web Push 실패: ${text}`);
+      return 'FAILED';
     }
   }
 }

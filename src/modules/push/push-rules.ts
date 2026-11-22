@@ -24,21 +24,36 @@ export function isQuietTime(type: NotificationType, at = new Date()): boolean {
 
 const retryable = (status: number) => status === 429 || status >= 500;
 
-/** APNs 응답 (https://developer.apple.com — 410 Unregistered, 400 BadDeviceToken) */
+/** 다시 보내면 될 수 있는 네트워크 오류 */
+export const NETWORK_ERROR_CODES = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EPIPE',
+  'ESOCKETTIMEDOUT',
+]);
+
+/**
+ * APNs 응답. 410(앱 삭제 등)만 토큰 해지로 본다.
+ * BadDeviceToken·DeviceTokenNotForTopic은 개발·운영 서버나 번들 ID 설정이 틀려도 모든 토큰에 오므로
+ * 등록을 지우지 않고 기록만 한다 (설정 실수 한 번에 iOS 등록이 전부 지워지지 않게)
+ */
 export function classifyApns(status: number, reason?: string): PushOutcome {
   if (status === 200) return 'SENT';
   if (status === 410) return 'INVALID_TOKEN';
-  if (status === 400 && (reason === 'BadDeviceToken' || reason === 'DeviceTokenNotForTopic')) {
-    return 'INVALID_TOKEN';
-  }
   if (status === 403 && reason === 'ExpiredProviderToken') return 'RETRY';
   return retryable(status) ? 'RETRY' : 'FAILED';
 }
 
-/** FCM HTTP v1 응답 (404 또는 UNREGISTERED면 토큰 해지) */
-export function classifyFcm(status: number, errorStatus?: string): PushOutcome {
+/**
+ * FCM HTTP v1 응답. 해지 여부는 `details[].errorCode`의 UNREGISTERED로만 판단한다
+ * (404·SENDER_ID_MISMATCH는 프로젝트 설정이 틀려도 모든 토큰에 올 수 있어 지우지 않는다)
+ */
+export function classifyFcm(status: number, errorCode?: string): PushOutcome {
   if (status === 200) return 'SENT';
-  if (status === 404 || errorStatus === 'UNREGISTERED') return 'INVALID_TOKEN';
+  if (errorCode === 'UNREGISTERED') return 'INVALID_TOKEN';
   if (status === 401) return 'RETRY';
   return retryable(status) ? 'RETRY' : 'FAILED';
 }

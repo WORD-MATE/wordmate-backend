@@ -3,11 +3,20 @@ import { PLATFORM } from '../../common/enums.js';
 
 const deviceName = z.string().trim().min(1).max(100);
 
+const base64urlBytes = (bytes: number) =>
+  z
+    .string()
+    .regex(/^[A-Za-z0-9_-]+=*$/, 'base64url이어야 합니다.')
+    .refine((value) => Buffer.from(value, 'base64url').length === bytes, {
+      message: `${bytes}바이트여야 합니다.`,
+    });
+
 const WebPushSubscription = z.object({
   endpoint: z.url({ protocol: /^https$/ }).max(700),
+  // 잘못된 키는 암호화할 수 없어 보낼 때마다 실패하므로 등록할 때 막는다 (P-256 공개 키 65바이트, auth 16바이트)
   keys: z.object({
-    p256dh: z.string().min(1).max(255),
-    auth: z.string().min(1).max(64),
+    p256dh: base64urlBytes(65),
+    auth: base64urlBytes(16),
   }),
 });
 
