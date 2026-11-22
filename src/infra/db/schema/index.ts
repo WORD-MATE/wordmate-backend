@@ -15,6 +15,7 @@ export * from './sanctions.js';
 export * from './social.js';
 export * from './study.js';
 export * from './support.js';
+export * from './suspicious.js';
 export * from './users.js';
 export * from './words.js';
 export * from './xp.js';

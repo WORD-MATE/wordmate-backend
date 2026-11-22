@@ -11,6 +11,7 @@ import { BattlesModule } from './modules/battles/battles.module.js';
 import { BlocksModule } from './modules/blocks/blocks.module.js';
 import { ChallengesModule } from './modules/challenges/challenges.module.js';
 import { ClassesModule } from './modules/classes/classes.module.js';
+import { DataGsmSyncModule } from './modules/datagsm-sync/datagsm-sync.module.js';
 import { DevicesModule } from './modules/devices/devices.module.js';
 import { FriendsModule } from './modules/friends/friends.module.js';
 import { HealthModule } from './modules/health/health.module.js';
@@ -30,6 +31,7 @@ import { ReportsModule } from './modules/reports/reports.module.js';
 import { ScheduledNotificationsModule } from './modules/scheduled-notifications/scheduled-notifications.module.js';
 import { StudyModule } from './modules/study/study.module.js';
 import { SupportModule } from './modules/support/support.module.js';
+import { SuspiciousModule } from './modules/suspicious/suspicious.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { WordsModule } from './modules/words/words.module.js';
 import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
@@ -55,6 +57,7 @@ import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
     WrongNotesModule,
     RecordsModule,
     MaintenanceModule,
+    DataGsmSyncModule,
     RankingModule,
     HomeModule,
     RealtimeModule,
@@ -72,6 +75,7 @@ import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
     AdminModule,
     JobsModule,
     SupportModule,
+    SuspiciousModule,
     PoliciesModule,
     UsersModule,
   ],

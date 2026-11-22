@@ -41,6 +41,9 @@ export const AUDIT_ACTION = [
   'MORNING_PUBLISH',
   'MORNING_UNPUBLISH',
   'JOB_RUN',
+  'SEASON_EXCLUSIONS_UPDATE',
+  'SEASON_RERUN',
+  'SUSPICIOUS_REVIEW',
   'INQUIRY_ANSWER',
 ] as const;
 export type AuditAction = Values<typeof AUDIT_ACTION>;
@@ -251,6 +254,10 @@ export type FaqCategory = Values<typeof FAQ_CATEGORY>;
 export const FORBIDDEN_WORD_TYPE = ['FORBIDDEN', 'ALLOWED'] as const;
 export type ForbiddenWordType = Values<typeof FORBIDDEN_WORD_TYPE>;
 
+/** 부정 의심 사유: 지나치게 빠른 답, 같은 상대와 반복 대결, 갑작스러운 XP 증가 */
+export const SUSPICIOUS_REASON = ['FAST_ANSWERS', 'REPEATED_OPPONENT', 'XP_SPIKE'] as const;
+export type SuspiciousReason = Values<typeof SUSPICIOUS_REASON>;
+
 export const SEASON_PERIOD = ['WEEKLY', 'MONTHLY'] as const;
 export type SeasonPeriod = Values<typeof SEASON_PERIOD>;
 
@@ -268,6 +275,8 @@ export const JOB = [
   'MORNING_SENTENCE',
   'RANK_WEEKLY_RESULT',
   'RANK_DROP',
+  'DATAGSM_SYNC',
+  'SUSPICIOUS_DETECT',
 ] as const;
 
 export const JOB_RUN_STATUS = ['RUNNING', 'SUCCEEDED', 'FAILED'] as const;

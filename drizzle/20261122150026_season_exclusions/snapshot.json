@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "mysql",
-  "id": "d0cc5510-b860-48d5-9c23-137e07cb0ef3",
+  "id": "56052926-59c0-4a19-928d-3985f675cdc9",
   "prevIds": [
     "e3b145e6-062d-4e02-8fba-8cc9fd14807b"
   ],
@@ -135,6 +135,10 @@
       "entityType": "tables"
     },
     {
+      "name": "ranking_season_exclusions",
+      "entityType": "tables"
+    },
+    {
       "name": "ranking_seasons",
       "entityType": "tables"
     },
@@ -212,14 +216,6 @@
     },
     {
       "name": "faqs",
-      "entityType": "tables"
-    },
-    {
-      "name": "inquiries",
-      "entityType": "tables"
-    },
-    {
-      "name": "inquiry_images",
       "entityType": "tables"
     },
     {
@@ -3952,6 +3948,76 @@
       "entityType": "columns"
     },
     {
+      "table": "ranking_season_exclusions",
+      "name": "season_id",
+      "type": "binary(16)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "ranking_season_exclusions",
+      "name": "user_id",
+      "type": "binary(16)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "ranking_season_exclusions",
+      "name": "reason",
+      "type": "varchar(200)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "ranking_season_exclusions",
+      "name": "admin_id",
+      "type": "binary(16)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "ranking_season_exclusions",
+      "name": "created_at",
+      "type": "datetime(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": "(CURRENT_TIMESTAMP(3))",
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
       "table": "ranking_seasons",
       "name": "id",
       "type": "binary(16)",
@@ -4150,6 +4216,20 @@
     {
       "table": "ranking_snapshots",
       "name": "rank",
+      "type": "int",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "ranking_snapshots",
+      "name": "position",
       "type": "int",
       "notNull": true,
       "autoIncrement": false,
@@ -6391,286 +6471,6 @@
       "entityType": "columns"
     },
     {
-      "table": "inquiries",
-      "name": "id",
-      "type": "binary(16)",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiries",
-      "name": "user_id",
-      "type": "binary(16)",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiries",
-      "name": "type",
-      "type": "enum('ACCOUNT','STUDY','BATTLE_RANKING','BUG','OTHER')",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiries",
-      "name": "title",
-      "type": "varchar(50)",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiries",
-      "name": "content",
-      "type": "varchar(1000)",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiries",
-      "name": "status",
-      "type": "enum('RECEIVED','ANSWERED')",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": "'RECEIVED'",
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiries",
-      "name": "platform",
-      "type": "enum('IOS','ANDROID','WEB')",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiries",
-      "name": "app_version",
-      "type": "varchar(32)",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiries",
-      "name": "answer_content",
-      "type": "varchar(2000)",
-      "notNull": false,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiries",
-      "name": "answered_by",
-      "type": "binary(16)",
-      "notNull": false,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiries",
-      "name": "answered_at",
-      "type": "datetime(3)",
-      "notNull": false,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiries",
-      "name": "created_at",
-      "type": "datetime(3)",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": "(CURRENT_TIMESTAMP(3))",
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiries",
-      "name": "updated_at",
-      "type": "datetime(3)",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": "(CURRENT_TIMESTAMP(3))",
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiry_images",
-      "name": "id",
-      "type": "binary(16)",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiry_images",
-      "name": "inquiry_id",
-      "type": "binary(16)",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiry_images",
-      "name": "storage_key",
-      "type": "varchar(255)",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiry_images",
-      "name": "mime",
-      "type": "varchar(32)",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiry_images",
-      "name": "size",
-      "type": "int",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiry_images",
-      "name": "sort_order",
-      "type": "tinyint",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": null,
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "inquiry_images",
-      "name": "created_at",
-      "type": "datetime(3)",
-      "notNull": true,
-      "autoIncrement": false,
-      "default": "(CURRENT_TIMESTAMP(3))",
-      "onUpdateNow": false,
-      "onUpdateNowFsp": null,
-      "charSet": null,
-      "collation": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
       "table": "notice_reads",
       "name": "user_id",
       "type": "binary(16)",
@@ -7569,6 +7369,15 @@
       "entityType": "pks"
     },
     {
+      "table": "ranking_season_exclusions",
+      "name": "PRIMARY",
+      "columns": [
+        "season_id",
+        "user_id"
+      ],
+      "entityType": "pks"
+    },
+    {
       "table": "ranking_snapshots",
       "name": "PRIMARY",
       "columns": [
@@ -7912,22 +7721,6 @@
     },
     {
       "table": "faqs",
-      "name": "PRIMARY",
-      "columns": [
-        "id"
-      ],
-      "entityType": "pks"
-    },
-    {
-      "table": "inquiries",
-      "name": "PRIMARY",
-      "columns": [
-        "id"
-      ],
-      "entityType": "pks"
-    },
-    {
-      "table": "inquiry_images",
       "name": "PRIMARY",
       "columns": [
         "id"
@@ -8582,6 +8375,51 @@
       "entityType": "fks"
     },
     {
+      "table": "ranking_season_exclusions",
+      "name": "ranking_season_exclusions_season_id_ranking_seasons_id_fkey",
+      "columns": [
+        "season_id"
+      ],
+      "tableTo": "ranking_seasons",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "ranking_season_exclusions",
+      "name": "ranking_season_exclusions_user_id_users_id_fkey",
+      "columns": [
+        "user_id"
+      ],
+      "tableTo": "users",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "ranking_season_exclusions",
+      "name": "ranking_season_exclusions_admin_id_users_id_fkey",
+      "columns": [
+        "admin_id"
+      ],
+      "tableTo": "users",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "SET NULL",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
       "table": "ranking_snapshots",
       "name": "ranking_snapshots_season_id_ranking_seasons_id_fkey",
       "columns": [
@@ -9053,51 +8891,6 @@
         "word_id"
       ],
       "tableTo": "words",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "entityType": "fks"
-    },
-    {
-      "table": "inquiries",
-      "name": "inquiries_user_id_users_id_fkey",
-      "columns": [
-        "user_id"
-      ],
-      "tableTo": "users",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "entityType": "fks"
-    },
-    {
-      "table": "inquiries",
-      "name": "inquiries_answered_by_users_id_fkey",
-      "columns": [
-        "answered_by"
-      ],
-      "tableTo": "users",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "SET NULL",
-      "nameExplicit": false,
-      "entityType": "fks"
-    },
-    {
-      "table": "inquiry_images",
-      "name": "inquiry_images_inquiry_id_inquiries_id_fkey",
-      "columns": [
-        "inquiry_id"
-      ],
-      "tableTo": "inquiries",
       "columnsTo": [
         "id"
       ],
@@ -10517,70 +10310,6 @@
       "columns": [
         {
           "value": "category",
-          "isExpression": false
-        },
-        {
-          "value": "sort_order",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "using": null,
-      "algorithm": null,
-      "lock": null,
-      "nameExplicit": true,
-      "entityType": "indexes"
-    },
-    {
-      "table": "inquiries",
-      "name": "inquiries_user_idx",
-      "columns": [
-        {
-          "value": "user_id",
-          "isExpression": false
-        },
-        {
-          "value": "id",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "using": null,
-      "algorithm": null,
-      "lock": null,
-      "nameExplicit": true,
-      "entityType": "indexes"
-    },
-    {
-      "table": "inquiries",
-      "name": "inquiries_status_idx",
-      "columns": [
-        {
-          "value": "status",
-          "isExpression": false
-        },
-        {
-          "value": "type",
-          "isExpression": false
-        },
-        {
-          "value": "id",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "using": null,
-      "algorithm": null,
-      "lock": null,
-      "nameExplicit": true,
-      "entityType": "indexes"
-    },
-    {
-      "table": "inquiry_images",
-      "name": "inquiry_images_inquiry_idx",
-      "columns": [
-        {
-          "value": "inquiry_id",
           "isExpression": false
         },
         {

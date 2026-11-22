@@ -125,6 +125,8 @@ create(@ZodBody(CreatePack) body: z.infer<typeof CreatePack>) { ... }
 | `DATAGSM_REDIRECT_URIS` | (필수)                                   | 허용할 redirectUri, 쉼표로 구분 (DataGSM에 등록한 값과 같아야 함)   |
 | `DATAGSM_AUTH_URL`      | `https://oauth.authorization.datagsm.kr` | DataGSM 인증 서버                                                   |
 | `DATAGSM_RESOURCE_URL`  | `https://oauth.resource.datagsm.kr`      | DataGSM 사용자 정보 서버                                            |
+| `DATAGSM_OPENAPI_URL`   | `https://openapi.datagsm.kr`             | DataGSM OpenAPI 서버 (학적 동기화)                                  |
+| `DATAGSM_API_KEY`       | (없음)                                   | DataGSM OpenAPI 키 (`student:read`). 없으면 학적 동기화를 건너뜀    |
 | `TRUST_PROXY`           | (없음)                                   | 신뢰할 리버스 프록시 IP·CIDR, 쉼표로 구분 (실제 클라이언트 IP 판별) |
 | `SWAGGER_ENABLED`       | `production`이 아니면 켜짐               | `true` / `false`로 Swagger 문서 강제 설정                           |
 | `SHARE_LINK_BASE`       | `wordmate://`                            | 공유 링크 앞부분. 웹 도메인이 생기면 `https://도메인`으로 바꿈      |
@@ -391,6 +393,7 @@ docker compose run --rm migrate dist/seed.js seeds/default-packs.json
   - 끝났는데 확정하지 못한 시즌(`CLOSED_PENDING`·`FAILED`)을 마감하고, 그 기간의 학교·학년·반 ZSET을 `ranking_snapshots`에 남긴 뒤 `CONFIRMED`로 바꿉니다.
   - 실패하면 `FAILED`·`last_error`를 남기고 다음 시간에 다시 시도합니다. 서버가 꺼져 있던 동안의 시즌도 주간 4주·월간 2달까지 따라잡습니다(지난 ZSET이 만료되기 전).
   - 스냅샷 순위는 목록에 보이는 사람끼리 셉니다. 비공개 등 목록에 없던 사람은 자기를 그 사이에 끼워 넣은 순위를 받습니다(`listed=false`).
+  - 관리자가 시즌에서 제외한 사용자(`ranking_season_exclusions`)는 `rank`가 null이고 아무의 순위에도 세지 않습니다. 마감할 때(다시 돌릴 때도) 시즌 행을 잠근 뒤 제외 대상을 읽어 반영합니다. 스냅샷에는 마감 순서(`position`)를 남겨, 제외가 바뀌면 XP 동점 순서를 지킨 채 다시 매깁니다. 주간 결과 알림과 `/ranking/me`의 `change`도 제외된 사용자에게는 순위를 주지 않습니다.
   - `/ranking/me`의 `change`는 직전 시즌이 확정됐으면 그 스냅샷 순위로, 아직이면 지난 기간 ZSET에서 계산합니다.
   - 시즌 배지·주간 결과 알림은 시즌을 `CONFIRMED`로 바꾸는 곳(`SeasonService.close`)에 붙입니다.
 - `PATCH /users/me/privacy`(학생만)는 공개 설정과 함께 `ranking_onboarded`를 true로 바꿉니다. 랭킹 첫 진입 안내와 설정 화면이 같이 씁니다. ZSET은 건드리지 않습니다.
@@ -706,6 +709,16 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 - `GET /admin/reports`(상태·사유·마지막 신고 기간 필터, 최근 신고순)와 `GET /admin/reports/{reportGroupId}`(개별 신고, 대상이 받은 신고 전체 수와 제재 이력, 처리 결과·변경 이력). 신고한 사람은 관리자에게도 보여 주지 않습니다.
 - `PATCH /admin/reports/{reportGroupId}`: 완료(`RESOLVED`)에는 결과·메모가 필수입니다. 처음 완료할 때 신고한 사람들에게 `REPORT_RESULT` 알림을 한 번 보냅니다(문제 없음 / 조치함). 완료한 뒤에는 결과·메모만 고칠 수 있고(409 `REPORT_ALREADY_RESOLVED`), 바꿀 때마다 이력·감사 로그가 남습니다. 제재는 `POST /admin/sanctions`를 `reportGroupId`와 함께 따로 호출합니다.
 
+### 부정 의심 사용자
+
+- 매일 04:30(KST) `suspicious` 큐 작업이 전날 활동을 보고 `suspicious_flags`에 표시만 합니다. 제재는 관리자가 정합니다. `POST /admin/jobs/SUSPICIOUS_DETECT/run`으로 직접 돌려도 전날 기준이고, 같은 사용자·사유·날짜는 한 번만 표시합니다(유니크 키, 다시 돌려도 이미 있는 표시는 그대로).
+- 기준(임시값, `src/modules/suspicious/suspicious-rules.ts`):
+  - `FAST_ANSWERS`: 그날 학습 답이 30개 이상이고, 그중 너무 빨리 낸 답(0.5초 미만, 점수·XP에서 빠지는 답)이 절반 이상
+  - `REPEATED_OPPONENT`: 같은 상대와 하루에 4번 이상 대결(XP는 3번까지만 받음). 두 사람 모두 표시
+  - `XP_SPIKE`: 하루 XP 상한(500, 관리자 조정 제외)을 3일 이상 연속으로 채움
+- `GET /admin/suspicious-users`: 사용자·활동한 날별로 묶어(사유 목록, 사유별 근거 수치, 처음 감지한 시각, 모두 확인했는지) 최근 날짜부터 보여 줍니다. 사유·확인 여부·활동 날짜 기간으로 거릅니다.
+- `PATCH /admin/suspicious-users/{userId}/{date}`: 그날 그 사용자의 표시를 모두 확인함(또는 취소)으로 바꾸고 확인한 관리자·시각과 감사 로그를 남깁니다(404 `SUSPICIOUS_NOT_FOUND`).
+
 ### 금칙어 관리
 
 - `GET/POST /admin/forbidden-words`, `PATCH/DELETE /admin/forbidden-words/{wordId}`: 금칙어(`FORBIDDEN`)와 오탐 방지용 허용 단어(`ALLOWED`). 앞뒤 공백을 지우고, 같은 종류에 같은 단어는 409 `ADMIN_FORBIDDEN_WORD_DUPLICATE`입니다. 등록한 관리자와 감사 로그가 남습니다.
@@ -738,11 +751,35 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 - `PATCH /admin/morning/{id}`: 보낸 항목만(어휘·퀴즈는 통째로) 바꿉니다. 예약·게시된 문장은 바꾼 뒤에도 게시할 수 있어야 하고(400), 게시된 문장의 날짜는 바꿀 수 없습니다. 이미 푼 사용자의 기록(정답 수)은 그대로입니다.
 - `POST /admin/morning/{id}/publish`: 문장·뜻·어휘·퀴즈가 다 있어야 하고(400 `MORNING_INCOMPLETE`), 빈칸 정답이 문장에 있어야 하며(400 `MORNING_BLANK_NOT_IN_SENTENCE`), 강조 위치·객관식 정답이 맞아야 합니다(400 `MORNING_INVALID`). `detail.issues`에 문제 목록이 담깁니다. 시드도 같은 검사를 씁니다.
 
+### 시즌 관리
+
+- 시즌은 기간이 끝나면 자동으로 마감·확정합니다(관리자 확정 없음). 관리자는 결과를 보고 제외 대상을 정하거나 실패한 마감을 다시 돌립니다.
+- `GET /admin/seasons`(주간·월간, 상태 필터, 최근 시즌순): `endDate`는 마지막 날(포함), `closedAt`은 확정 시각입니다. `pendingReportCount`는 그 시즌 학교 순위에 든 사용자(제외된 사용자 포함)가 대상인 처리 전(`RECEIVED`·`IN_REVIEW`) 신고 묶음 수로, 조회할 때 기준입니다. 시즌 기간에 부정 의심 표시가 있는 순위 사용자 수(`suspiciousCount`)와, 상세 순위마다 의심 여부(`suspicious`)도 보여 줍니다.
+- `GET /admin/seasons/{seasonId}`: 학교 범위를 마감 순서대로 100위까지(그 사이의 제외된 사용자도 `rank: null`, `excluded: true`로 함께), 제외 대상 전체(사유·관리자·시각), FAILED일 때 실패 사유. 없으면 404 `ADMIN_SEASON_NOT_FOUND`입니다.
+- `PUT /admin/seasons/{seasonId}/exclusions`: 제외 대상을 통째로 바꿉니다(최대 100명, 사유 필수, 빈 배열이면 모두 해제). 상태와 관계없이 바꿀 수 있고, 같은 트랜잭션에서 그 시즌의 학교·학년·반 순위를 마감과 같은 규칙으로 다시 매깁니다. 계속 제외되는 사용자는 처음 사유를 그대로 두고, 없는 사용자는 404 `USER_NOT_FOUND`입니다.
+- `POST /admin/seasons/{seasonId}/rerun`: `FAILED`만(409 `ADMIN_SEASON_NOT_FAILED`) `ranking` 큐에 `close-season` 작업으로 넣고 202를 돌려줍니다. 진행은 `GET /admin/jobs`의 `SEASON_CLOSE`에서 봅니다. 따라잡는 기간보다 오래된 시즌도 다시 돌릴 수 있지만, 지난 ZSET이 만료됐으면 빈 스냅샷으로 확정됩니다.
+- 제외 대상 변경과 다시 실행은 감사 로그에 남습니다.
+
 ### 정기 작업
 
-- 정기 작업(정리, 시즌 마감, 챌린지 생성, 예약 알림)은 실행할 때마다 `job_runs`에 시작·끝·상태·오류·실행 방식(정기/수동)을 남기고, 7일 지난 기록은 매일 정리에서 지웁니다. 작업 목록은 `src/modules/jobs/job-registry.ts`입니다.
-- 시즌 마감이 실패하면(한 시즌이라도 확정하지 못하면) 실패로 남기고 활동 중인 관리자 모두에게 `ADMIN_ALERT`를 보냅니다(실패가 이어지는 동안은 처음 한 번만).
+- 정기 작업(정리, 시즌 마감, 챌린지 생성, 예약 알림, 학적 동기화, 부정 감지)은 실행할 때마다 `job_runs`에 시작·끝·상태·오류·실행 방식(정기/수동)을 남기고, 7일 지난 기록은 매일 정리에서 지웁니다. 작업 목록은 `src/modules/jobs/job-registry.ts`입니다.
+- 시즌 마감이 실패하거나(한 시즌이라도 확정하지 못하면) 학적 동기화가 실패하면 실패로 남기고 활동 중인 관리자 모두에게 `ADMIN_ALERT`를 보냅니다(실패가 이어지는 동안은 처음 한 번만).
 - `GET /admin/jobs`: 작업마다 주기, 마지막 실행·상태·오류, 다음 정기 실행. `POST /admin/jobs/{job}/run`: 큐에 넣고 바로 202를 돌려주고, 실행 중이거나 30초 안에 다시 누르면 409 `ADMIN_JOB_RUNNING`, 정해진 시각에 보내는 알림 작업(리마인더·오늘의 문장 알림·주간 결과·순위 하락)은 409 `ADMIN_JOB_SCHEDULE_ONLY`입니다(1시간 넘게 RUNNING이면 서버가 꺼진 것으로 보고 다시 실행 가능).
+
+### 학적 동기화
+
+매일 04:00(KST, `datagsm-sync` 큐)에 DataGSM OpenAPI `GET /v1/students`(졸업생·자퇴생 포함, 1000명씩 페이지)로 학적을 맞춥니다. `POST /admin/jobs/DATAGSM_SYNC/run`으로 직접 실행할 수도 있습니다.
+
+- 우리 서비스에 가입한 학생만 맞추고 계정은 새로 만들지 않습니다. 교사는 건드리지 않습니다.
+- 학생 목록은 계정 ID가 아닌 학생 ID를 주므로 `users.datagsm_student_id`(로그인할 때 저장)로 찾고, 아직 없는 사용자는 이메일로 찾아 학생 ID를 채웁니다(같은 이메일의 계정이 여럿이면 맞추지 않음). 다른 계정에 붙은 학생 ID는 본인이 로그인할 때 가져옵니다.
+- 학년·반·번호가 모두 있을 때만 학년·반·번호·학번을 바꿉니다(DataGSM에서 정보 수정 요청 중인 재학생은 비어 있어 그대로 둠, 학번만 비어 있으면 학번은 남김). 이름도 맞춥니다.
+- 졸업·자퇴로 나온 활동 중 학생은 휴면(`INACTIVE`)으로 바꾸고 모든 기기에서 로그아웃시킵니다. 마지막 학년·반은 남깁니다. 휴면이던 학생이 재학으로 나오면 다시 `ACTIVE`입니다(로그인과 같은 규칙).
+- 목록에서 빠진 학생은 DataGSM 오류일 수 있어 휴면 처리하지 않습니다. 정지된 학생은 학적만 바꾸고 상태는 그대로, 탈퇴한 사용자는 건드리지 않습니다.
+- 재학생의 반이 `classes`에 없으면 만듭니다.
+- 학년·반이 바뀌면 이번 주·이번 달·전체 랭킹 점수를 옛 학년·반 키에서 새 키로 옮깁니다(학교 키 점수 기준). 동기화 전에 로그인해서 바뀐 경우도 로그인에서 옮깁니다.
+- 사용자마다 행을 잠근 트랜잭션으로 바꾸고, 200명씩 나눠 맞춥니다. 결과(`fetched`, `matched`, `updated`, `deactivated`, `reactivated`, `classesCreated`, `skipped`, `failed`)는 `job_runs.result`에 남고, 일부 사용자가 실패하면 같은 건수가 `job_runs.error` 메시지에 담깁니다. `skipped`는 탈퇴한 사용자와 학년·반·번호가 비어 학적을 그대로 둔 학생 수입니다. DataGSM 응답에서 형식이 틀린 학생은 건너뛰고 경고 로그만 남깁니다. 로그인도 학년·반·번호가 다 있을 때만 학적을 바꿉니다.
+  - 알려진 한계: 동기화가 학년·반을 옮기는 바로 그 순간에 XP가 더해지면 그 XP가 옛 반 점수에 남을 수 있고(학교 점수는 정확, `pnpm ranking:rebuild`로 복구), 동기화 도중 로그인한 학생은 시작할 때 받은 목록 값으로 다시 덮일 수 있습니다(다음 로그인·동기화 때 바로잡힘). 한 사용자 반영이 실패해도 나머지는 끝까지 반영하고, 실패한 사용자가 있으면 건수를 담아 실패로 남깁니다.
+- `DATAGSM_API_KEY`가 없으면 경고 로그만 남기고 성공(`{ disabled: true }`)으로 끝냅니다. DataGSM 요청이 하나라도 실패하면 아무것도 바꾸지 않고 실패로 남깁니다. 실패하면 관리자에게 알립니다.
 
 ## 고객지원
 
@@ -780,7 +817,7 @@ BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenan
 
 ## 학급·교사 담당 반
 
-- 학급은 마이그레이션으로 1~3학년 1~4반을 미리 만들고, 그 밖의 반은 학생이 로그인할 때 DataGSM 학년·반으로 자동 생성됩니다.
+- 학급은 마이그레이션으로 1~3학년 1~4반을 미리 만들고, 그 밖의 반은 학생이 로그인할 때와 학적 동기화 때 DataGSM 학년·반으로 자동 생성됩니다.
 - 담당 반이 없는 교사는 로그인 `nextStep`이 `TEACHER_CLASS_SELECT`이고, 반을 고르기 전까지 대부분의 API가 403 `TEACHER_CLASS_REQUIRED` (관리자 겸 교사는 제외)
 - 반 선택 화면: `GET /classes`로 목록을 받아 `PUT /teachers/me/classes { classIds }`로 저장(전체 교체). 응답의 `nextStep`으로 다음 화면 이동
 - 담당 반 변경은 감사 로그(`audit_logs`, `TEACHER_CLASS_CHANGE`)에 남습니다.
