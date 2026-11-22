@@ -12,8 +12,8 @@ import { newId } from '../../infra/db/uuid.js';
 import { SessionService } from '../auth/session.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { RankingService } from '../ranking/ranking.service.js';
-import type { ApplySanction } from './admin-sanctions.schemas.js';
 import { AdminUserErrors } from './admin-errors.js';
+import type { ApplySanction } from './admin-sanctions.schemas.js';
 
 export const SanctionErrors = {
   self: () =>

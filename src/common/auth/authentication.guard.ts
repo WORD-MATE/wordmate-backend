@@ -3,8 +3,8 @@ import { Reflector } from '@nestjs/core';
 import type { FastifyRequest } from 'fastify';
 import { AccessTokenService } from './access-token.service.js';
 import { AccountBlockService } from './account-block.service.js';
-import { AuthErrors } from './auth-errors.js';
 import { AUTH_KEY, type Authority } from './auth.decorator.js';
+import { AuthErrors } from './auth-errors.js';
 
 export const ACCESS_TOKEN_COOKIE = '__Host-at';
 
