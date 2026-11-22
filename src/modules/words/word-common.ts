@@ -10,6 +10,12 @@ export const WordErrors = {
     new AppException('WORD_NOT_FOUND', '단어를 찾을 수 없습니다.', HttpStatus.NOT_FOUND),
   duplicate: () =>
     new AppException('WORD_DUPLICATE', '같은 단어가 이미 단어팩에 있습니다.', HttpStatus.CONFLICT),
+  limitExceeded: () =>
+    new AppException(
+      'PACK_WORD_LIMIT_EXCEEDED',
+      `단어팩에는 단어를 ${MAX_WORDS_PER_PACK}개까지 담을 수 있습니다.`,
+      HttpStatus.CONFLICT,
+    ),
   tooManyLines: () =>
     CommonErrors.invalidRequest(
       { field: 'text', limit: MAX_WORDS_PER_PACK },
