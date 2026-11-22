@@ -36,3 +36,21 @@ export const friendships = mysqlTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.friendId] })],
 );
+
+/** 차단. 차단한 사람 기준 한 줄이고 상대에게 알리지 않는다 */
+export const blocks = mysqlTable(
+  'blocks',
+  {
+    blockerId: binaryUuid('blocker_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    blockedId: binaryUuid('blocked_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.blockerId, t.blockedId] }),
+    index('blocks_blocked_idx').on(t.blockedId),
+  ],
+);
