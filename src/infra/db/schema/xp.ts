@@ -32,5 +32,7 @@ export const xpLedger = mysqlTable(
     uniqueIndex('xp_ledger_ref_uq').on(t.userId, t.source, t.refKey),
     index('xp_ledger_user_date_idx').on(t.userId, t.date),
     index('xp_ledger_user_created_idx').on(t.userId, t.createdAt, t.id),
+    // 부정 감지가 날짜별로 모든 사용자의 합계를 본다
+    index('xp_ledger_date_idx').on(t.date, t.userId),
   ],
 );
