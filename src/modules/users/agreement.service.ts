@@ -1,5 +1,5 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { PolicyType } from '../../common/enums.js';
 import { AppException } from '../../common/errors/app-exception.js';
@@ -74,6 +74,26 @@ export class AgreementService {
       policies: items.map(({ satisfied: _, ...item }) => item),
       needsAgreement: items.some((item) => item.required && !item.satisfied),
     };
+  }
+
+  /** 마케팅 정보 수신: 가장 최근 마케팅 약관 응답이 동의인지 (버전과 상관없이 철회 전까지 유효) */
+  async marketingAgreed(userId: string): Promise<boolean> {
+    return (await this.marketingAgreedAmong([userId])).has(userId);
+  }
+
+  /** 여러 사용자 가운데 마케팅 정보 수신에 동의한 사용자 (한 번의 조회) */
+  async marketingAgreedAmong(userIds: string[]): Promise<Set<string>> {
+    if (userIds.length === 0) return new Set();
+    const rows = await this.db
+      .select({ userId: userAgreements.userId, agreed: userAgreements.agreed })
+      .from(userAgreements)
+      .where(
+        and(inArray(userAgreements.userId, userIds), eq(userAgreements.policyType, 'MARKETING')),
+      )
+      .orderBy(desc(userAgreements.id));
+    const latest = new Map<string, boolean>();
+    for (const row of rows) if (!latest.has(row.userId)) latest.set(row.userId, row.agreed);
+    return new Set([...latest].filter(([, agreed]) => agreed).map(([userId]) => userId));
   }
 
   async needsAgreement(userId: string): Promise<boolean> {

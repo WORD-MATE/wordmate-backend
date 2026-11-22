@@ -19,6 +19,6 @@ import { UsersService } from './users.service.js';
     UsersService,
     { provide: APP_GUARD, useClass: OnboardingGuard },
   ],
-  exports: [NextStepService, TeacherClassService],
+  exports: [AgreementService, NextStepService, TeacherClassService],
 })
 export class UsersModule {}

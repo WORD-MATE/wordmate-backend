@@ -12,6 +12,7 @@ import { DevicesModule } from './modules/devices/devices.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { HomeModule } from './modules/home/home.module.js';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module.js';
+import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { PacksModule } from './modules/packs/packs.module.js';
 import { PoliciesModule } from './modules/policies/policies.module.js';
 import { PracticeModule } from './modules/practice/practice.module.js';
@@ -50,6 +51,7 @@ import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
     BattlesModule,
     PracticeModule,
     ChallengesModule,
+    NotificationsModule,
     PoliciesModule,
     UsersModule,
   ],

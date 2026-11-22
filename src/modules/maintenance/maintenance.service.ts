@@ -2,11 +2,13 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import {
+  notifications,
   practiceSessions,
   studySessions,
   wordFavorites,
   words,
 } from '../../infra/db/schema/index.js';
+import { NOTIFICATION_RETENTION_DAYS } from '../notifications/notification-rules.js';
 
 /** 끝났거나 버린 학습 세션(문항·답안)을 남겨 두는 기간. 학습 기록(study_records)은 지우지 않는다 */
 export const ENDED_SESSION_RETENTION_DAYS = 7;
@@ -73,6 +75,26 @@ export class MaintenanceService {
       const [result] = await this.db.delete(practiceSessions).where(
         inArray(
           practiceSessions.id,
+          rows.map((row) => row.id),
+        ),
+      );
+      return result.affectedRows;
+    });
+  }
+
+  /** 알림 목록은 30일만 보관한다 */
+  async purgeNotifications(now = new Date()): Promise<number> {
+    const before = new Date(now.getTime() - NOTIFICATION_RETENTION_DAYS * DAY_MS);
+    return inBatches(async () => {
+      const rows = await this.db
+        .select({ id: notifications.id })
+        .from(notifications)
+        .where(lt(notifications.createdAt, before))
+        .limit(BATCH);
+      if (rows.length === 0) return 0;
+      const [result] = await this.db.delete(notifications).where(
+        inArray(
+          notifications.id,
           rows.map((row) => row.id),
         ),
       );

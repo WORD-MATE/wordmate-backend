@@ -202,6 +202,7 @@ describe('정리 작업', () => {
     expect(Object.keys(result).sort()).toEqual([
       'expiredSessions',
       'purgedFavorites',
+      'purgedNotifications',
       'purgedPractices',
       'purgedSessions',
     ]);
