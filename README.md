@@ -704,6 +704,16 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 - `GET /admin/reports`(상태·사유·마지막 신고 기간 필터, 최근 신고순)와 `GET /admin/reports/{reportGroupId}`(개별 신고, 대상이 받은 신고 전체 수와 제재 이력, 처리 결과·변경 이력). 신고한 사람은 관리자에게도 보여 주지 않습니다.
 - `PATCH /admin/reports/{reportGroupId}`: 완료(`RESOLVED`)에는 결과·메모가 필수입니다. 처음 완료할 때 신고한 사람들에게 `REPORT_RESULT` 알림을 한 번 보냅니다(문제 없음 / 조치함). 완료한 뒤에는 결과·메모만 고칠 수 있고(409 `REPORT_ALREADY_RESOLVED`), 바꿀 때마다 이력·감사 로그가 남습니다. 제재는 `POST /admin/sanctions`를 `reportGroupId`와 함께 따로 호출합니다.
 
+### 부정 의심 사용자
+
+- 매일 04:30(KST) `suspicious` 큐 작업이 전날 활동을 보고 `suspicious_flags`에 표시만 합니다. 제재는 관리자가 정합니다. `POST /admin/jobs/SUSPICIOUS_DETECT/run`으로 직접 돌려도 전날 기준이고, 같은 사용자·사유·날짜는 한 번만 표시합니다(유니크 키, 다시 돌려도 이미 있는 표시는 그대로).
+- 기준(임시값, `src/modules/suspicious/suspicious-rules.ts`):
+  - `FAST_ANSWERS`: 그날 학습 답이 30개 이상이고, 그중 너무 빨리 낸 답(0.5초 미만, 점수·XP에서 빠지는 답)이 절반 이상
+  - `REPEATED_OPPONENT`: 같은 상대와 하루에 4번 이상 대결(XP는 3번까지만 받음). 두 사람 모두 표시
+  - `XP_SPIKE`: 하루 XP 상한(500, 관리자 조정 제외)을 3일 이상 연속으로 채움
+- `GET /admin/suspicious-users`: 사용자·활동한 날별로 묶어(사유 목록, 사유별 근거 수치, 처음 감지한 시각, 모두 확인했는지) 최근 날짜부터 보여 줍니다. 사유·확인 여부·활동 날짜 기간으로 거릅니다.
+- `PATCH /admin/suspicious-users/{userId}/{date}`: 그날 그 사용자의 표시를 모두 확인함(또는 취소)으로 바꾸고 확인한 관리자·시각과 감사 로그를 남깁니다(404 `SUSPICIOUS_NOT_FOUND`).
+
 ### 금칙어 관리
 
 - `GET/POST /admin/forbidden-words`, `PATCH/DELETE /admin/forbidden-words/{wordId}`: 금칙어(`FORBIDDEN`)와 오탐 방지용 허용 단어(`ALLOWED`). 앞뒤 공백을 지우고, 같은 종류에 같은 단어는 409 `ADMIN_FORBIDDEN_WORD_DUPLICATE`입니다. 등록한 관리자와 감사 로그가 남습니다.
@@ -738,7 +748,7 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 
 ### 정기 작업
 
-- 정기 작업(정리, 시즌 마감, 챌린지 생성, 예약 알림)은 실행할 때마다 `job_runs`에 시작·끝·상태·오류·실행 방식(정기/수동)을 남기고, 7일 지난 기록은 매일 정리에서 지웁니다. 작업 목록은 `src/modules/jobs/job-registry.ts`입니다.
+- 정기 작업(정리, 시즌 마감, 챌린지 생성, 예약 알림, 부정 감지)은 실행할 때마다 `job_runs`에 시작·끝·상태·오류·실행 방식(정기/수동)을 남기고, 7일 지난 기록은 매일 정리에서 지웁니다. 작업 목록은 `src/modules/jobs/job-registry.ts`입니다.
 - 시즌 마감이 실패하면(한 시즌이라도 확정하지 못하면) 실패로 남기고 활동 중인 관리자 모두에게 `ADMIN_ALERT`를 보냅니다(실패가 이어지는 동안은 처음 한 번만).
 - `GET /admin/jobs`: 작업마다 주기, 마지막 실행·상태·오류, 다음 정기 실행. `POST /admin/jobs/{job}/run`: 큐에 넣고 바로 202를 돌려주고, 실행 중이거나 30초 안에 다시 누르면 409 `ADMIN_JOB_RUNNING`, 정해진 시각에 보내는 알림 작업(리마인더·오늘의 문장 알림·주간 결과·순위 하락)은 409 `ADMIN_JOB_SCHEDULE_ONLY`입니다(1시간 넘게 RUNNING이면 서버가 꺼진 것으로 보고 다시 실행 가능).
 
