@@ -140,7 +140,8 @@ export class NoticesService {
         admin,
         'NOTICE_CREATE',
         noticeId,
-        { title: body.title, published: body.published, sendPush: body.sendPush },
+        // 초안에는 보내지 않으므로 실제로 보냈는지를 남긴다
+        { title: body.title, published: body.published, sendPush: body.sendPush && body.published },
         request,
         tx,
       );

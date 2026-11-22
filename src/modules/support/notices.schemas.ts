@@ -63,7 +63,7 @@ export const AdminNoticeItem = z
     title: z.string(),
     pinned: z.boolean(),
     published: z.boolean(),
-    createdBy: z.string().nullable(),
+    createdBy: z.string().nullable().describe('작성한 관리자 이름'),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
