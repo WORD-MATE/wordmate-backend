@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import { classes, users } from '../../infra/db/schema/index.js';
 import { DataGsmClient, type DataGsmStudent } from '../auth/datagsm/datagsm.client.js';
@@ -18,6 +18,7 @@ export interface SyncResult {
   reactivated: number;
   classesCreated: number;
   skipped: number;
+  failed: number;
 }
 
 @Injectable()
@@ -50,14 +51,24 @@ export class DataGsmSyncService {
       reactivated: 0,
       classesCreated: await this.ensureClasses(students),
       skipped: 0,
+      failed: 0,
     };
 
     for (let i = 0; i < students.length; i += SYNC_BATCH_SIZE) {
       const matches = await this.match(students.slice(i, i + SYNC_BATCH_SIZE));
       for (const [userId, student] of matches) {
         result.matched++;
-        await this.apply(userId, student, result);
+        try {
+          await this.apply(userId, student, result);
+        } catch (error) {
+          // 한 사용자 때문에 나머지가 매일 밀리지 않게 끝까지 돌고 실패로 남긴다
+          result.failed++;
+          this.logger.error(`학적 동기화 실패 (user ${userId}): ${String(error)}`);
+        }
       }
+    }
+    if (result.failed > 0) {
+      throw new Error(`${result.failed}명 반영 실패 (나머지 반영됨): ${JSON.stringify(result)}`);
     }
     return result;
   }
@@ -65,11 +76,7 @@ export class DataGsmSyncService {
   private async ensureClasses(students: DataGsmStudent[]): Promise<number> {
     const rows = classesOf(students);
     if (rows.length === 0) return 0;
-    // 이미 있는 반은 같은 값으로 갱신해 영향 행이 0이므로, 영향 행 수가 새로 만든 반 수다
-    const [result] = await this.db
-      .insert(classes)
-      .values(rows)
-      .onDuplicateKeyUpdate({ set: { grade: sql`${classes.grade}` } });
+    const [result] = await this.db.insert(classes).ignore().values(rows);
     return result.affectedRows;
   }
 
@@ -105,9 +112,17 @@ export class DataGsmSyncService {
             inArray(users.email, [...byEmail.keys()]),
           ),
         );
+      // 같은 이메일의 계정이 여럿이면 누구인지 알 수 없어 맞추지 않는다
+      const owners = new Map<string, string[]>();
       for (const row of rows) {
-        const student = row.email ? byEmail.get(row.email.toLowerCase()) : undefined;
-        if (student && !matches.has(row.id)) matches.set(row.id, student);
+        if (!row.email) continue;
+        const email = row.email.toLowerCase();
+        owners.set(email, [...(owners.get(email) ?? []), row.id]);
+      }
+      for (const [email, ids] of owners) {
+        const [only] = ids;
+        const student = byEmail.get(email);
+        if (student && only && ids.length === 1 && !matches.has(only)) matches.set(only, student);
       }
     }
     return matches;

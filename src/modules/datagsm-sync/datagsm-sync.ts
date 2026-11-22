@@ -32,7 +32,7 @@ export function planSync(user: SyncUser, student: DataGsmStudent): SyncPlan | nu
     next.grade = student.grade;
     next.classNo = student.classNo;
     next.number = student.number;
-    next.studentNumber = student.studentNumber;
+    if (student.studentNumber !== null) next.studentNumber = student.studentNumber;
   }
 
   let deactivate = false;
