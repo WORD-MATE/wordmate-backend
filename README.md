@@ -677,6 +677,12 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 - 대결: 끝까지 남은 참가자에게 `BATTLE_RESULT`(결과 화면으로), 다시 하기로 새 방을 만들면 지난 대결의 다른 참가자에게 `BATTLE_INVITE`(새 대기실로, 차단 관계 제외)를 보냅니다. 대결 중 배너를 숨기는 것은 앱이 합니다.
 - 알림 설정·야간 금지 시간은 알림·푸시 규칙을 그대로 따릅니다(끈 분류는 저장하지 않고, 야간에는 푸시 없이 목록에만).
 
+## 관리자
+
+- 관리자 API는 `/admin` 아래이고 `@Auth('ADMIN')`(관리자 권한이 있는 사용자)만 씁니다. 관리자 기능은 `src/modules/admin/`에 모읍니다.
+- 관리자 행동은 바꾸는 작업과 같은 트랜잭션에서 `AuditLogService.record`로 감사 로그에 남깁니다(행위자·행동·대상·상세·IP·User-Agent). 교사 담당 반 변경도 남깁니다.
+- `GET /admin/audit-logs`: 행위자·대상·행동·기간(KST 날짜, 양 끝 포함)으로 걸러 최신순 페이지로 봅니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.

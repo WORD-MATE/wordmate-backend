@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { CommonModule } from './common/common.module.js';
 import { validateEnv } from './config/env.js';
 import { InfraModule } from './infra/infra.module.js';
+import { AdminModule } from './modules/admin/admin.module.js';
 import { AppStatusModule } from './modules/app-status/app-status.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { BadgesModule } from './modules/badges/badges.module.js';
@@ -66,6 +67,7 @@ import { WrongNotesModule } from './modules/wrong-notes/wrong-notes.module.js';
     MissionsModule,
     BadgesModule,
     ScheduledNotificationsModule,
+    AdminModule,
     PoliciesModule,
     UsersModule,
   ],
