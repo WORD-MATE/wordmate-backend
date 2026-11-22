@@ -110,6 +110,8 @@ export class InquiryImagesController {
     // 주소가 만료된 뒤에는 캐시에서도 꺼내 쓰지 않게 남은 시간만큼만 둔다
     const remaining = Math.max(0, Number(query.exp) - Math.floor(Date.now() / 1000));
     reply.header('Cache-Control', `private, max-age=${remaining}`);
+    // 웹(다른 Origin)의 <img>에서도 보이게 helmet 기본값 same-origin을 푼다
+    reply.header('Cross-Origin-Resource-Policy', 'cross-origin');
     return new StreamableFile(image.data, { type: image.mime, length: image.data.length });
   }
 }

@@ -197,6 +197,7 @@ describe('1:1 문의', () => {
     const first = await fetchImage(body.images[0].url);
     expect(first.statusCode).toBe(200);
     expect(first.headers['content-type']).toBe('image/jpeg');
+    expect(first.headers['cross-origin-resource-policy']).toBe('cross-origin');
     const meta = await sharp(first.rawPayload).metadata();
     expect(meta.exif).toBeUndefined();
     expect([meta.format, meta.width, meta.height]).toEqual(['jpeg', 20, 10]);

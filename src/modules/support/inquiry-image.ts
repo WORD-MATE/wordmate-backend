@@ -5,7 +5,7 @@ import { AppException } from '../../common/errors/app-exception.js';
 export const INQUIRY_IMAGE_MAX_COUNT = 3;
 export const INQUIRY_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 // 작은 파일로 거대한 픽셀 수를 만들어 메모리를 터뜨리는 이미지를 막는다 (임시값)
-const MAX_INPUT_PIXELS = 50_000_000;
+const MAX_INPUT_PIXELS = 25_000_000;
 
 export type ImageType = 'jpeg' | 'png' | 'webp' | 'heic';
 export type AcceptedImageType = Exclude<ImageType, 'heic'>;
@@ -53,7 +53,16 @@ export function detectImageType(data: Buffer): ImageType | null {
  * 같은 형식으로 다시 인코딩한다. sharp는 메타데이터를 따로 요청하지 않으면 버리므로
  * EXIF(위치 정보 포함)가 빠진다. 회전 정보도 함께 빠지므로 먼저 픽셀에 적용해 둔다
  */
-export async function reencodeImage(data: Buffer, type: AcceptedImageType): Promise<Buffer> {
+export function reencodeImage(data: Buffer, type: AcceptedImageType): Promise<Buffer> {
+  const run = queue.then(() => encode(data, type));
+  queue = run.catch(() => {});
+  return run;
+}
+
+// 디코딩한 이미지는 압축 전보다 훨씬 커서, 여러 요청이 겹쳐도 메모리 한도(768MB)를 넘지 않게 한 장씩 처리한다
+let queue: Promise<unknown> = Promise.resolve();
+
+async function encode(data: Buffer, type: AcceptedImageType): Promise<Buffer> {
   const image = sharp(data, { limitInputPixels: MAX_INPUT_PIXELS, failOn: 'error' }).rotate();
   if (type === 'jpeg') return image.jpeg({ quality: 85, mozjpeg: true }).toBuffer();
   if (type === 'png') return image.png().toBuffer();
