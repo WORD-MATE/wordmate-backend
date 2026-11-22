@@ -4,7 +4,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessTokenService } from '../src/common/auth/access-token.service.js';
 import type { AuthUser } from '../src/common/auth/auth-user.js';
 import { type Database, DB } from '../src/infra/db/db.module.js';
-import { type NewUser, packs, reports, users, words } from '../src/infra/db/schema/index.js';
+import {
+  type NewUser,
+  packs,
+  reportGroups,
+  reports,
+  users,
+  words,
+} from '../src/infra/db/schema/index.js';
 import { newId } from '../src/infra/db/uuid.js';
 import { createTestApp, inject } from './support/create-test-app.js';
 
@@ -55,7 +62,19 @@ describe('신고', () => {
   });
 
   afterAll(async () => {
+    const groups = await db
+      .selectDistinct({ id: reports.groupId })
+      .from(reports)
+      .where(inArray(reports.reporterId, userIds));
     await db.delete(reports).where(inArray(reports.reporterId, userIds));
+    if (groups.length > 0) {
+      await db.delete(reportGroups).where(
+        inArray(
+          reportGroups.id,
+          groups.map((g) => g.id),
+        ),
+      );
+    }
     const owned = await db
       .select({ id: packs.id })
       .from(packs)

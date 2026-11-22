@@ -52,13 +52,17 @@ export class ReportsService {
     const now = new Date();
     try {
       await this.db.transaction(async (tx) => {
-        // 대상의 열린 묶음에 넣는다. 없으면 만들고, 동시에 만들어도 유니크 키로 하나만 남는다
-        await tx.insert(reportGroups).ignore().values({
-          id: newId(),
-          targetType: body.targetType,
-          targetId: body.targetId,
-          lastReportedAt: now,
-        });
+        // 대상의 열린 묶음에 넣는다. 없으면 만들고, 동시에 만들어도 유니크 키로 하나만 남는다.
+        // INSERT IGNORE는 공유 잠금을 잡아 동시 신고끼리 교착되므로 바로 배타 잠금을 잡는 upsert를 쓴다
+        await tx
+          .insert(reportGroups)
+          .values({
+            id: newId(),
+            targetType: body.targetType,
+            targetId: body.targetId,
+            lastReportedAt: now,
+          })
+          .onDuplicateKeyUpdate({ set: { lastReportedAt: now } });
         const openGroup = and(
           eq(reportGroups.targetType, body.targetType),
           eq(reportGroups.targetId, body.targetId),
@@ -70,10 +74,6 @@ export class ReportsService {
           .where(openGroup)
           .for('update');
         if (!group) throw new Error('열린 신고 묶음을 만들지 못했습니다.');
-        await tx
-          .update(reportGroups)
-          .set({ lastReportedAt: now })
-          .where(eq(reportGroups.id, group.id));
         await tx.insert(reports).values({
           id: reportId,
           groupId: group.id,
