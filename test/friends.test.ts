@@ -156,6 +156,17 @@ describe('친구', () => {
     expect((await send(a, b)).json().code).toBe('FRIEND_LIMIT_EXCEEDED');
   });
 
+  it('보낸 사람이 정지되면 수락은 404이고 요청은 지워진다', async () => {
+    const [a, b] = await Promise.all([makeUser(), makeUser()]);
+    const { requestId } = (await send(a, b)).json();
+    await db.update(users).set({ status: 'SUSPENDED' }).where(eq(users.id, a.userId));
+    expect((await call(b, 'POST', `/friends/requests/${requestId}/accept`)).json().code).toBe(
+      'USER_NOT_FOUND',
+    );
+    expect((await call(b, 'GET', '/friends/requests')).json()).toEqual([]);
+    expect(await friendIdsOf(b)).toEqual([]);
+  });
+
   it('랭킹 친구 범위는 나와 친구', async () => {
     const [a, b, stranger] = await Promise.all([makeUser(), makeUser(), makeUser()]);
     await send(a, b);
