@@ -642,6 +642,26 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 - 보상(`POST /missions/{missionId}/claim`)은 이번 기간에 한 번입니다. 사용자 행을 잠근 뒤 `claimed_at IS NULL AND progress >= target` 조건부 업데이트로 두 번 받지 않게 하고, XP(출처 `MISSION`, 하루 500 상한 포함)를 같은 트랜잭션에서 줍니다. 상한에 걸려 일부만 받아도 받은 것으로 끝납니다. 404 `MISSION_NOT_FOUND`, 409 `MISSION_NOT_CLAIMABLE` / `MISSION_ALREADY_CLAIMED`.
 - 진행을 올리는 쪽도 사용자 행을 먼저 잠가, 보상 수령과 잠그는 순서가 같습니다. 홈 화면 `missions`는 일일 미션입니다(교사는 null).
 
+## 배지
+
+- 배지 정의는 `badges` 테이블의 데이터입니다(이름·설명·안내 문구·이미지 키). 업적 배지는 `metric` 값이 `threshold` 이상이면 줍니다. 처음 9개는 마이그레이션으로 넣었고 조건 수치와 이미지는 임시입니다.
+
+| 코드          | 이름          | 조건                      |
+| ------------- | ------------- | ------------------------- |
+| `FIRST_STUDY` | 첫걸음        | 학습 1회                  |
+| `STUDY_100`   | 꾸준한 학습자 | 학습 100회                |
+| `STREAK_7`    | 일주일 연속   | 학습 최고 연속 7일        |
+| `STREAK_30`   | 한 달 연속    | 학습 최고 연속 30일       |
+| `XP_1000`     | XP 1,000      | 누적 XP 1,000             |
+| `XP_10000`    | XP 10,000     | 누적 XP 10,000            |
+| `FIRST_WIN`   | 첫 승리       | 대결 승리 1번             |
+| `WIN_50`      | 대결의 달인   | 대결 승리 50번            |
+| `MORNING_7`   | 아침형 인간   | 오늘의 문장 최고 연속 7일 |
+
+- 학습 완료·대결 종료(XP를 받은 사람)·오늘의 문장·미션 보상·오늘의 챌린지가 커밋된 뒤 `BadgesService.evaluate`로 아직 없는 업적 배지의 조건을 모두 다시 봅니다. 유니크 키로 한 번만 주고, 새로 얻으면 `BADGE_EARNED` 알림(끌 수 없음)을 보냅니다. 평가가 실패해도 요청은 성공하고 다음 활동에서 다시 봅니다.
+- `GET /badges?userId=`: 내 배지는 전체와 획득 여부, 다른 사람은 획득한 것만입니다. 랭킹 비공개 사용자는 빈 배열, 없거나 탈퇴한 사용자는 404 `USER_NOT_FOUND`입니다.
+- 시즌 배지(`SEASON`)는 랭킹 시즌 보상 규칙이 정해지면 시즌 마감에서 줍니다.
+
 ## 정리 작업
 
 BullMQ `maintenance` 큐의 job scheduler로 돌립니다(`src/modules/maintenance`). 스케줄은 Valkey에 저장돼서 인스턴스가 여러 개여도 한 번만 실행되고, 앱을 다시 띄워도 upsert라 중복 등록되지 않습니다.
