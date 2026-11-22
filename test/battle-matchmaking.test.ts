@@ -9,6 +9,7 @@ import { type Database, DB } from '../src/infra/db/db.module.js';
 import {
   battleRoomParticipants,
   battleRooms,
+  blocks,
   type NewUser,
   packs,
   users,
@@ -100,6 +101,7 @@ describe('빠른 1:1 매칭', () => {
 
   afterAll(async () => {
     for (const client of clients) client.socket.terminate();
+    await db.delete(blocks).where(inArray(blocks.blockerId, userIds));
     await valkey.del('mm:queue', 'mm:queued');
     const rooms = await db
       .select({ id: battleRooms.id })
@@ -239,6 +241,19 @@ describe('빠른 1:1 매칭', () => {
     await expect.poll(() => valkey.zrange('mm:queue', '0', '-1')).toEqual([a.user.userId]);
     expect(a.has('MATCH_FOUND')).toBe(false);
     expect(await valkey.get(`mm:found:${gone.userId}`)).toBeNull();
+  });
+
+  it('어느 쪽이든 차단했으면 짝짓지 않는다', async () => {
+    const a = await online({ totalXp: 700 });
+    const b = await online({ totalXp: 700 });
+    await db.insert(blocks).values({ blockerId: a.user.userId, blockedId: b.user.userId });
+    expect((await enqueue(a)).statusCode).toBe(202);
+    expect((await enqueue(b)).statusCode).toBe(202);
+    await expect
+      .poll(async () => (await valkey.zrange('mm:queue', '0', '-1')).sort())
+      .toEqual([a.user.userId, b.user.userId].sort());
+    expect(a.has('MATCH_FOUND')).toBe(false);
+    expect(b.has('MATCH_FOUND')).toBe(false);
   });
 
   it('성사되면 방을 만들기 전에 응답하고, 방 만들기에 실패하면 두 사람 모두 다시 줄 선다', async () => {
