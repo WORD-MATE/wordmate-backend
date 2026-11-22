@@ -14,6 +14,8 @@ import { AdminAuditLogsService } from './admin-audit-logs.service.js';
 import { AdminFaqsController } from './admin-faqs.controller.js';
 import { AdminForbiddenWordsController } from './admin-forbidden-words.controller.js';
 import { AdminForbiddenWordsService } from './admin-forbidden-words.service.js';
+import { AdminMorningController } from './admin-morning.controller.js';
+import { AdminMorningService } from './admin-morning.service.js';
 import { AdminNoticesController } from './admin-notices.controller.js';
 import { AdminPoliciesController } from './admin-policies.controller.js';
 import { AdminPoliciesService } from './admin-policies.service.js';
@@ -41,6 +43,7 @@ import { AdminUsersService } from './admin-users.service.js';
     AdminAuditLogsController,
     AdminFaqsController,
     AdminForbiddenWordsController,
+    AdminMorningController,
     AdminNoticesController,
     AdminPoliciesController,
     AdminReportsController,
@@ -50,6 +53,7 @@ import { AdminUsersService } from './admin-users.service.js';
   providers: [
     AdminAuditLogsService,
     AdminForbiddenWordsService,
+    AdminMorningService,
     AdminPoliciesService,
     AdminReportsService,
     AdminSanctionsService,

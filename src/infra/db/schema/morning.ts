@@ -23,6 +23,8 @@ export const morningSentences = mysqlTable(
     status: mysqlEnum('status', MORNING_STATUS).notNull().default('PENDING_REVIEW'),
     sentence: varchar('sentence', { length: 500 }).notNull(),
     translation: varchar('translation', { length: 500 }).notNull(),
+    // 마지막으로 고친 관리자 (시드는 NULL)
+    updatedBy: binaryUuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
     ...timestamps,
   },
   (t) => [index('morning_sentences_status_idx').on(t.status, t.publishDate)],

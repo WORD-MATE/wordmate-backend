@@ -719,6 +719,23 @@ docker compose run --rm migrate dist/seed-morning.js seeds/morning.json
 - `GET /admin/policies`(시행 전 버전 포함)와 `POST /admin/policies`(종류·버전·제목·내용·시행일·재동의 필요 여부). 시행일은 지금 이후만 받습니다. 필수 여부를 비우면 새 버전 바로 앞 버전을 따릅니다. 같은 종류에 같은 버전은 409 `POLICY_VERSION_EXISTS`, 같은 시행일은 409 `POLICY_EFFECTIVE_AT_EXISTS`입니다.
 - 시행일이 되면 현재 약관이 되고, 재동의가 필요한 버전이면 그 뒤 첫 요청부터 약관 재동의를 안내합니다(서버마다 약관 캐시 1분). 고지 공지(시행 7일 전, 불리한 변경은 30일 전)는 공지로 따로 등록합니다.
 
+### 오늘의 문장 관리
+
+- 상태: 등록하면 `PENDING_REVIEW`(검수 대기) → 게시 예약하면 `SCHEDULED` → 날짜가 되면 06:00 작업이 `PUBLISHED`로 바꿉니다. 게시 예약할 때 날짜가 이미 오늘(06:00 기준) 이전이면 바로 게시합니다. 게시를 취소하면 검수 대기로 돌아가고 앱에서 사라집니다.
+- `POST /admin/morning/parse`: 게시물 본문을 저장하지 않고 분석합니다. 줄마다 `머리말: 내용`이고 칸은 `|`로 나눕니다.
+
+```text
+문장: Persistence is the key.
+뜻: 꾸준함이 열쇠다.
+어휘: persistence | 끈기, 꾸준함 | Her persistence paid off.
+퀴즈 빈칸: _____ is the key. | Persistence | 해설(선택)
+퀴즈 뜻: key의 뜻은? | 열쇠 / 문 / 창 | 열쇠 | 해설(선택)
+```
+
+- `POST /admin/morning`: 날짜당 하나, 있으면 409 `MORNING_DATE_EXISTS`(`replace: true`면 게시 전 문장을 교체, 게시된 날짜는 409 `MORNING_ALREADY_PUBLISHED`). 어휘·퀴즈는 비어 있어도 저장되고, 강조 위치를 비우면 문장에서 처음 나오는 위치로 채웁니다.
+- `PATCH /admin/morning/{id}`: 보낸 항목만(어휘·퀴즈는 통째로) 바꿉니다. 예약·게시된 문장은 바꾼 뒤에도 게시할 수 있어야 하고(400), 게시된 문장의 날짜는 바꿀 수 없습니다. 이미 푼 사용자의 기록(정답 수)은 그대로입니다.
+- `POST /admin/morning/{id}/publish`: 문장·뜻·어휘·퀴즈가 다 있어야 하고(400 `MORNING_INCOMPLETE`), 빈칸 정답이 문장에 있어야 하며(400 `MORNING_BLANK_NOT_IN_SENTENCE`), 강조 위치·객관식 정답이 맞아야 합니다(400 `MORNING_INVALID`). `detail.issues`에 문제 목록이 담깁니다. 시드도 같은 검사를 씁니다.
+
 ## 고객지원
 
 ### FAQ
