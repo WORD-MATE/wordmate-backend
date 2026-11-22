@@ -84,23 +84,17 @@ export class WithdrawalService {
    */
   async withdraw(userId: string): Promise<void> {
     const now = new Date();
-    // 커밋과 차단 사이에 실패해 남은 토큰이 살아 있지 않도록 먼저 막고, 롤백되면 되돌린다
     const [current] = await this.db
-      .select({ status: users.status })
+      .select({ isAdmin: users.isAdmin })
       .from(users)
       .where(eq(users.id, userId));
+    // 커밋과 차단 사이에 실패해 남은 토큰이 살아 있지 않도록 먼저 막고, 롤백되면 되돌린다
     await this.accountBlocks.block(userId, 'WITHDRAWN');
 
     const result = await this.db
-      .transaction((tx) => this.destroy(tx, userId, now))
+      .transaction((tx) => this.destroy(tx, userId, now, current?.isAdmin ?? false))
       .catch(async (error: unknown) => {
-        const restore =
-          current?.status === 'SUSPENDED'
-            ? this.accountBlocks.block(userId)
-            : current?.status === 'WITHDRAWN'
-              ? Promise.resolve()
-              : this.accountBlocks.unblock(userId);
-        await restore.catch(() => undefined);
+        await this.restoreBlock(userId).catch(() => undefined);
         throw error;
       });
 
@@ -112,15 +106,30 @@ export class WithdrawalService {
     await this.leaveRooms(userId);
   }
 
-  private async destroy(tx: Transaction, userId: string, now: Date) {
-    const [user] = await tx.select().from(users).where(eq(users.id, userId)).for('update');
-    if (!user || user.status === 'WITHDRAWN') throw AuthErrors.invalidToken();
-    if (user.isAdmin) {
-      const admins = await tx
+  /** 실패한 뒤 차단은 지금 상태에 맞춘다 (동시에 다른 탈퇴가 커밋됐으면 탈퇴 차단을 그대로 둔다) */
+  private async restoreBlock(userId: string): Promise<void> {
+    const [row] = await this.db
+      .select({ status: users.status })
+      .from(users)
+      .where(eq(users.id, userId));
+    if (row?.status === 'WITHDRAWN') await this.accountBlocks.block(userId, 'WITHDRAWN');
+    else if (row?.status === 'SUSPENDED') await this.accountBlocks.block(userId);
+    else await this.accountBlocks.unblock(userId);
+  }
+
+  private async destroy(tx: Transaction, userId: string, now: Date, wasAdmin: boolean) {
+    // 관리자는 권한 변경(setAdmin)과 같은 순서로 관리자 행을 먼저 잠근 뒤 자기 행을 잠근다
+    const lockAdmins = () =>
+      tx
         .select({ id: users.id, status: users.status })
         .from(users)
         .where(eq(users.isAdmin, true))
         .for('update');
+    let admins = wasAdmin ? await lockAdmins() : null;
+    const [user] = await tx.select().from(users).where(eq(users.id, userId)).for('update');
+    if (!user || user.status === 'WITHDRAWN') throw AuthErrors.invalidToken();
+    if (user.isAdmin) {
+      admins ??= await lockAdmins();
       if (user.status === 'ACTIVE' && isLastActiveAdmin(admins, userId)) {
         throw WithdrawalErrors.lastAdmin();
       }
