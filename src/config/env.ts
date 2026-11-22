@@ -22,6 +22,8 @@ export const envSchema = z.object({
   TRUST_PROXY: commaList(z.union([z.cidrv4(), z.ipv4()])),
   SWAGGER_ENABLED: z.stringbool().optional(),
   DATABASE_URL: z.url({ protocol: /^mysql$/ }),
+  // 대결 참가·매칭이 몰릴 때 연결을 기다리지 않도록 넉넉히 (MySQL max_connections 151보다 작게)
+  DB_POOL_SIZE: z.coerce.number().int().min(1).max(100).default(20),
   VALKEY_URL: z.url({ protocol: /^rediss?$/ }),
   JWT_PRIVATE_KEY: z
     .string()

@@ -19,7 +19,7 @@ export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
       useFactory: (config: ConfigService<Env, true>): Pool =>
         createPool({
           uri: config.get('DATABASE_URL', { infer: true }),
-          connectionLimit: 10,
+          connectionLimit: config.get('DB_POOL_SIZE', { infer: true }),
           timezone: 'Z',
         }),
     },

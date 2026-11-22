@@ -17,6 +17,7 @@ import {
 import { newId } from '../src/infra/db/uuid.js';
 import { VALKEY } from '../src/infra/valkey/valkey.module.js';
 import { MatchmakingService } from '../src/modules/battles/matchmaking.service.js';
+import { RoomsService } from '../src/modules/battles/rooms.service.js';
 import { RealtimeService } from '../src/modules/realtime/realtime.service.js';
 import { createTestApp, inject } from './support/create-test-app.js';
 import { connectAs, type WsClient, wsBaseOf } from './support/ws-client.js';
@@ -234,21 +235,69 @@ describe('빠른 1:1 매칭', () => {
     await valkey.hset('mm:queued', gone.userId, Date.now());
     const a = await online({ totalXp: 500 });
     expect((await enqueue(a)).statusCode).toBe(202);
+    // 성사 처리는 응답 뒤에 이어지므로 끝날 때까지 기다린다
+    await expect.poll(() => valkey.zrange('mm:queue', '0', '-1')).toEqual([a.user.userId]);
     expect(a.has('MATCH_FOUND')).toBe(false);
-    expect(await valkey.zrange('mm:queue', '0', '-1')).toEqual([a.user.userId]);
     expect(await valkey.get(`mm:found:${gone.userId}`)).toBeNull();
+  });
+
+  it('성사되면 방을 만들기 전에 응답하고, 방 만들기에 실패하면 두 사람 모두 다시 줄 선다', async () => {
+    const rooms = app.get(RoomsService);
+    const create = rooms.createQuickMatch.bind(rooms);
+    const slow = vi.spyOn(rooms, 'createQuickMatch').mockImplementation(async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return create(...args);
+    });
+    try {
+      const a = await online();
+      const b = await online();
+      await enqueue(a);
+      expect((await enqueue(b)).statusCode).toBe(202);
+      // 방은 아직 만드는 중이다
+      expect(b.has('MATCH_FOUND')).toBe(false);
+      const found = await b.waitFor('MATCH_FOUND');
+      const { roomId } = found.payload as { roomId: string };
+      a.send('ROOM_LEAVE', { roomId });
+      b.send('ROOM_LEAVE', { roomId });
+    } finally {
+      slow.mockRestore();
+    }
+
+    const broken = vi
+      .spyOn(rooms, 'createQuickMatch')
+      .mockRejectedValueOnce(new Error('DB 연결 실패'));
+    try {
+      const c = await online();
+      const d = await online();
+      await enqueue(c);
+      expect((await enqueue(d)).statusCode).toBe(202);
+      await expect
+        .poll(async () => (await valkey.zrange('mm:queue', '0', '-1')).sort())
+        .toEqual([c.user.userId, d.user.userId].sort());
+      expect(d.has('MATCH_FOUND')).toBe(false);
+    } finally {
+      broken.mockRestore();
+    }
   });
 
   it('성사 처리 중이면 다시 줄 서지 못하고, 남은 기록은 방에 있을 때만 믿는다', async () => {
     const a = await online();
     const foundKey = `mm:found:${a.user.userId}`;
-    await valkey.set(foundKey, 'PENDING', 'EX', 120);
+    await valkey.set(foundKey, `PENDING:${Date.now()}`, 'EX', 120);
     expect((await enqueue(a)).json().code).toBe('MATCH_ALREADY_QUEUED');
-    // 성사 처리가 중간에 끊겨 방이 없으면 잠깐 기다린 뒤 404, 기록도 지운다
+    // 방을 만드는 중이면 잠깐 기다려 본 뒤 이미 성사된 것으로 답하고, 표시는 지우지 않는다
+    const busy = await call(a.user, 'DELETE', '/battles/matchmaking');
+    expect(busy.json()).toMatchObject({ code: 'MATCH_ALREADY_FOUND', detail: null });
+    expect(await valkey.get(foundKey)).not.toBeNull();
+    // 오래되어 끊긴 표시는 다시 줄 서는 것을 막지 않고, 취소하면 404와 함께 지운다
+    await valkey.set(foundKey, `PENDING:${Date.now() - 31_000}`, 'EX', 120);
     expect((await call(a.user, 'DELETE', '/battles/matchmaking')).json().code).toBe(
       'MATCH_NOT_QUEUED',
     );
     expect(await valkey.get(foundKey)).toBeNull();
+    await valkey.set(foundKey, `PENDING:${Date.now() - 31_000}`, 'EX', 120);
+    expect((await enqueue(a)).statusCode).toBe(202);
+    expect((await call(a.user, 'DELETE', '/battles/matchmaking')).statusCode).toBe(204);
     // 이미 끝난 방을 가리키는 기록도 404
     await valkey.set(
       foundKey,

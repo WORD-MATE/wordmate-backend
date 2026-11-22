@@ -12,7 +12,9 @@ const CANDIDATES = 20;
 const QUEUE_KEY = 'mm:queue';
 const QUEUED_KEY = 'mm:queued';
 const FOUND_PREFIX = 'mm:found:';
-const PENDING = 'PENDING';
+const PENDING = 'PENDING:';
+/** 성사 처리 중 표시가 이보다 오래되면 처리가 중간에 끊긴 것으로 본다 (서버가 죽은 경우 등) */
+export const PENDING_STALE_MS = 30 * 1000;
 
 /**
  * 대기열에 넣거나, 누적 XP가 가장 가까운 대기자와 바로 짝짓는다. 같은 차이면 먼저 기다린 사람.
@@ -22,10 +24,16 @@ const ENQUEUE_SCRIPT = `
 local queue, queued = KEYS[1], KEYS[2]
 local user, xp, now, timeout = ARGV[1], tonumber(ARGV[2]), tonumber(ARGV[3]), tonumber(ARGV[4])
 local prefix, ttl, limit = ARGV[5], ARGV[6], tonumber(ARGV[7])
+local owned, stale = ARGV[8] == '1', tonumber(ARGV[9])
 local blocked = {}
-for i = 8, #ARGV do blocked[ARGV[i]] = true end
--- 방을 만드는 중인 성사가 있으면 그 결과를 기다린다 (두 번 누르거나 두 기기에서 요청한 경우)
-if redis.call('GET', prefix .. user) == '${PENDING}' then return {'ALREADY'} end
+for i = 10, #ARGV do blocked[ARGV[i]] = true end
+-- 방을 만드는 중인 성사가 있으면 그 결과를 기다린다 (두 번 누르거나 두 기기에서 요청한 경우).
+-- 그 성사를 처리하는 쪽(owned)이 다음 상대를 찾을 때와, 오래되어 끊긴 표시는 건너뛴다
+local found = redis.call('GET', prefix .. user)
+if not owned and found and string.sub(found, 1, #'${PENDING}') == '${PENDING}' then
+  local since = tonumber(string.sub(found, #'${PENDING}' + 1)) or 0
+  if since + stale > now then return {'ALREADY'} end
+end
 if redis.call('ZSCORE', queue, user) then
   -- 만료 작업이 유실돼 남은 자기 대기는 지우고 새로 줄 선다
   local mine = tonumber(redis.call('HGET', queued, user) or '0')
@@ -56,8 +64,8 @@ consider(redis.call('ZREVRANGEBYSCORE', queue, xp, '-inf', 'WITHSCORES', 'LIMIT'
 if best then
   redis.call('ZREM', queue, best)
   redis.call('HDEL', queued, best)
-  redis.call('SET', prefix .. user, '${PENDING}', 'EX', ttl)
-  redis.call('SET', prefix .. best, '${PENDING}', 'EX', ttl)
+  redis.call('SET', prefix .. user, '${PENDING}' .. now, 'EX', ttl)
+  redis.call('SET', prefix .. best, '${PENDING}' .. now, 'EX', ttl)
   return {'MATCHED', best, tostring(bestAt)}
 end
 redis.call('ZADD', queue, xp, user)
@@ -93,7 +101,7 @@ export type EnqueueResult =
 export type CancelResult =
   | { kind: 'CANCELLED' }
   | { kind: 'NONE' }
-  | { kind: 'PENDING' }
+  | { kind: 'PENDING'; since: number }
   | { kind: 'FOUND'; roomId: string; inviteCode: string };
 
 /** 빠른 매칭 대기열 (Valkey). 여러 서버가 같은 대기열을 본다 */
@@ -101,11 +109,13 @@ export type CancelResult =
 export class MatchQueue {
   constructor(@Inject(VALKEY) private readonly valkey: Redis) {}
 
+  /** owned: 이미 성사 처리를 맡은 쪽이 다음 상대를 찾을 때 (자기 처리 중 표시를 건너뛴다) */
   async enqueue(
     userId: string,
     xp: number,
     now: number,
     excluded: string[],
+    owned = false,
   ): Promise<EnqueueResult> {
     const result = (await this.valkey.eval(
       ENQUEUE_SCRIPT,
@@ -119,6 +129,8 @@ export class MatchQueue {
       FOUND_PREFIX,
       FOUND_TTL_SECONDS,
       CANDIDATES,
+      owned ? '1' : '0',
+      PENDING_STALE_MS,
       ...excluded,
     )) as string[];
     if (result[0] === 'ALREADY') return { kind: 'ALREADY' };
@@ -141,8 +153,9 @@ export class MatchQueue {
       FOUND_PREFIX + userId,
       userId,
     )) as string;
-    if (result === 'CANCELLED' || result === 'NONE' || result === PENDING) {
-      return { kind: result };
+    if (result === 'CANCELLED' || result === 'NONE') return { kind: result };
+    if (result.startsWith(PENDING)) {
+      return { kind: 'PENDING', since: Number(result.slice(PENDING.length)) || 0 };
     }
     const found = JSON.parse(result) as { roomId: string; inviteCode: string };
     return { kind: 'FOUND', ...found };
