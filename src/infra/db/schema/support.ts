@@ -7,9 +7,15 @@ import {
   mysqlEnum,
   mysqlTable,
   primaryKey,
+  tinyint,
   varchar,
 } from 'drizzle-orm/mysql-core';
-import { FAQ_CATEGORY } from '../../../common/enums.js';
+import {
+  FAQ_CATEGORY,
+  INQUIRY_STATUS,
+  INQUIRY_TYPE,
+  PLATFORM,
+} from '../../../common/enums.js';
 import { id, softDelete, timestamps } from '../columns.js';
 import { binaryUuid } from '../uuid.js';
 import { users } from './users.js';
@@ -59,4 +65,48 @@ export const noticeReads = mysqlTable(
     readAt: datetime('read_at', { mode: 'date', fsp: 3 }).notNull(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.noticeId] })],
+);
+
+/** 1:1 문의. 답변은 한 개이고 다시 답하면 고쳐 쓴다 */
+export const inquiries = mysqlTable(
+  'inquiries',
+  {
+    id: id(),
+    userId: binaryUuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    type: mysqlEnum('type', INQUIRY_TYPE).notNull(),
+    title: varchar('title', { length: 50 }).notNull(),
+    content: varchar('content', { length: 1000 }).notNull(),
+    status: mysqlEnum('status', INQUIRY_STATUS).notNull().default('RECEIVED'),
+    platform: mysqlEnum('platform', PLATFORM).notNull(),
+    appVersion: varchar('app_version', { length: 32 }).notNull(),
+    answerContent: varchar('answer_content', { length: 2000 }),
+    answeredBy: binaryUuid('answered_by').references(() => users.id, { onDelete: 'set null' }),
+    answeredAt: datetime('answered_at', { mode: 'date', fsp: 3 }),
+    ...timestamps,
+  },
+  (t) => [
+    index('inquiries_user_idx').on(t.userId, t.id),
+    index('inquiries_status_idx').on(t.status, t.type, t.id),
+  ],
+);
+
+export type Inquiry = typeof inquiries.$inferSelect;
+
+/** 문의 첨부 이미지. 파일은 UPLOAD_DIR 아래 storage_key 경로에 둔다 */
+export const inquiryImages = mysqlTable(
+  'inquiry_images',
+  {
+    id: id(),
+    inquiryId: binaryUuid('inquiry_id')
+      .notNull()
+      .references(() => inquiries.id, { onDelete: 'cascade' }),
+    storageKey: varchar('storage_key', { length: 255 }).notNull(),
+    mime: varchar('mime', { length: 32 }).notNull(),
+    size: int('size').notNull(),
+    sortOrder: tinyint('sort_order').notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [index('inquiry_images_inquiry_idx').on(t.inquiryId, t.sortOrder)],
 );
