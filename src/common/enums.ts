@@ -267,6 +267,7 @@ export const JOB = [
   'MORNING_SENTENCE',
   'RANK_WEEKLY_RESULT',
   'RANK_DROP',
+  'DATAGSM_SYNC',
 ] as const;
 
 export const JOB_RUN_STATUS = ['RUNNING', 'SUCCEEDED', 'FAILED'] as const;

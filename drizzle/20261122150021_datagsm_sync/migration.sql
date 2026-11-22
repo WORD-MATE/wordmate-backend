@@ -1,0 +1,3 @@
+ALTER TABLE `job_runs` MODIFY COLUMN `job` enum('EXPIRE_STUDY_SESSIONS','DAILY_CLEANUP','SEASON_CLOSE','CHALLENGE_GENERATE','STUDY_REMINDER','MORNING_PUBLISH','MORNING_SENTENCE','RANK_WEEKLY_RESULT','RANK_DROP','DATAGSM_SYNC') NOT NULL;--> statement-breakpoint
+ALTER TABLE `users` ADD `datagsm_student_id` varchar(64);--> statement-breakpoint
+CREATE UNIQUE INDEX `datagsm_student_id_unique` ON `users` (`datagsm_student_id`);
