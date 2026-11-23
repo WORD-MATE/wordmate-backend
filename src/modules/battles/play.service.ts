@@ -1,5 +1,5 @@
 import { HttpStatus, Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
-import { and, asc, count, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppException } from '../../common/errors/app-exception.js';
 import { type Database, DB, type Transaction } from '../../infra/db/db.module.js';
@@ -22,7 +22,8 @@ import { type RealtimeContext, RealtimeService } from '../realtime/realtime.serv
 import { CHOICE_COUNT } from '../study/question-builder.js';
 import { BattleQueue } from './battle.queue.js';
 import { BattleFinishService, type XpEarned } from './battle-finish.service.js';
-import { buildBattleQuestions, rankPlayers, scoreOf } from './battle-rules.js';
+import { buildBattleQuestions, scoreOf } from './battle-rules.js';
+import { answerOf, type Event, questionPayload, resultEvents } from './play-payloads.js';
 import { activeParticipants, roomMembers } from './room-members.js';
 
 /** 문항이 끝나고 결과를 보여 주는 시간 */
@@ -46,7 +47,6 @@ const AnswerPayload = z.object({
     .max(CHOICE_COUNT - 1),
 });
 
-type Event = { userIds: string[]; type: string; payload: unknown };
 type Locked = { room: BattleRoom; battle: Battle };
 
 /**
@@ -159,7 +159,7 @@ export class PlayService implements OnModuleInit {
           {
             userIds: await roomMembers(tx, room),
             type: 'QUESTION_STARTED',
-            payload: await this.questionPayload(tx, started),
+            payload: await questionPayload(tx, started),
           },
         ],
       };
@@ -238,7 +238,7 @@ export class PlayService implements OnModuleInit {
         );
       }
       await tx.update(battles).set({ phase: 'RESULT' }).where(eq(battles.id, battleId));
-      return { events: await this.resultEvents(tx, battle, players, await roomMembers(tx, room)) };
+      return { events: await resultEvents(tx, battle, players, await roomMembers(tx, room)) };
     });
     if (!outcome) return;
     if (outcome.retryAt) {
@@ -363,17 +363,17 @@ export class PlayService implements OnModuleInit {
     const [battle] = await this.db.select().from(battles).where(eq(battles.roomId, roomId));
     if (!battle) return;
     if (battle.phase === 'QUESTION') {
-      ctx.reply('QUESTION_STARTED', await this.questionPayload(this.db, battle));
+      ctx.reply('QUESTION_STARTED', await questionPayload(this.db, battle));
       const [mine] = await this.db
         .select({ userId: battleAnswers.userId })
         .from(battleAnswers)
-        .where(this.answerOf(battle.id, battle.currentIndex, ctx.userId));
+        .where(answerOf(battle.id, battle.currentIndex, ctx.userId));
       if (mine) ctx.reply('ANSWER_ACCEPTED', { questionIndex: battle.currentIndex });
       return;
     }
     if (battle.phase === 'RESULT') {
       const players = (await activeParticipants(this.db, roomId)).map((row) => row.userId);
-      const [event] = await this.resultEvents(this.db, battle, players, [ctx.userId]);
+      const [event] = await resultEvents(this.db, battle, players, [ctx.userId]);
       if (event) ctx.reply(event.type, event.payload);
     }
   }
@@ -450,112 +450,6 @@ export class PlayService implements OnModuleInit {
       xp,
       finishedAt,
     };
-  }
-
-  private async questionPayload(executor: Database | Transaction, battle: Battle) {
-    const [question] = await executor
-      .select()
-      .from(battleQuestions)
-      .where(
-        and(eq(battleQuestions.battleId, battle.id), eq(battleQuestions.idx, battle.currentIndex)),
-      );
-    return {
-      questionIndex: battle.currentIndex,
-      total: battle.questionCount,
-      prompt: question?.prompt,
-      choices: question?.choices,
-      deadlineAt: battle.deadlineAt?.toISOString(),
-    };
-  }
-
-  /**
-   * 사람마다 다른 QUESTION_ENDED. 순위는 남아 있는 참가자끼리 누적 점수로 매기고,
-   * 총 풀이 시간에서 미응답 문항은 제한 시간 전체로 센다
-   */
-  private async resultEvents(
-    executor: Database | Transaction,
-    battle: Battle,
-    players: string[],
-    recipients: string[],
-  ): Promise<Event[]> {
-    const idx = battle.currentIndex;
-    const [question] = await executor
-      .select({ answerIndex: battleQuestions.answerIndex })
-      .from(battleQuestions)
-      .where(and(eq(battleQuestions.battleId, battle.id), eq(battleQuestions.idx, idx)));
-    const totals =
-      players.length === 0
-        ? []
-        : await executor
-            .select({
-              userId: battleAnswers.userId,
-              score: sql<number>`CAST(SUM(${battleAnswers.score}) AS SIGNED)`,
-              totalTimeMs: sql<number>`CAST(SUM(COALESCE(${battleAnswers.elapsedMs}, ${battle.timeLimitSec * 1000})) AS SIGNED)`,
-            })
-            .from(battleAnswers)
-            .where(
-              and(
-                eq(battleAnswers.battleId, battle.id),
-                lte(battleAnswers.idx, idx),
-                inArray(battleAnswers.userId, players),
-              ),
-            )
-            .groupBy(battleAnswers.userId);
-    const totalOf = new Map(totals.map((row) => [row.userId, row]));
-    const ranking = rankPlayers(
-      players.map((userId) => ({
-        userId,
-        score: Number(totalOf.get(userId)?.score ?? 0),
-        totalTimeMs: Number(totalOf.get(userId)?.totalTimeMs ?? 0),
-      })),
-    );
-    const answers =
-      players.length === 0
-        ? []
-        : await executor
-            .select()
-            .from(battleAnswers)
-            .where(
-              and(
-                eq(battleAnswers.battleId, battle.id),
-                eq(battleAnswers.idx, idx),
-                inArray(battleAnswers.userId, players),
-              ),
-            );
-    const answerOf = new Map(answers.map((row) => [row.userId, row]));
-    const rankOf = new Map(ranking.map((row) => [row.userId, row]));
-    const publicRanking = ranking.map(({ userId, rank, score }) => ({ userId, rank, score }));
-    return recipients.map((userId) => {
-      const answer = answerOf.get(userId);
-      const total = rankOf.get(userId);
-      return {
-        userIds: [userId],
-        type: 'QUESTION_ENDED',
-        payload: {
-          questionIndex: idx,
-          answerIndex: question?.answerIndex,
-          myResult:
-            answer && total
-              ? {
-                  choiceIndex: answer.choiceIndex,
-                  correct: answer.correct,
-                  score: answer.score,
-                  totalScore: total.score,
-                  rank: total.rank,
-                }
-              : null,
-          ranking: publicRanking,
-        },
-      };
-    });
-  }
-
-  private answerOf(battleId: string, idx: number, userId: string) {
-    return and(
-      eq(battleAnswers.battleId, battleId),
-      eq(battleAnswers.idx, idx),
-      eq(battleAnswers.userId, userId),
-    );
   }
 
   private async publish(events: Event[]): Promise<void> {
