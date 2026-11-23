@@ -7,11 +7,13 @@ APP_DIR="${APP_DIR:-$HOME/wordmate}"
 BACKUP_DIR="${BACKUP_DIR:-$APP_DIR/backups}"
 KEEP_DAYS="${BACKUP_KEEP_DAYS:-14}"
 STAMP="$(TZ=Asia/Seoul date +%Y%m%d-%H%M%S)"
-METRICS_DIR="$BACKUP_DIR/metrics"
+# 백업 폴더는 소유자만 읽게 두고, 모니터링이 읽을 지표 파일은 따로 둔다
+METRICS_DIR="${METRICS_DIR:-$APP_DIR/metrics}"
 
 cd "$APP_DIR"
 mkdir -p "$BACKUP_DIR/mysql" "$BACKUP_DIR/uploads" "$METRICS_DIR"
 chmod 700 "$BACKUP_DIR"
+chmod 755 "$METRICS_DIR"
 
 write_metric() {
   # 모니터링(node-exporter textfile)이 마지막 성공 시각을 보고 백업이 멈췄는지 알린다
@@ -25,6 +27,7 @@ write_metric() {
     echo "wordmate_backup_size_bytes{kind=\"mysql\"} $1"
     echo "wordmate_backup_size_bytes{kind=\"uploads\"} $2"
   } > "$tmp"
+  chmod 644 "$tmp"
   mv "$tmp" "$METRICS_DIR/backup.prom"
 }
 

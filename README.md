@@ -285,7 +285,7 @@ docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" wordmate'
 - 매일 05:00(KST): `backup.sh`가 MySQL 덤프(`mysql/wordmate-{시각}.sql.gz`)와 문의 이미지(`uploads/uploads-{시각}.tar.gz`)를 만들고, 14일(`BACKUP_KEEP_DAYS`) 지난 백업을 지웁니다. 학적 동기화·부정 의심 감지가 끝난 뒤입니다.
 - 상용 배포 때 마이그레이션 전에 한 번 더 백업합니다(MySQL이 아직 없는 첫 배포는 건너뜀).
 - 덤프는 `--single-transaction`이라 서비스를 멈추지 않습니다. 받는 중 실패하면 `.part` 파일만 남고 1시간 뒤 지워집니다.
-- 성공하면 `backups/metrics/backup.prom`에 마지막 성공 시각을 남깁니다. 모니터링이 이 값을 보고 백업이 멈추면 알립니다.
+- 성공하면 `~/wordmate/metrics/backup.prom`에 마지막 성공 시각을 남깁니다(백업 폴더는 소유자만 읽고, 이 파일만 따로 둠). 모니터링이 이 값을 보고 백업이 멈추면 알립니다.
 - 백업이 서버 디스크에만 있으므로 서버를 잃으면 백업도 잃습니다. 주기적으로 다른 곳(개발 서버, 개인 PC 등)에 복사해 둡니다.
 
 처음 한 번 타이머를 설치합니다(첫 배포 뒤 스크립트가 서버에 복사된 다음).
