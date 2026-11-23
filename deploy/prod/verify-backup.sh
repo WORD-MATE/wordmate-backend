@@ -13,12 +13,12 @@ cleanup() { docker rm -f "$name" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 docker run -d --name "$name" --memory 1g --tmpfs /var/lib/mysql \
-  -e MYSQL_ROOT_PASSWORD="$password" -e MYSQL_PWD="$password" -e MYSQL_DATABASE=wordmate \
+  -e MYSQL_ROOT_PASSWORD="$password" -e MYSQL_DATABASE=wordmate \
   mysql:8.4 --innodb-buffer-pool-size=256M --performance-schema=OFF >/dev/null
 
 ready=false
 for _ in $(seq 1 60); do
-  if docker exec "$name" mysqladmin ping -h 127.0.0.1 -uroot --silent >/dev/null 2>&1; then
+  if docker exec -e MYSQL_PWD="$password" "$name" mysqladmin ping -h 127.0.0.1 -uroot --silent >/dev/null 2>&1; then
     ready=true
     break
   fi
@@ -30,9 +30,9 @@ if [ "$ready" != true ]; then
   exit 1
 fi
 
-# 비밀번호는 MYSQL_PWD로 넘겨 경고 없이 실제 오류만 보이게 한다
-gunzip -c "$dump" | docker exec -i "$name" mysql -uroot wordmate
-docker exec "$name" mysql -uroot wordmate -N -e \
+# 비밀번호는 명령마다 MYSQL_PWD로 넘긴다. 컨테이너 전체에 두면 초기화 중 빈 비밀번호 root 접속이 실패한다
+gunzip -c "$dump" | docker exec -i -e MYSQL_PWD="$password" "$name" mysql -uroot wordmate
+docker exec -e MYSQL_PWD="$password" "$name" mysql -uroot wordmate -N -e \
   "SELECT 'tables', COUNT(*) FROM information_schema.tables WHERE table_schema = 'wordmate'
    UNION ALL SELECT 'users', COUNT(*) FROM users
    UNION ALL SELECT 'study_records', COUNT(*) FROM study_records
