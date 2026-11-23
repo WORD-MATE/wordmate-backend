@@ -17,8 +17,10 @@ export const isHealthRoute = (route: string): boolean =>
  * (오류는 로그에 남도록 warn 이상만 남긴다)
  */
 export function instrumentHttp(fastify: FastifyInstance, metrics: MetricsService): void {
+  // 서버 기본 수준이 이미 warn보다 조용하면(error·silent) 오히려 시끄러워지므로 건드리지 않는다
+  const quieter = !['warn', 'error', 'fatal', 'silent'].includes(fastify.log.level);
   fastify.addHook('onRoute', (route) => {
-    if (isHealthRoute(route.url)) route.logLevel = 'warn';
+    if (quieter && isHealthRoute(route.url)) route.logLevel = 'warn';
   });
   fastify.addHook('onResponse', async (request, reply) => {
     const route = routeLabel(request);
