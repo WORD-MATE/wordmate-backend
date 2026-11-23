@@ -1,0 +1,81 @@
+rule_files:
+  - ../rules/wordmate.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: up{job="app",instance="app:9464"}
+        values: 1 1 0x5
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: AppDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: AppDown
+        exp_alerts:
+          - exp_labels: { severity: critical, job: app, instance: "app:9464" }
+            exp_annotations:
+              summary: 앱 지표를 2분 넘게 수집하지 못함
+              description: app:9464/metrics에 닿지 않습니다. 앱 컨테이너가 죽었거나 재시작 중입니다.
+
+  - interval: 1m
+    input_series:
+      - series: wordmate_backup_last_success_timestamp_seconds{job="node",instance="node-exporter:9100"}
+        values: 0x1700
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: BackupStale
+        exp_alerts: []
+      - eval_time: 27h
+        alertname: BackupStale
+        exp_alerts:
+          - exp_labels: { severity: critical, job: node, instance: "node-exporter:9100" }
+            exp_annotations:
+              summary: 26시간 넘게 성공한 백업이 없음
+              description: journalctl -u wordmate-backup으로 매일 백업 결과를 확인합니다.
+
+  - interval: 1m
+    input_series:
+      - series: up{job="node",instance="node-exporter:9100"}
+        values: 1x60
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: BackupStale
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: 26시간 넘게 성공한 백업이 없음
+              description: journalctl -u wordmate-backup으로 매일 백업 결과를 확인합니다.
+
+  - interval: 1m
+    input_series:
+      - series: http_requests_total{job="app",method="GET",route="/packs",status="200"}
+        values: 0+60x20
+      - series: http_requests_total{job="app",method="GET",route="/packs",status="500"}
+        values: 0+10x20
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: HighErrorRate
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: 5xx 응답 비율 14.29%
+              description: 최근 5분 동안 5xx 응답이 5%를 넘습니다. 앱 로그를 확인합니다.
+
+  - interval: 10m
+    input_series:
+      - series: wordmate_queue_jobs{job="app",queue="push",state="failed"}
+        values: 0 0 1 2 3 4 5 5 5 5 5 5 5 5 5
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: QueueFailedJobsGrowing
+        exp_alerts:
+          - exp_labels: { severity: warning, job: app, queue: push, state: failed }
+            exp_annotations:
+              summary: push 큐 실패 작업이 1시간 동안 늘어남
+              description: 관리자 정기 작업 화면이나 앱 로그에서 실패 원인을 확인합니다.
+      - eval_time: 140m
+        alertname: QueueFailedJobsGrowing
+        exp_alerts: []

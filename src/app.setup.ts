@@ -4,12 +4,15 @@ import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import { Reflector } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { WsAdapter } from '@nestjs/platform-ws';
 import type { FastifyServerOptions } from 'fastify';
 import { GlobalExceptionFilter } from './common/errors/global-exception.filter.js';
 import { PinoNestLogger } from './common/logging/pino-nest-logger.js';
 import { setupSwagger } from './common/swagger.js';
 import { ZodResponseInterceptor } from './common/zod/zod-response.interceptor.js';
 import type { Env } from './config/env.js';
+import { instrumentHttp } from './modules/metrics/http-metrics.js';
+import { MetricsService } from './modules/metrics/metrics.service.js';
 import { WORD_FILE_MAX_BYTES } from './modules/words/import/word-file.js';
 
 const BODY_LIMIT_BYTES = 1024 * 1024;
@@ -37,7 +40,9 @@ export async function setupApp(
   app: NestFastifyApplication,
   options: { swagger: boolean; corsOrigins: string[] },
 ): Promise<void> {
-  app.useLogger(new PinoNestLogger(app.getHttpAdapter().getInstance().log));
+  const fastify = app.getHttpAdapter().getInstance();
+  app.useLogger(new PinoNestLogger(fastify.log));
+  instrumentHttp(fastify, app.get(MetricsService));
   await app.register(cookie);
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(multipart, {
@@ -49,6 +54,7 @@ export async function setupApp(
     allowedHeaders: ['Content-Type', 'Authorization', ...CLIENT_HEADERS],
     exposedHeaders: ['Retry-After', 'Idempotent-Replayed'],
   });
+  app.useWebSocketAdapter(new WsAdapter(app));
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalInterceptors(new ZodResponseInterceptor(app.get(Reflector)));
   if (options.swagger) setupSwagger(app);

@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, sum } from 'drizzle-orm';
+import { and, eq, ne, sql, sum } from 'drizzle-orm';
 import type { XpBlockReason, XpSource } from '../../common/enums.js';
 import { kstDate } from '../../common/time/kst.js';
 import type { Transaction } from '../../infra/db/db.module.js';
 import { users, xpLedger } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
+import { addMissionProgress } from '../missions/mission-progress.js';
 
 /** 모든 출처를 합친 하루(KST) XP 상한 */
 export const DAILY_XP_CAP = 500;
@@ -22,7 +23,8 @@ export type XpGrantResult = {
 @Injectable()
 export class XpService {
   /**
-   * 트랜잭션 안에서 호출한다. 사용자 행을 잠가 동시에 지급해도 하루 상한을 넘지 않게 하고,
+   * 트랜잭션 안에서 호출하고, 커밋된 뒤 RankingService.addXp로 랭킹에 반영한다.
+   * 사용자 행을 잠가 동시에 지급해도 하루 상한을 넘지 않게 하고,
    * (출처, refKey)가 이미 원장에 있으면 다시 주지 않는다. 상한에 걸려 0이 된 지급도 원장에 남긴다
    */
   async grant(
@@ -33,10 +35,20 @@ export class XpService {
   ): Promise<XpGrantResult> {
     const date = kstDate(now);
     await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update');
+    // 잠금 읽기로 합계를 구한다. 일반 읽기는 트랜잭션의 첫 일반 읽기 때 잡힌 스냅숏을 봐서,
+    // 그 뒤 다른 곳에서 커밋한 지급이 빠져 하루 상한을 넘을 수 있다
     const [row] = await tx
       .select({ total: sum(xpLedger.amount) })
       .from(xpLedger)
-      .where(and(eq(xpLedger.userId, userId), eq(xpLedger.date, date)));
+      .where(
+        and(
+          eq(xpLedger.userId, userId),
+          eq(xpLedger.date, date),
+          // 관리자 조정은 상한에 넣지 않는다 (사용자가 그날 받을 XP를 막지 않게)
+          ne(xpLedger.source, 'ADMIN_ADJUST'),
+        ),
+      )
+      .for('share');
     let todayTotal = Number(row?.total ?? 0);
 
     const granted: (number | null)[] = [];
@@ -61,9 +73,22 @@ export class XpService {
       todayTotal += amount;
       granted.push(amount);
     }
+    const earned = granted.reduce<number>((total, amount) => total + (amount ?? 0), 0);
+    // 미션 보상이 다시 XP 미션을 채우지 않게 뺀다
+    const missionCounted = grants.reduce(
+      (total, grant, i) => total + (grant.source === 'MISSION' ? 0 : (granted[i] ?? 0)),
+      0,
+    );
+    await addMissionProgress(tx, userId, 'XP_EARNED', missionCounted, now);
+    if (earned > 0) {
+      await tx
+        .update(users)
+        .set({ totalXp: sql`${users.totalXp} + ${earned}` })
+        .where(eq(users.id, userId));
+    }
     return {
       granted,
-      earned: granted.reduce<number>((total, amount) => total + (amount ?? 0), 0),
+      earned,
       capped,
       todayTotal,
     };

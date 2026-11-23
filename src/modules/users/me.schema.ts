@@ -37,7 +37,7 @@ export const Me = z
 export type Me = z.infer<typeof Me>;
 
 // 레벨·티어 규칙이 확정되기 전까지 모든 사용자를 1레벨로 내려준다
-const levelOf = (totalXp: number): z.infer<typeof LevelInfo> => ({
+export const levelOf = (totalXp: number): z.infer<typeof LevelInfo> => ({
   level: 1,
   tier: 'BRONZE',
   totalXp,
@@ -58,7 +58,7 @@ export function toMe(user: User, teacherClasses: ClassSummary[] = []): Me {
     role: user.role,
     isAdmin: user.isAdmin,
     avatarId: user.avatarId,
-    representativeBadgeId: null,
+    representativeBadgeId: user.representativeBadgeId,
     rankingPublic: user.rankingPublic,
     rankingOnboarded: user.rankingOnboarded,
     level: levelOf(user.totalXp),

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, ne, or } from 'drizzle-orm';
 import {
   ACCESS_TOKEN_TTL_SECONDS,
   AccessTokenService,
@@ -9,11 +9,14 @@ import { AuthErrors } from '../../common/auth/auth-errors.js';
 import type { NextStep, Platform } from '../../common/enums.js';
 import { CommonErrors } from '../../common/errors/app-exception.js';
 import type { Env } from '../../config/env.js';
-import { type Database, DB } from '../../infra/db/db.module.js';
-import { classes, type User, users } from '../../infra/db/schema/index.js';
+import { type Database, DB, type Transaction } from '../../infra/db/db.module.js';
+import { classes, type User, users, withdrawnSuspensions } from '../../infra/db/schema/index.js';
+import { RankingService } from '../ranking/ranking.service.js';
+import { hasOtherActiveAdmin } from '../users/active-admins.js';
 import { type Me, toMe } from '../users/me.schema.js';
 import { NextStepService } from '../users/next-step.service.js';
 import { TeacherClassService } from '../users/teacher-class.service.js';
+import { suspensionActive } from '../withdrawal/withdrawal-rules.js';
 import { DataGsmClient, type DataGsmProfile } from './datagsm/datagsm.client.js';
 import { SessionService } from './session.service.js';
 
@@ -38,6 +41,7 @@ export class AuthService {
     private readonly accessTokens: AccessTokenService,
     private readonly nextStep: NextStepService,
     private readonly teacherClasses: TeacherClassService,
+    private readonly ranking: RankingService,
   ) {}
 
   async loginWithDataGsm(
@@ -54,6 +58,7 @@ export class AuthService {
     const datagsmToken = await this.datagsm.exchangeCode(input);
     const profile = await this.datagsm.getProfile(datagsmToken);
     if (profile.pending) throw AuthErrors.accountInactive('DATAGSM_PENDING');
+    await this.assertNotWithdrawnWhileSuspended(profile.datagsmId);
 
     const user = await this.syncUser(profile);
     const session = await this.sessions.create(user.id, platform);
@@ -101,27 +106,50 @@ export class AuthService {
       email: profile.email,
       name: profile.name,
       role: profile.role,
-      studentNumber: profile.studentNumber,
-      grade: profile.grade,
-      classNo: profile.classNo,
-      number: profile.number,
+      // 졸업·정보 수정 요청 중이라 비어 있으면 마지막 학적을 남긴다 (학적 동기화와 같은 규칙)
+      ...(profile.grade !== null && profile.classNo !== null && profile.number !== null
+        ? {
+            studentNumber: profile.studentNumber,
+            grade: profile.grade,
+            classNo: profile.classNo,
+            number: profile.number,
+          }
+        : {}),
       lastLoginAt: now,
+      ...(profile.datagsmStudentId ? { datagsmStudentId: profile.datagsmStudentId } : {}),
     };
 
-    const user = await this.db.transaction(async (tx) => {
+    const { user, previous } = await this.db.transaction(async (tx) => {
       const [existing] = await tx
         .select()
         .from(users)
         .where(eq(users.datagsmId, profile.datagsmId))
         .for('update');
 
+      if (profile.datagsmStudentId) {
+        // 학적 동기화가 이메일로 다른 계정에 붙인 학생 ID는 본인 로그인이 가져간다.
+        // 없는 값을 조건으로 UPDATE하면 갭 잠금이 걸려 동시 첫 로그인끼리 교착되므로 먼저 잠그지 않고 찾는다
+        const [holder] = await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(
+            and(
+              eq(users.datagsmStudentId, profile.datagsmStudentId),
+              or(isNull(users.datagsmId), ne(users.datagsmId, profile.datagsmId)),
+            ),
+          );
+        if (holder) {
+          await tx.update(users).set({ datagsmStudentId: null }).where(eq(users.id, holder.id));
+        }
+      }
+
       if (!existing) {
-        if (profile.inactive) return null;
+        if (profile.inactive) return { user: null, previous: null };
         await tx.insert(users).values({ datagsmId: profile.datagsmId, ...fields });
       } else {
         await tx
           .update(users)
-          .set({ ...fields, status: nextStatus(existing, profile, now) })
+          .set({ ...fields, status: await this.statusAfterLogin(tx, existing, profile, now) })
           .where(eq(users.id, existing.id));
       }
       if (profile.role === 'STUDENT' && profile.grade && profile.classNo) {
@@ -131,12 +159,48 @@ export class AuthService {
           .onDuplicateKeyUpdate({ set: { grade: profile.grade } });
       }
       const [saved] = await tx.select().from(users).where(eq(users.datagsmId, profile.datagsmId));
-      return saved ?? null;
+      return { user: saved ?? null, previous: existing ?? null };
     });
 
     if (!user) throw AuthErrors.accountInactive('GRADUATED_OR_LEFT');
+    if (
+      previous?.role === 'STUDENT' &&
+      (previous.grade !== user.grade || previous.classNo !== user.classNo)
+    ) {
+      await this.ranking.moveScopes(user.id, previous, user);
+    }
     this.assertActive(user);
     return user;
+  }
+
+  /** 정지 중에 탈퇴했으면 정지 기간이 끝날 때까지 새로 가입하지 못한다 (끝난 행은 정리 작업이 지운다) */
+  private async assertNotWithdrawnWhileSuspended(datagsmId: string): Promise<void> {
+    const [row] = await this.db
+      .select({ suspendedUntil: withdrawnSuspensions.suspendedUntil })
+      .from(withdrawnSuspensions)
+      .where(eq(withdrawnSuspensions.datagsmId, datagsmId));
+    if (row && suspensionActive(row.suspendedUntil, new Date())) {
+      throw AuthErrors.withdrawnSuspended(row.suspendedUntil);
+    }
+  }
+
+  /** 마지막 활동 관리자는 졸업·자퇴로 나와도 휴면 처리하지 않는다 (학적 동기화와 같은 규칙) */
+  private async statusAfterLogin(
+    tx: Transaction,
+    existing: User,
+    profile: DataGsmProfile,
+    now: Date,
+  ): Promise<User['status']> {
+    const status = nextStatus(existing, profile, now);
+    if (
+      status === 'INACTIVE' &&
+      existing.status === 'ACTIVE' &&
+      existing.isAdmin &&
+      !(await hasOtherActiveAdmin(tx, existing.id))
+    ) {
+      return existing.status;
+    }
+    return status;
   }
 
   private assertActive(user: User): void {

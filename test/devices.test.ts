@@ -141,15 +141,20 @@ describe('기기 등록·목록·원격 로그아웃', () => {
       pushType: 'WEBPUSH',
       webPushSubscription: {
         endpoint: 'https://push.example.com/sub-1',
-        keys: { p256dh: 'p256dh-key', auth: 'auth-key' },
+        keys: {
+          p256dh:
+            'BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          auth: 'AAAAAAAAAAAAAAAAAAAAAA',
+        },
       },
     });
     expect(res.statusCode).toBe(200);
     expect(await deviceRow(res.json().deviceId)).toMatchObject({
       pushType: 'WEBPUSH',
       webPushEndpoint: 'https://push.example.com/sub-1',
-      webPushP256dh: 'p256dh-key',
-      webPushAuth: 'auth-key',
+      webPushP256dh:
+        'BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+      webPushAuth: 'AAAAAAAAAAAAAAAAAAAAAA',
     });
   });
 

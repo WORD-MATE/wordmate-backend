@@ -113,7 +113,11 @@ export const studyAnswers = mysqlTable(
       .notNull()
       .default(sql`CURRENT_TIMESTAMP(3)`),
   },
-  (t) => [primaryKey({ columns: [t.sessionId, t.idx] })],
+  (t) => [
+    primaryKey({ columns: [t.sessionId, t.idx] }),
+    // 부정 감지가 하루치 답을 모아 본다
+    index('study_answers_submitted_idx').on(t.submittedAt),
+  ],
 );
 
 export type StudyAnswerRow = typeof studyAnswers.$inferSelect;

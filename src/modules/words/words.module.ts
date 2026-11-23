@@ -12,6 +12,6 @@ import { WordsService } from './words.service.js';
   imports: [PacksModule, ForbiddenWordsModule],
   controllers: [WordsController, WordLibraryController],
   providers: [WordsService, WordSearchService, WordFavoritesService, WordViewerService],
-  exports: [WordViewerService],
+  exports: [WordsService, WordViewerService],
 })
 export class WordsModule {}

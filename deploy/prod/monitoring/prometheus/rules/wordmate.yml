@@ -1,0 +1,117 @@
+groups:
+  - name: app
+    rules:
+      - alert: AppDown
+        expr: up{job="app"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 앱 지표를 2분 넘게 수집하지 못함
+          description: app:9464/metrics에 닿지 않습니다. 앱 컨테이너가 죽었거나 재시작 중입니다.
+
+      # 요청이 거의 없을 때 한두 건의 오류로 울리지 않게 초당 0.2건 이상일 때만 본다
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{job="app",status=~"5.."}[5m]))
+            / sum(rate(http_requests_total{job="app"}[5m])) > 0.05
+          and sum(rate(http_requests_total{job="app"}[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 5xx 응답 비율 {{ $value | humanizePercentage }}
+          description: 최근 5분 동안 5xx 응답이 5%를 넘습니다. 앱 로그를 확인합니다.
+
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job="app"}[5m]))) > 1
+          and sum(rate(http_request_duration_seconds_count{job="app"}[5m])) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 응답 시간 p95 {{ $value | humanizeDuration }}
+          description: 최근 5분 동안 요청의 95%가 1초 안에 끝나지 않습니다.
+
+      - alert: QueueUnreachable
+        expr: wordmate_queue_up == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.queue }} 큐 작업 수를 읽지 못함"
+          description: Valkey가 느리거나 큐가 등록되지 않았습니다.
+
+      # 실패 작업 수는 지워지기도 해서(보관 개수 제한) 늘어난 양만 본다
+      - alert: QueueFailedJobsGrowing
+        expr: delta(wordmate_queue_jobs{state="failed"}[1h]) >= 3
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.queue }} 큐 실패 작업이 1시간 동안 늘어남"
+          description: 관리자 정기 작업 화면이나 앱 로그에서 실패 원인을 확인합니다.
+
+  - name: host
+    rules:
+      - alert: DiskSpaceLow
+        expr: |
+          node_filesystem_avail_bytes{job="node",fstype=~"ext4|xfs|btrfs"}
+            / node_filesystem_size_bytes{job="node",fstype=~"ext4|xfs|btrfs"} < 0.15
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.mountpoint }} 남은 공간 {{ $value | humanizePercentage }}"
+          description: 오래된 백업·도커 이미지(docker system df)를 확인합니다.
+
+      - alert: MemoryPressure
+        expr: node_memory_MemAvailable_bytes{job="node"} / node_memory_MemTotal_bytes{job="node"} < 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 사용 가능한 메모리 {{ $value | humanizePercentage }}
+          description: docker stats로 컨테이너별 메모리를 확인합니다.
+
+      # 컨테이너가 mem_limit에 닿으면 커널이 프로세스를 죽인다
+      - alert: OomKill
+        expr: increase(node_vmstat_oom_kill{job="node"}[10m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: 메모리 부족으로 프로세스가 강제 종료됨
+          description: docker ps -a와 docker inspect로 재시작된 컨테이너(OOMKilled)를 찾습니다.
+
+  - name: backup
+    rules:
+      - alert: BackupStale
+        expr: |
+          time() - wordmate_backup_last_success_timestamp_seconds > 26 * 3600
+          or absent(wordmate_backup_last_success_timestamp_seconds)
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: 26시간 넘게 성공한 백업이 없음
+          description: journalctl -u wordmate-backup으로 매일 백업 결과를 확인합니다.
+
+  - name: monitoring
+    rules:
+      - alert: MonitoringTargetDown
+        expr: up{job!="app"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} 수집 실패"
+          description: 모니터링 구성 요소가 멈췄습니다. ~/wordmate/monitoring에서 docker compose ps로 확인합니다.
+
+      - alert: TextfileMetricError
+        expr: node_textfile_scrape_error{job="node"} == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 백업 지표 파일을 읽지 못함
+          description: ~/wordmate/metrics/backup.prom 형식이나 권한을 확인합니다.

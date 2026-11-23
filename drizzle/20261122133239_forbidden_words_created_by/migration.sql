@@ -1,0 +1,2 @@
+ALTER TABLE `forbidden_words` ADD `created_by` binary(16);--> statement-breakpoint
+ALTER TABLE `forbidden_words` ADD CONSTRAINT `forbidden_words_created_by_users_id_fkey` FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL;

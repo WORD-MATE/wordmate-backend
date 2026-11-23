@@ -1,0 +1,16 @@
+import { Module } from '@nestjs/common';
+import { BadgesModule } from '../badges/badges.module.js';
+import { PacksModule } from '../packs/packs.module.js';
+import { RankingModule } from '../ranking/ranking.module.js';
+import { WordsModule } from '../words/words.module.js';
+import { XpModule } from '../xp/xp.module.js';
+import { MorningController } from './morning.controller.js';
+import { MorningService } from './morning.service.js';
+
+@Module({
+  imports: [BadgesModule, PacksModule, WordsModule, XpModule, RankingModule],
+  controllers: [MorningController],
+  providers: [MorningService],
+  exports: [MorningService],
+})
+export class MorningModule {}

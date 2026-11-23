@@ -1,0 +1,63 @@
+import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
+import { Logger, type OnApplicationBootstrap } from '@nestjs/common';
+import type { Job, Queue } from 'bullmq';
+import { triggerOf } from '../jobs/job-registry.js';
+import { JobRunsService } from '../jobs/job-runs.service.js';
+import { type CloseResult, SeasonService } from './season.service.js';
+
+export const RANKING_QUEUE = 'ranking';
+export const CLOSE_SEASONS_JOB = 'close-seasons';
+/** 관리자가 실패한 시즌 하나를 다시 돌릴 때 넣는 작업 */
+export const CLOSE_SEASON_JOB = 'close-season';
+
+@Processor(RANKING_QUEUE)
+export class RankingProcessor extends WorkerHost implements OnApplicationBootstrap {
+  private readonly logger = new Logger(RankingProcessor.name);
+
+  constructor(
+    @InjectQueue(RANKING_QUEUE) private readonly queue: Queue,
+    private readonly seasons: SeasonService,
+    private readonly runs: JobRunsService,
+  ) {
+    super();
+  }
+
+  /** 정리 작업과 같은 이유로 등록을 기다리지 않는다 (Valkey가 없으면 앱 시작이 멈춤) */
+  onApplicationBootstrap(): void {
+    // 주간은 월요일 00:00, 월간은 1일 00:00에 끝나므로 매시간 돌면서 막 끝난 시즌과 실패한 시즌을 마감한다
+    void this.queue
+      .upsertJobScheduler(
+        CLOSE_SEASONS_JOB,
+        { pattern: '10 * * * *', tz: 'Asia/Seoul' },
+        { name: CLOSE_SEASONS_JOB, opts: { removeOnComplete: 100, removeOnFail: 100 } },
+      )
+      .catch((error: unknown) => this.logger.error(`시즌 마감 스케줄 등록 실패: ${String(error)}`));
+  }
+
+  async process(job: Job): Promise<CloseResult | { seasonId: string }> {
+    if (job.name === CLOSE_SEASON_JOB) return this.closeOne(job);
+    if (job.name !== CLOSE_SEASONS_JOB) throw new Error(`알 수 없는 랭킹 작업: ${job.name}`);
+    const result = await this.runs.track('SEASON_CLOSE', triggerOf(job.data), async () => {
+      const closed = await this.seasons.closeEnded();
+      // 실패한 시즌은 다음 시각에 다시 시도하지만, 실패로 남겨 관리자에게 알린다
+      if (closed.failed.length > 0) {
+        throw new Error(`시즌 마감 실패: ${closed.failed.join(', ')}`);
+      }
+      return closed;
+    });
+    if (result.confirmed.length > 0 || result.failed.length > 0) {
+      this.logger.log(`${job.name} ${JSON.stringify(result)}`);
+    }
+    return result;
+  }
+
+  private async closeOne(job: Job): Promise<{ seasonId: string }> {
+    const { seasonId } = job.data as { seasonId: string };
+    return this.runs.track('SEASON_CLOSE', triggerOf(job.data), async () => {
+      if (!(await this.seasons.closeById(seasonId))) {
+        throw new Error(`시즌 마감 실패: ${seasonId}`);
+      }
+      return { seasonId };
+    });
+  }
+}

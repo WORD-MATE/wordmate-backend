@@ -10,12 +10,16 @@ import {
 } from 'drizzle-orm/mysql-core';
 import { ACCOUNT_STATUS, ROLE } from '../../../common/enums.js';
 import { id, timestamps } from '../columns.js';
+import { binaryUuid } from '../uuid.js';
+import { badges } from './badges.js';
 
 export const users = mysqlTable(
   'users',
   {
     id: id(),
     datagsmId: varchar('datagsm_id', { length: 64 }).unique(),
+    // 학생 목록 OpenAPI는 계정 ID가 아닌 학생 ID를 준다. 탈퇴하면 datagsm_id와 함께 비워야 다시 가입할 수 있다
+    datagsmStudentId: varchar('datagsm_student_id', { length: 64 }).unique(),
     email: varchar('email', { length: 320 }),
     name: varchar('name', { length: 50 }).notNull(),
     role: mysqlEnum('role', ROLE).notNull(),
@@ -26,6 +30,9 @@ export const users = mysqlTable(
     classNo: tinyint('class_no'),
     number: tinyint('number'),
     avatarId: varchar('avatar_id', { length: 32 }).notNull().default('default'),
+    representativeBadgeId: binaryUuid('representative_badge_id').references(() => badges.id, {
+      onDelete: 'set null',
+    }),
     rankingPublic: boolean('ranking_public').notNull().default(true),
     rankingOnboarded: boolean('ranking_onboarded').notNull().default(false),
     totalXp: int('total_xp').notNull().default(0),
@@ -39,6 +46,8 @@ export const users = mysqlTable(
     index('users_class_idx').on(t.grade, t.classNo, t.number),
     index('users_status_idx').on(t.status),
     index('users_name_idx').on(t.name),
+    // 마지막 관리자 확인에서 관리자 행만 잠그게 한다
+    index('users_admin_idx').on(t.isAdmin),
   ],
 );
 

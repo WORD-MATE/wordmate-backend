@@ -15,7 +15,37 @@ export type PushType = Values<typeof PUSH_TYPE>;
 export const NEXT_STEP = ['TERMS_AGREEMENT', 'TEACHER_CLASS_SELECT', 'HOME'] as const;
 export type NextStep = Values<typeof NEXT_STEP>;
 
-export const AUDIT_ACTION = ['TEACHER_CLASS_CHANGE'] as const;
+export const AUDIT_ACTION = [
+  'TEACHER_CLASS_CHANGE',
+  'ADMIN_USER_SEARCH',
+  'ADMIN_USER_VIEW',
+  'ADMIN_GRANT',
+  'ADMIN_REVOKE',
+  'XP_ADJUST',
+  'SANCTION_APPLY',
+  'USER_UNSUSPEND',
+  'REPORT_UPDATE',
+  'FORBIDDEN_WORD_CREATE',
+  'FORBIDDEN_WORD_UPDATE',
+  'FORBIDDEN_WORD_DELETE',
+  'APP_CONFIG_CHANGE',
+  'POLICY_CREATE',
+  'FAQ_CREATE',
+  'FAQ_UPDATE',
+  'FAQ_DELETE',
+  'NOTICE_CREATE',
+  'NOTICE_UPDATE',
+  'NOTICE_DELETE',
+  'MORNING_CREATE',
+  'MORNING_UPDATE',
+  'MORNING_PUBLISH',
+  'MORNING_UNPUBLISH',
+  'JOB_RUN',
+  'SEASON_EXCLUSIONS_UPDATE',
+  'SEASON_RERUN',
+  'SUSPICIOUS_REVIEW',
+  'INQUIRY_ANSWER',
+] as const;
 export type AuditAction = Values<typeof AUDIT_ACTION>;
 
 export const UPDATE_STATUS = ['NONE', 'RECOMMENDED', 'REQUIRED'] as const;
@@ -74,6 +104,9 @@ export type WrongSort = Values<typeof WRONG_SORT>;
 export const STATS_PERIOD = ['TODAY', 'WEEK', 'MONTH'] as const;
 export type StatsPeriod = Values<typeof STATS_PERIOD>;
 
+export const DASHBOARD_PERIOD = ['WEEK', 'MONTH'] as const;
+export type DashboardPeriod = Values<typeof DASHBOARD_PERIOD>;
+
 export const MORNING_QUIZ_TYPE = ['FILL_BLANK', 'MEANING', 'QUESTION'] as const;
 export type MorningQuizType = Values<typeof MORNING_QUIZ_TYPE>;
 
@@ -85,6 +118,10 @@ export type RoomType = Values<typeof ROOM_TYPE>;
 
 export const ROOM_STATUS = ['WAITING', 'COUNTDOWN', 'IN_PROGRESS', 'FINISHED', 'EXPIRED'] as const;
 export type RoomStatus = Values<typeof ROOM_STATUS>;
+
+/** 대결 한 판의 진행 단계: 문항 풀이 중 → 결과 표시(2초) → 다음 문항 … → 끝 */
+export const BATTLE_PHASE = ['READY', 'QUESTION', 'RESULT', 'FINISHED'] as const;
+export type BattlePhase = Values<typeof BATTLE_PHASE>;
 
 export const PARTICIPANT_STATE = ['CONNECTED', 'DISCONNECTED', 'LEFT', 'KICKED'] as const;
 export type ParticipantState = Values<typeof PARTICIPANT_STATE>;
@@ -125,11 +162,32 @@ export type XpBlockReason = Values<typeof XP_BLOCK_REASON>;
 export const MISSION_PERIOD = ['DAILY', 'WEEKLY'] as const;
 export type MissionPeriod = Values<typeof MISSION_PERIOD>;
 
+/** 미션이 세는 활동 */
+export const MISSION_METRIC = [
+  'STUDY_COMPLETE',
+  'WORDS_STUDIED',
+  'BATTLE_FINISH',
+  'BATTLE_WIN',
+  'MORNING_COMPLETE',
+  'XP_EARNED',
+] as const;
+export type MissionMetric = Values<typeof MISSION_METRIC>;
+
 export const MISSION_STATUS = ['IN_PROGRESS', 'CLAIMABLE', 'CLAIMED', 'EXPIRED'] as const;
 export type MissionStatus = Values<typeof MISSION_STATUS>;
 
 export const BADGE_TYPE = ['ACHIEVEMENT', 'SEASON'] as const;
 export type BadgeType = Values<typeof BADGE_TYPE>;
+
+/** 업적 배지가 보는 값 (연속 기록은 최고 기록) */
+export const BADGE_METRIC = [
+  'TOTAL_XP',
+  'STUDY_COUNT',
+  'STUDY_STREAK',
+  'BATTLE_WINS',
+  'MORNING_STREAK',
+] as const;
+export type BadgeMetric = Values<typeof BADGE_METRIC>;
 
 export const FRIEND_REQUEST_DIRECTION = ['RECEIVED', 'SENT'] as const;
 export type FriendRequestDirection = Values<typeof FRIEND_REQUEST_DIRECTION>;
@@ -199,14 +257,34 @@ export type FaqCategory = Values<typeof FAQ_CATEGORY>;
 export const FORBIDDEN_WORD_TYPE = ['FORBIDDEN', 'ALLOWED'] as const;
 export type ForbiddenWordType = Values<typeof FORBIDDEN_WORD_TYPE>;
 
+/** 부정 의심 사유: 지나치게 빠른 답, 같은 상대와 반복 대결, 갑작스러운 XP 증가 */
+export const SUSPICIOUS_REASON = ['FAST_ANSWERS', 'REPEATED_OPPONENT', 'XP_SPIKE'] as const;
+export type SuspiciousReason = Values<typeof SUSPICIOUS_REASON>;
+
+export const SEASON_PERIOD = ['WEEKLY', 'MONTHLY'] as const;
+export type SeasonPeriod = Values<typeof SEASON_PERIOD>;
+
 export const SEASON_STATUS = ['CLOSED_PENDING', 'CONFIRMED', 'FAILED'] as const;
 export type SeasonStatus = Values<typeof SEASON_STATUS>;
 
+/** 관리자가 상태를 보고 직접 실행할 수 있는 정기 작업 */
 export const JOB = [
-  'DATAGSM_SYNC',
+  'EXPIRE_STUDY_SESSIONS',
+  'DAILY_CLEANUP',
   'SEASON_CLOSE',
+  'CHALLENGE_GENERATE',
   'STUDY_REMINDER',
   'MORNING_PUBLISH',
-  'RANKING_SNAPSHOT',
+  'MORNING_SENTENCE',
+  'RANK_WEEKLY_RESULT',
+  'RANK_DROP',
+  'DATAGSM_SYNC',
+  'SUSPICIOUS_DETECT',
 ] as const;
+
+export const JOB_RUN_STATUS = ['RUNNING', 'SUCCEEDED', 'FAILED'] as const;
+export type JobRunStatus = Values<typeof JOB_RUN_STATUS>;
+
+export const JOB_TRIGGER = ['SCHEDULE', 'MANUAL'] as const;
+export type JobTrigger = Values<typeof JOB_TRIGGER>;
 export type Job = Values<typeof JOB>;

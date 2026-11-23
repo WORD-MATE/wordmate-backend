@@ -1,0 +1,2 @@
+ALTER TABLE `morning_sentences` ADD `updated_by` binary(16);--> statement-breakpoint
+ALTER TABLE `morning_sentences` ADD CONSTRAINT `morning_sentences_updated_by_users_id_fkey` FOREIGN KEY (`updated_by`) REFERENCES `users`(`id`) ON DELETE SET NULL;

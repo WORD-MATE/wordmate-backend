@@ -202,7 +202,12 @@ describe('정리 작업', () => {
     expect(Object.keys(result).sort()).toEqual([
       'expiredSessions',
       'purgedFavorites',
+      'purgedInquiryImages',
+      'purgedJobRuns',
+      'purgedNotifications',
+      'purgedPractices',
       'purgedSessions',
+      'purgedWithdrawnSuspensions',
     ]);
     await expect(processor.process({ name: 'unknown-job' } as Job)).rejects.toThrow('unknown-job');
     expect(

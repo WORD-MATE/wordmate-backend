@@ -19,6 +19,10 @@ export const ClassErrors = {
     new AppException('CLASS_NOT_FOUND', '존재하지 않는 반입니다.', HttpStatus.BAD_REQUEST, {
       classIds,
     }),
+  missing: () =>
+    new AppException('CLASS_NOT_FOUND', '존재하지 않는 반입니다.', HttpStatus.NOT_FOUND),
+  notAssigned: () =>
+    new AppException('CLASS_NOT_ASSIGNED', '담당 반이 아닙니다.', HttpStatus.FORBIDDEN),
 };
 
 @Injectable()
@@ -51,10 +55,12 @@ export class ClassesService {
       .orderBy(asc(classes.grade), asc(classes.classNo));
   }
 
+  /** actorId는 바꾼 사람 (교사 본인 또는 관리자) */
   async setTeacherClasses(
     teacherId: string,
     classIds: string[],
     request: FastifyRequest,
+    actorId = teacherId,
   ): Promise<ClassSummary[]> {
     const ids = [...new Set(classIds)];
     if (ids.length === 0) throw ClassErrors.required();
@@ -72,7 +78,7 @@ export class ClassesService {
       await tx.insert(teacherClasses).values(ids.map((classId) => ({ teacherId, classId })));
       await this.audit.record(
         {
-          actorId: teacherId,
+          actorId,
           action: 'TEACHER_CLASS_CHANGE',
           targetType: 'USER',
           targetId: teacherId,

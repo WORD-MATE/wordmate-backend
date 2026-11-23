@@ -1,0 +1,2 @@
+ALTER TABLE `users` ADD `representative_badge_id` binary(16);--> statement-breakpoint
+ALTER TABLE `users` ADD CONSTRAINT `users_representative_badge_id_badges_id_fkey` FOREIGN KEY (`representative_badge_id`) REFERENCES `badges`(`id`) ON DELETE SET NULL;
