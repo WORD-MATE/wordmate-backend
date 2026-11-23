@@ -346,14 +346,14 @@ bash restore.sh backups/mysql/wordmate-20261201-050000.sql.gz backups/uploads/up
 
 `deploy/prod/monitoring/`의 구성을 앱과 다른 compose 프로젝트(`wordmate-monitoring`)로 띄웁니다. 배포의 `--remove-orphans`가 지우지 않도록 나눴고, Prometheus만 앱 네트워크(`wordmate_internal`)에 붙어 `app:9464/metrics`를 수집합니다. 배포 워크플로는 설정 파일을 `~/wordmate/monitoring/`에 복사만 하고 다시 띄우지는 않습니다.
 
-| 구성 요소     | 역할                                                             | 메모리 제한 |
-| ------------- | ---------------------------------------------------------------- | ----------- |
-| Prometheus    | 앱·서버 지표 수집(15초), 알림 규칙 계산                          | 512 MB      |
-| Alertmanager  | 알림 묶기·전송 (웹훅이 있을 때만)                                | 64 MB       |
-| node-exporter | 서버 CPU·메모리·디스크, 백업 지표 파일(`~/wordmate/metrics`)     | 64 MB       |
-| Loki          | 로그 저장                                                        | 384 MB      |
-| Alloy         | 도커 소켓(읽기 전용)으로 컨테이너를 찾아 로그를 Loki로 보냄      | 256 MB      |
-| Grafana       | 대시보드·로그 조회·알림 목록. 3001 포트, 서브도메인으로 접속     | 256 MB      |
+| 구성 요소     | 역할                                                         | 메모리 제한 |
+| ------------- | ------------------------------------------------------------ | ----------- |
+| Prometheus    | 앱·서버 지표 수집(15초), 알림 규칙 계산                      | 512 MB      |
+| Alertmanager  | 알림 묶기·전송 (웹훅이 있을 때만)                            | 64 MB       |
+| node-exporter | 서버 CPU·메모리·디스크, 백업 지표 파일(`~/wordmate/metrics`) | 64 MB       |
+| Loki          | 로그 저장                                                    | 384 MB      |
+| Alloy         | 도커 소켓(읽기 전용)으로 컨테이너를 찾아 로그를 Loki로 보냄  | 256 MB      |
+| Grafana       | 대시보드·로그 조회·알림 목록. 3001 포트, 서브도메인으로 접속 | 256 MB      |
 
 - 모두 합쳐 약 1.5 GB입니다. 앱 쪽(약 4.7 GB)과 더하면 6.2 GB이고 나머지가 OS·페이지 캐시 몫입니다.
 - 보관: 지표 15일 또는 2 GB 중 먼저 닿는 쪽, 로그 14일(Loki compactor가 지움). 모니터링 컨테이너 자체 로그는 컨테이너마다 10 MB × 3개까지만 남깁니다.
