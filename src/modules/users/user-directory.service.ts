@@ -13,8 +13,7 @@ import type {
   UserSearchItem,
   UserSearchQuery,
 } from './user-directory.schemas.js';
-import { requestDirection, toUserProfile } from './user-directory-rules.js';
-import { toUserSummary } from './user-summary.js';
+import { requestDirection, toSearchSummary, toUserProfile } from './user-directory-rules.js';
 
 export const UserDirectoryErrors = {
   userNotFound: () =>
@@ -66,7 +65,7 @@ export class UserDirectoryService {
     return {
       nextCursor: page.nextCursor,
       items: page.items.map((row) => ({
-        user: toUserSummary(row),
+        user: toSearchSummary(row),
         isFriend: friends.has(row.id),
         friendRequest: requestDirection(viewer.userId, requests.get(row.id)),
       })),

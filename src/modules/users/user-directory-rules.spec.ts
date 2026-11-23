@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { type ProfileTarget, requestDirection, toUserProfile } from './user-directory-rules.js';
+import {
+  type ProfileTarget,
+  requestDirection,
+  toSearchSummary,
+  toUserProfile,
+} from './user-directory-rules.js';
 import { WITHDRAWN_USER_NAME } from './user-summary.js';
 
 const target: ProfileTarget = {
@@ -54,6 +59,16 @@ describe('toUserProfile', () => {
     expect(profile).toMatchObject({ isMe: true, isPublic: false, level: 1, tier: 'BRONZE' });
   });
 
+  it('정지·휴면 계정은 랭킹처럼 비공개로 친다', () => {
+    for (const status of ['SUSPENDED', 'INACTIVE'] as const) {
+      expect(toUserProfile('me', { ...target, status }, relation)).toMatchObject({
+        isPublic: false,
+        level: null,
+        tier: null,
+      });
+    }
+  });
+
   it('교사는 레벨·티어가 없고 비공개로 표시한다', () => {
     const profile = toUserProfile(
       'me',
@@ -72,5 +87,12 @@ describe('toUserProfile', () => {
       tier: null,
       representativeBadge: null,
     });
+  });
+});
+
+describe('toSearchSummary', () => {
+  it('랭킹 비공개면 티어를 숨긴다', () => {
+    expect(toSearchSummary(target).tier).toBe('BRONZE');
+    expect(toSearchSummary({ ...target, rankingPublic: false }).tier).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 import type { User } from '../../infra/db/schema/users.js';
 import { levelOf } from './me.schema.js';
 import type { UserProfile, UserRelation } from './user-directory.schemas.js';
-import { toUserSummary } from './user-summary.js';
+import { toUserSummary, type UserSummary } from './user-summary.js';
 
 type FriendRequestPair = { requesterId: string; receiverId: string };
 
@@ -27,7 +27,8 @@ export function toUserProfile(
   const isMe = target.id === viewerId;
   const summary = toUserSummary(target);
   const student = target.role === 'STUDENT' && target.status !== 'WITHDRAWN';
-  const isPublic = student && target.rankingPublic;
+  // 랭킹과 같게 정지·휴면 계정은 공개로 치지 않는다
+  const isPublic = student && target.status === 'ACTIVE' && target.rankingPublic;
   const visible = student && (isPublic || isMe);
   const level = visible ? levelOf(target.totalXp) : null;
   return {
@@ -40,4 +41,10 @@ export function toUserProfile(
     representativeBadge: null,
     relation,
   };
+}
+
+/** 검색 결과용. 랭킹 비공개면 티어를 숨긴다 */
+export function toSearchSummary(target: Omit<ProfileTarget, 'totalXp'>): UserSummary {
+  const summary = toUserSummary(target);
+  return target.rankingPublic ? summary : { ...summary, tier: null };
 }
