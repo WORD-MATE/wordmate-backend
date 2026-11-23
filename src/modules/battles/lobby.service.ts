@@ -18,6 +18,8 @@ import {
   RealtimeService,
 } from '../realtime/realtime.service.js';
 import { BattleQueue } from './battle.queue.js';
+import { type LobbyEvent, participantIs, publishEvents, toOthers } from './lobby-events.js';
+import { LobbyPresenceService } from './lobby-presence.service.js';
 import { PlayService } from './play.service.js';
 import { activeParticipants, roomMembers } from './room-members.js';
 import { RoomErrors, RoomsService } from './rooms.service.js';
@@ -25,9 +27,6 @@ import { RoomErrors, RoomsService } from './rooms.service.js';
 export const COUNTDOWN_MS = 3000;
 export const MIN_START_PARTICIPANTS = 2;
 export const REACTION_INTERVAL_SECONDS = 3;
-/** 진행 중 끊긴 참가자를 기다리는 시간. 지나면 LEFT, 남은 문항은 0점 */
-export const DISCONNECT_GRACE_MS = 30 * 1000;
-const OPEN_STATUSES = ['WAITING', 'COUNTDOWN', 'IN_PROGRESS'] as const;
 
 export const LobbyErrors = {
   notMember: () =>
@@ -51,8 +50,6 @@ const RoomPayload = z.object({ roomId: z.uuid() });
 const KickPayload = RoomPayload.extend({ userId: z.uuid() });
 const ReactionPayload = RoomPayload.extend({ reaction: z.enum(REACTION) });
 
-type Event = { userIds: string[]; type: string; payload: unknown };
-
 /**
  * 대기실의 실시간 동작. 상태를 바꾸는 메시지는 방 행을 잠근 트랜잭션에서 처리하고,
  * 알림은 커밋한 뒤에 보낸다 (롤백된 변화를 알리지 않게)
@@ -66,6 +63,7 @@ export class LobbyService implements OnModuleInit {
     private readonly rooms: RoomsService,
     private readonly queue: BattleQueue,
     private readonly play: PlayService,
+    private readonly presence: LobbyPresenceService,
   ) {}
 
   onModuleInit(): void {
@@ -79,7 +77,7 @@ export class LobbyService implements OnModuleInit {
     this.realtime.handle('REACTION_SEND', ReactionPayload, (ctx, p) =>
       this.react(ctx.userId, p.roomId, p.reaction),
     );
-    this.realtime.onUserGone((userId) => this.markDisconnected(userId));
+    this.realtime.onUserGone((userId) => this.presence.markDisconnected(userId));
   }
 
   /**
@@ -96,15 +94,15 @@ export class LobbyService implements OnModuleInit {
       await tx
         .update(battleRoomParticipants)
         .set({ state: 'CONNECTED', disconnectedAt: null })
-        .where(this.participantIs(roomId, ctx.userId));
+        .where(participantIs(roomId, ctx.userId));
       return {
         status: room.status,
-        events: [this.toOthers(room, await roomMembers(tx, room), ctx.userId, 'CONNECTED')],
+        events: [toOthers(room, await roomMembers(tx, room), ctx.userId, 'CONNECTED')],
       };
     });
     ctx.reply('ROOM_STATE', { room: await this.rooms.view(roomId) });
     if (status === 'IN_PROGRESS') await this.play.resume(ctx, roomId);
-    await this.publish(events);
+    await publishEvents(this.realtime, events);
   }
 
   /**
@@ -126,7 +124,7 @@ export class LobbyService implements OnModuleInit {
       if (!participant) throw LobbyErrors.notMember();
       return { status: room.status, events: await this.leaveIn(tx, room, userId) };
     });
-    await this.publish(events);
+    await publishEvents(this.realtime, events);
     if (status === 'IN_PROGRESS') await this.play.afterLeave(roomId);
   }
 
@@ -137,7 +135,7 @@ export class LobbyService implements OnModuleInit {
     const [participant] = await this.db
       .select({ state: battleRoomParticipants.state })
       .from(battleRoomParticipants)
-      .where(this.participantIs(roomId, ctx.userId));
+      .where(participantIs(roomId, ctx.userId));
     const played = participant && participant.state !== 'KICKED';
     if (!played && room.hostUserId !== ctx.userId) return false;
     const view = await this.rooms.view(roomId);
@@ -158,7 +156,7 @@ export class LobbyService implements OnModuleInit {
       const [participant] = await tx
         .select()
         .from(battleRoomParticipants)
-        .where(and(this.participantIs(roomId, userId), eq(battleRoomParticipants.active, true)))
+        .where(and(participantIs(roomId, userId), eq(battleRoomParticipants.active, true)))
         .for('update');
       if (
         participant?.state !== 'DISCONNECTED' ||
@@ -169,18 +167,18 @@ export class LobbyService implements OnModuleInit {
       return this.leaveIn(tx, room, userId);
     });
     if (!events) return;
-    await this.publish(events);
+    await publishEvents(this.realtime, events);
     await this.play.afterLeave(roomId);
   }
 
-  private async leaveIn(tx: Transaction, room: BattleRoom, userId: string): Promise<Event[]> {
+  private async leaveIn(tx: Transaction, room: BattleRoom, userId: string): Promise<LobbyEvent[]> {
     const roomId = room.id;
     const before = await roomMembers(tx, room);
     await tx
       .update(battleRoomParticipants)
       .set({ state: 'LEFT', active: false, isHost: false, leftAt: new Date() })
-      .where(this.participantIs(roomId, userId));
-    const events: Event[] = [
+      .where(participantIs(roomId, userId));
+    const events: LobbyEvent[] = [
       { userIds: before, type: 'PARTICIPANT_STATE', payload: { roomId, userId, state: 'LEFT' } },
     ];
     const remaining = await activeParticipants(tx, roomId);
@@ -199,7 +197,7 @@ export class LobbyService implements OnModuleInit {
       await tx
         .update(battleRoomParticipants)
         .set({ isHost: true })
-        .where(this.participantIs(roomId, next));
+        .where(participantIs(roomId, next));
       await tx.update(battleRooms).set({ hostUserId: next }).where(eq(battleRooms.id, roomId));
       events.push({ userIds: stillHere, type: 'HOST_CHANGED', payload: { hostUserId: next } });
     }
@@ -226,12 +224,12 @@ export class LobbyService implements OnModuleInit {
       const [target] = await tx
         .select()
         .from(battleRoomParticipants)
-        .where(and(this.participantIs(roomId, targetId), eq(battleRoomParticipants.active, true)));
+        .where(and(participantIs(roomId, targetId), eq(battleRoomParticipants.active, true)));
       if (!target || targetId === userId) throw LobbyErrors.invalidKickTarget();
       await tx
         .update(battleRoomParticipants)
         .set({ state: 'KICKED', active: false, isHost: false, leftAt: new Date() })
-        .where(this.participantIs(roomId, targetId));
+        .where(participantIs(roomId, targetId));
       const remaining = (await roomMembers(tx, room)).filter((id) => id !== targetId);
       return [
         { userIds: [targetId], type: 'ROOM_CLOSED', payload: { reason: 'KICKED' } },
@@ -242,7 +240,7 @@ export class LobbyService implements OnModuleInit {
         },
       ];
     });
-    await this.publish(events);
+    await publishEvents(this.realtime, events);
   }
 
   /** 방장만, 참가자 2명 이상. 3초 카운트다운 뒤 지연 작업이 대결을 시작한다 */
@@ -290,7 +288,7 @@ export class LobbyService implements OnModuleInit {
     ) {
       return;
     }
-    await this.publish([
+    await publishEvents(this.realtime, [
       {
         userIds: result.members,
         type: 'COUNTDOWN_STARTED',
@@ -351,7 +349,7 @@ export class LobbyService implements OnModuleInit {
     });
     if (!outcome) return false;
     if (!outcome.started) {
-      await this.publish([
+      await publishEvents(this.realtime, [
         {
           userIds: outcome.members,
           type: 'COUNTDOWN_CANCELLED',
@@ -360,14 +358,14 @@ export class LobbyService implements OnModuleInit {
       ]);
       return false;
     }
-    await this.publish([
+    await publishEvents(this.realtime, [
       {
         userIds: outcome.members,
         type: 'ROOM_STATE',
         payload: { room: await this.rooms.view(roomId) },
       },
     ]);
-    await this.scheduleGraceForAway(roomId);
+    await this.presence.scheduleGraceForAway(roomId);
     if (outcome.battleId) await this.play.startQuestion(outcome.battleId, 0);
     return true;
   }
@@ -385,97 +383,13 @@ export class LobbyService implements OnModuleInit {
     if (!allowed) throw RealtimeErrors.rateLimited();
     const others = (await roomMembers(this.db, room)).filter((id) => id !== userId);
     const blockers = await blockersAmong(this.db, userId, others);
-    await this.publish([
+    await publishEvents(this.realtime, [
       {
         userIds: others.filter((id) => !blockers.has(id)),
         type: 'REACTION_RECEIVED',
         payload: { userId, reaction },
       },
     ]);
-  }
-
-  /**
-   * 모든 인스턴스에서 연결이 끊겼으면 대기실의 참가 상태를 DISCONNECTED로 (방에서는 나가지 않는다).
-   * 그사이 다시 접속해 구독했을 수 있으므로 방을 잠근 뒤 접속 상태와 참가 상태를 다시 확인한다
-   */
-  async markDisconnected(userId: string): Promise<void> {
-    if (await this.realtime.isOnline(userId)) return;
-    const rows = await this.db
-      .select({ roomId: battleRoomParticipants.roomId })
-      .from(battleRoomParticipants)
-      .innerJoin(battleRooms, eq(battleRooms.id, battleRoomParticipants.roomId))
-      .where(
-        and(
-          eq(battleRoomParticipants.userId, userId),
-          eq(battleRoomParticipants.active, true),
-          eq(battleRoomParticipants.state, 'CONNECTED'),
-          inArray(battleRooms.status, [...OPEN_STATUSES]),
-        ),
-      );
-    const events: Event[] = [];
-    const graces: { roomId: string; disconnectedAt: Date }[] = [];
-    for (const { roomId } of rows) {
-      const disconnectedAt = new Date();
-      const event = await this.db.transaction(async (tx) => {
-        const [room] = await tx
-          .select()
-          .from(battleRooms)
-          .where(eq(battleRooms.id, roomId))
-          .for('update');
-        if (!room || !(OPEN_STATUSES as readonly string[]).includes(room.status)) return null;
-        if (await this.realtime.isOnline(userId)) return null;
-        const [result] = await tx
-          .update(battleRoomParticipants)
-          .set({ state: 'DISCONNECTED', disconnectedAt })
-          .where(
-            and(
-              this.participantIs(roomId, userId),
-              eq(battleRoomParticipants.active, true),
-              eq(battleRoomParticipants.state, 'CONNECTED'),
-            ),
-          );
-        if (result.affectedRows === 0) return null;
-        if (room.status === 'IN_PROGRESS') graces.push({ roomId, disconnectedAt });
-        return this.toOthers(room, await roomMembers(tx, room), userId, 'DISCONNECTED');
-      });
-      if (event) events.push(event);
-    }
-    await this.publish(events);
-    for (const grace of graces) {
-      await this.scheduleGrace(grace.roomId, userId, grace.disconnectedAt);
-    }
-  }
-
-  /** 시작 작업이 다시 돌아도 같은 끊긴 시각이면 작업 id가 같아 한 번만 예약된다 */
-  private async scheduleGraceForAway(roomId: string): Promise<void> {
-    const away = await this.db
-      .select({
-        userId: battleRoomParticipants.userId,
-        disconnectedAt: battleRoomParticipants.disconnectedAt,
-      })
-      .from(battleRoomParticipants)
-      .where(
-        and(
-          eq(battleRoomParticipants.roomId, roomId),
-          eq(battleRoomParticipants.active, true),
-          eq(battleRoomParticipants.state, 'DISCONNECTED'),
-        ),
-      );
-    for (const { userId, disconnectedAt } of away) {
-      if (disconnectedAt) await this.scheduleGrace(roomId, userId, disconnectedAt);
-    }
-  }
-
-  /** 예약에 실패하면 그 참가자는 끊긴 채 남는다 (남은 문항은 미응답, 방은 멈춘 방 정리가 닫는다) */
-  private async scheduleGrace(roomId: string, userId: string, disconnectedAt: Date): Promise<void> {
-    await this.queue
-      .scheduleDisconnectGrace(
-        roomId,
-        userId,
-        disconnectedAt,
-        new Date(disconnectedAt.getTime() + DISCONNECT_GRACE_MS),
-      )
-      .catch(() => {});
   }
 
   /** 트랜잭션에서는 방 행을 잠근다 (리액션처럼 상태를 바꾸지 않을 때는 lock=false) */
@@ -492,24 +406,9 @@ export class LobbyService implements OnModuleInit {
     const [participant] = await executor
       .select()
       .from(battleRoomParticipants)
-      .where(and(this.participantIs(roomId, userId), eq(battleRoomParticipants.active, true)));
+      .where(and(participantIs(roomId, userId), eq(battleRoomParticipants.active, true)));
     if (!participant && room.hostUserId !== userId) throw LobbyErrors.notMember();
     return { room, participant: participant ?? null };
-  }
-
-  private participantIs(roomId: string, userId: string) {
-    return and(
-      eq(battleRoomParticipants.roomId, roomId),
-      eq(battleRoomParticipants.userId, userId),
-    );
-  }
-
-  private toOthers(room: BattleRoom, members: string[], userId: string, state: string): Event {
-    return {
-      userIds: members.filter((id) => id !== userId),
-      type: 'PARTICIPANT_STATE',
-      payload: { roomId: room.id, userId, state },
-    };
   }
 
   private async close(tx: Transaction, roomId: string): Promise<void> {
@@ -518,11 +417,5 @@ export class LobbyService implements OnModuleInit {
       .update(battleRoomParticipants)
       .set({ active: false })
       .where(eq(battleRoomParticipants.roomId, roomId));
-  }
-
-  private async publish(events: Event[]): Promise<void> {
-    for (const event of events) {
-      await this.realtime.sendToUsers(event.userIds, event.type, event.payload).catch(() => {});
-    }
   }
 }
