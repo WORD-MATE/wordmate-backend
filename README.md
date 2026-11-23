@@ -244,18 +244,19 @@ gunzip -c wordmate.sql.gz | docker compose exec -T mysql sh -c 'mysql -uroot -p"
 ### 상용 서버 최초 설정
 
 1. 학교 서버 관리 페이지에서 도메인을 추가합니다 (내부 포트 `3000`).
-2. 서버에서 `SWAP_SIZE=4G bash setup-server.sh`를 실행하고 다시 로그인합니다.
+2. 저장소의 `deploy/setup-server.sh`를 서버로 복사해 `SWAP_SIZE=4G bash setup-server.sh`로 실행하고 다시 로그인합니다.
 3. `~/wordmate/.env`를 만듭니다. 항목은 개발 서버와 같고, 비밀번호·JWT 키는 개발 서버와 다른 값으로 새로 만듭니다. `SWAGGER_ENABLED`는 넣지 않습니다(상용에서는 API 문서를 열지 않음). `CORS_ORIGINS`·`DATAGSM_REDIRECT_URIS`는 상용 웹 주소로 넣습니다.
 4. 배포용 SSH 키를 개발 서버와 따로 만들어 공개키를 `~/.ssh/authorized_keys`에 추가합니다.
-5. `deploy/prod/compose.yml`을 `~/wordmate/compose.yml`로 복사합니다. 이후에는 main 배포 워크플로가 덮어씁니다.
-6. 첫 실행 뒤 관리자가 될 사람이 한 번 로그인하면, DB에서 최초 관리자로 지정합니다. 지정한 사람은 다시 로그인해야 관리자 권한이 토큰에 들어갑니다.
+5. 앱 실행(`compose.yml` 복사, `main` 이미지 받기·교체)은 main 배포 워크플로가 합니다. `main` 이미지는 이 워크플로가 처음 돌 때 만들어지므로, 그 전에 서버에서 직접 `docker compose up`을 하면 이미지를 받지 못합니다.
+6. 첫 배포 뒤 관리자가 될 사람이 한 번 로그인하면, DB에서 그 계정을 찾아 최초 관리자로 지정합니다. 이메일이 비어 있는 계정도 있어서 ID로 지정하고, 바뀐 행이 1개인지 확인합니다. 지정한 사람은 다시 로그인해야 관리자 권한이 토큰에 들어갑니다.
 
 ```bash
 docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" wordmate'
-# mysql> UPDATE users SET is_admin = 1 WHERE email = '관리자 이메일';
+# mysql> SELECT BIN_TO_UUID(id), name, email, student_number, role FROM users WHERE name = '이름';
+# mysql> UPDATE users SET is_admin = 1 WHERE id = UUID_TO_BIN('위에서 찾은 ID');   -- Rows matched: 1 확인
 ```
 
-운영 명령은 개발 서버와 같습니다.
+운영 명령은 개발 서버와 같습니다(`docker compose`는 `~/wordmate`에서 실행).
 
 ## 인증
 
