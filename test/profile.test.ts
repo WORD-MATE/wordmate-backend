@@ -144,7 +144,7 @@ describe('프로필 수정·기본 아바타', () => {
     expect(row).toMatchObject({ avatarId: 'dog', representativeBadgeId: null });
   });
 
-  it('갖지 않았거나 내려간 배지는 USER_BADGE_NOT_OWNED, 형식이 틀리면 VALIDATION_FAILED', async () => {
+  it('갖지 않았거나 내려간 배지는 USER_BADGE_NOT_OWNED, 형식이 틀리면 INVALID_REQUEST', async () => {
     const user = await makeUser();
     await give(user.userId, firstStudyId);
     await give(user.userId, inactiveBadgeId);
@@ -159,7 +159,7 @@ describe('프로필 수정·기본 아바타', () => {
 
     const invalid = await patchProfile(user, { representativeBadgeId: 'not-a-uuid' });
     expect(invalid.statusCode).toBe(400);
-    expect(invalid.json().code).toBe('VALIDATION_FAILED');
+    expect(invalid.json().code).toBe('INVALID_REQUEST');
   });
 
   it('교사는 아바타는 바꾸고 대표 배지는 지정할 수 없다', async () => {
