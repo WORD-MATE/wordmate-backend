@@ -353,7 +353,7 @@ bash restore.sh backups/mysql/wordmate-20261201-050000.sql.gz backups/uploads/up
 | node-exporter | 서버 CPU·메모리·디스크, 백업 지표 파일(`~/wordmate/metrics`)     | 64 MB       |
 | Loki          | 로그 저장                                                        | 384 MB      |
 | Alloy         | 도커 소켓(읽기 전용)으로 컨테이너를 찾아 로그를 Loki로 보냄      | 256 MB      |
-| Grafana       | 대시보드·로그 조회·알림 목록. 서버 안(`127.0.0.1:3001`)에만 열림 | 256 MB      |
+| Grafana       | 대시보드·로그 조회·알림 목록. 3001 포트, 서브도메인으로 접속     | 256 MB      |
 
 - 모두 합쳐 약 1.5 GB입니다. 앱 쪽(약 4.7 GB)과 더하면 6.2 GB이고 나머지가 OS·페이지 캐시 몫입니다.
 - 보관: 지표 15일 또는 2 GB 중 먼저 닿는 쪽, 로그 14일(Loki compactor가 지움). 모니터링 컨테이너 자체 로그는 컨테이너마다 10 MB × 3개까지만 남깁니다.
@@ -380,11 +380,16 @@ docker compose ps
 - 배포로 설정 파일이 바뀐 뒤 적용: `cd ~/wordmate/monitoring && docker compose up -d --force-recreate`
 - 앱 compose를 `docker compose down`으로 내릴 때는 Prometheus가 앱 네트워크에 붙어 있어 네트워크를 지우지 못합니다. 모니터링을 먼저 내리거나(`docker compose down`), 앱은 `stop`으로 멈춥니다.
 
-Grafana 접속: 외부에 열지 않으므로 SSH 터널로 들어갑니다. 내 PC에서 아래를 실행해 두고 브라우저로 `http://localhost:3001`에 접속해 `admin` / `.env`의 비밀번호로 로그인합니다. 대시보드는 Dashboards → WordMate(요청 수·지연·5xx(라우트별), 실시간 연결, 큐 작업, CPU·메모리·디스크, 마지막 백업 후 경과 시간, 앱 로그)입니다.
+Grafana 접속: 학교 서버 관리 페이지에서 서브도메인을 하나 더 만들어 내부 포트 `3001`로 연결하고, `.env`에 아래를 넣은 뒤 `docker compose up -d --force-recreate grafana`로 적용합니다. 대시보드는 Dashboards → WordMate(요청 수·지연·5xx(라우트별), 실시간 연결, 큐 작업, CPU·메모리·디스크, 마지막 백업 후 경과 시간, 앱 로그)입니다.
 
 ```bash
-ssh -N -L 3001:127.0.0.1:3001 -p {SSH 포트} ubuntu@{서버 주소}
+GRAFANA_ROOT_URL=https://{Grafana 서브도메인}
+GRAFANA_COOKIE_SECURE=true        # HTTPS 전용 쿠키·HSTS
+# GF_SECURITY_ADMIN_USER=admin    # 처음 뜰 때만 적용
 ```
+
+- 로그인 화면이 인터넷에 열리므로 비밀번호는 길게(`openssl rand -hex 16` 이상) 둡니다. 회원가입·익명 접근은 꺼져 있고, 로그인 실패가 반복되면 Grafana가 잠시 막습니다.
+- `GRAFANA_COOKIE_SECURE=true`이면 `http://`로는 로그인할 수 없습니다. 서브도메인 없이 SSH 터널(`ssh -N -L 3001:127.0.0.1:3001 ...` → `http://localhost:3001`)로 들어갈 때는 이 값을 빼야 합니다.
 
 알림 규칙(`prometheus/rules/wordmate.yml`):
 
