@@ -46,35 +46,14 @@ export class BattleResultsService {
     const finishedAt = row?.battle.phase === 'FINISHED' ? row.battle.finishedAt : null;
     if (!row || !finishedAt) throw BattleErrors.notFound();
     const { room } = row;
-    const results = await this.db
-      .select({ result: battleResults, user: users })
-      .from(battleResults)
-      .innerJoin(users, eq(users.id, battleResults.userId))
-      .where(eq(battleResults.battleId, battleId))
-      .orderBy(
-        sql`${battleResults.rank} IS NULL`,
-        asc(battleResults.rank),
-        desc(battleResults.score),
-        asc(battleResults.totalTimeMs),
-      );
+    const results = await this.loadRanking(battleId);
     const mine = results.find((r) => r.result.userId === user.userId)?.result;
     if (!mine && !(room.type === 'CLASS' && room.hostUserId === user.userId)) {
       throw CommonErrors.forbidden('참가하지 않은 대결입니다.');
     }
 
-    const questions = await this.db
-      .select({ question: battleQuestions, word: words })
-      .from(battleQuestions)
-      .innerJoin(words, eq(words.id, battleQuestions.wordId))
-      .where(eq(battleQuestions.battleId, battleId))
-      .orderBy(asc(battleQuestions.idx));
-    const answers = mine
-      ? await this.db
-          .select({ idx: battleAnswers.idx, choiceIndex: battleAnswers.choiceIndex })
-          .from(battleAnswers)
-          .where(and(eq(battleAnswers.battleId, battleId), eq(battleAnswers.userId, user.userId)))
-      : [];
-    const choiceOf = new Map(answers.map((a) => [a.idx, a.choiceIndex]));
+    const questions = await this.loadQuestions(battleId);
+    const choiceOf = await this.myChoices(battleId, user.userId, Boolean(mine));
 
     return {
       battleId,
@@ -125,6 +104,41 @@ export class BattleResultsService {
         };
       }),
     };
+  }
+
+  /** 순위 순서대로 참가 결과와 사용자 요약 */
+  private loadRanking(battleId: string) {
+    return this.db
+      .select({ result: battleResults, user: users })
+      .from(battleResults)
+      .innerJoin(users, eq(users.id, battleResults.userId))
+      .where(eq(battleResults.battleId, battleId))
+      .orderBy(
+        sql`${battleResults.rank} IS NULL`,
+        asc(battleResults.rank),
+        desc(battleResults.score),
+        asc(battleResults.totalTimeMs),
+      );
+  }
+
+  private loadQuestions(battleId: string) {
+    return this.db
+      .select({ question: battleQuestions, word: words })
+      .from(battleQuestions)
+      .innerJoin(words, eq(words.id, battleQuestions.wordId))
+      .where(eq(battleQuestions.battleId, battleId))
+      .orderBy(asc(battleQuestions.idx));
+  }
+
+  /** 참가자가 아니면(교사 관람) 내가 고른 보기는 없다 */
+  private async myChoices(battleId: string, userId: string, participated: boolean) {
+    const answers = participated
+      ? await this.db
+          .select({ idx: battleAnswers.idx, choiceIndex: battleAnswers.choiceIndex })
+          .from(battleAnswers)
+          .where(and(eq(battleAnswers.battleId, battleId), eq(battleAnswers.userId, userId)))
+      : [];
+    return new Map(answers.map((a) => [a.idx, a.choiceIndex]));
   }
 
   /** 최신순. 요약은 전체 기록 기준 (승률·정답률은 완주한 대결만) */
