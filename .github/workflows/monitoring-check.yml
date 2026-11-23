@@ -1,0 +1,88 @@
+name: Monitoring check
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - deploy/prod/monitoring/**
+      - .github/workflows/monitoring-check.yml
+  push:
+    branches: [develop, main]
+    paths:
+      - deploy/prod/monitoring/**
+      - .github/workflows/monitoring-check.yml
+
+concurrency:
+  group: monitoring-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+        working-directory: deploy/prod/monitoring
+    steps:
+      - uses: actions/checkout@v5
+
+      # 서버처럼 앱 네트워크와 백업 지표 파일을 미리 만든다
+      - name: 준비
+        run: |
+          printf 'GF_SECURITY_ADMIN_PASSWORD=ci-password\nALERT_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/0/ci\nALERT_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/ci\n' > .env
+          docker network create --opt com.docker.network.driver.mtu=1400 --subnet 172.30.0.0/24 wordmate_internal
+          mkdir -p ../metrics
+          printf '# TYPE wordmate_backup_last_success_timestamp_seconds gauge\nwordmate_backup_last_success_timestamp_seconds %s\n' "$(date +%s)" > ../metrics/backup.prom
+
+      - run: docker compose config -q
+
+      - run: docker compose pull -q
+
+      - name: Prometheus 설정·알림 규칙
+        run: |
+          docker compose run --rm --no-deps -T --entrypoint promtool prometheus check config /etc/prometheus/prometheus.yml
+          docker compose run --rm --no-deps -T --entrypoint promtool -w /etc/prometheus/tests prometheus test rules wordmate.test.yml
+
+      - name: Loki 설정
+        run: docker compose run --rm --no-deps -T loki -config.file=/etc/loki/loki.yml -verify-config
+
+      - name: Alloy 설정 형식
+        run: docker compose run --rm --no-deps -T alloy fmt /etc/alloy/config.alloy | diff -u alloy/config.alloy -
+
+      - name: 전체 실행
+        run: |
+          docker compose up -d --wait
+          # 앱 컨테이너처럼 라벨을 단 컨테이너로 pino 수준 변환을 확인한다
+          docker run -d --name fake-app --label com.docker.compose.project=wordmate --label com.docker.compose.service=app \
+            busybox:1.37 sh -c 'while true; do echo "{\"level\":50,\"msg\":\"ci\"}"; sleep 2; done'
+
+      - name: 동작 확인
+        run: |
+          prom() { docker compose exec -T prometheus wget -qO- "$@"; }
+          # pipefail이라 grep -q가 먼저 끝나면 앞 명령이 SIGPIPE로 실패할 수 있어 끝까지 읽는다
+          has() { grep -F -- "$1" > /dev/null; }
+          for i in $(seq 1 30); do
+            up=$(prom 'http://localhost:9090/api/v1/query?query=count(up==1)' || true)
+            if echo "$up" | has ',"5"]'; then break; fi
+            sleep 3
+          done
+          prom 'http://localhost:9090/api/v1/query?query=up' && echo
+          echo "$up" | has ',"5"]'
+          prom 'http://localhost:9090/api/v1/rules' | has '"name":"BackupStale"'
+          prom 'http://localhost:9090/api/v1/query?query=wordmate_backup_last_success_timestamp_seconds' | has '"value"'
+          docker compose exec -T alertmanager amtool check-config /tmp/alertmanager.yml
+          prom 'http://alertmanager:9093/api/v2/status' | has 'discord_configs'
+          curl -fsS --retry 30 --retry-delay 2 --retry-all-errors -u admin:ci-password http://127.0.0.1:3001/api/datasources | has '"uid":"loki"'
+          curl -fsS --retry 30 --retry-delay 2 --retry-all-errors -u admin:ci-password 'http://127.0.0.1:3001/api/search?query=WordMate' | has '"uid":"wordmate"'
+          for i in $(seq 1 30); do
+            if prom 'http://loki:3100/loki/api/v1/label/project/values' | has 'wordmate-monitoring' \
+              && prom 'http://loki:3100/loki/api/v1/label/level/values' | has '"error"'; then exit 0; fi
+            sleep 3
+          done
+          echo "::error::Loki에 컨테이너 로그가 들어오지 않거나 앱 로그 수준이 라벨로 붙지 않습니다"
+          exit 1
+
+      - name: 실패 시 로그
+        if: failure()
+        run: docker compose ps -a && docker compose logs --tail 50

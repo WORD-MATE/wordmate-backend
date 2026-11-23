@@ -342,6 +342,76 @@ bash restore.sh backups/mysql/wordmate-20261201-050000.sql.gz backups/uploads/up
 
 덤프가 앱 버전보다 예전 스키마여도 앱이 뜰 때 `migrate`가 마이그레이션을 다시 적용합니다. 반대로 덤프가 지금 앱보다 새 스키마면 그 시점의 이미지로 되돌린 뒤 복구합니다.
 
+### 상용 모니터링
+
+`deploy/prod/monitoring/`의 구성을 앱과 다른 compose 프로젝트(`wordmate-monitoring`)로 띄웁니다. 배포의 `--remove-orphans`가 지우지 않도록 나눴고, Prometheus만 앱 네트워크(`wordmate_internal`)에 붙어 `app:9464/metrics`를 수집합니다. 배포 워크플로는 설정 파일을 `~/wordmate/monitoring/`에 복사만 하고 다시 띄우지는 않습니다.
+
+| 구성 요소     | 역할                                                             | 메모리 제한 |
+| ------------- | ---------------------------------------------------------------- | ----------- |
+| Prometheus    | 앱·서버 지표 수집(15초), 알림 규칙 계산                          | 512 MB      |
+| Alertmanager  | 알림 묶기·전송 (웹훅이 있을 때만)                                | 64 MB       |
+| node-exporter | 서버 CPU·메모리·디스크, 백업 지표 파일(`~/wordmate/metrics`)     | 64 MB       |
+| Loki          | 로그 저장                                                        | 384 MB      |
+| Alloy         | 도커 소켓(읽기 전용)으로 컨테이너를 찾아 로그를 Loki로 보냄      | 256 MB      |
+| Grafana       | 대시보드·로그 조회·알림 목록. 서버 안(`127.0.0.1:3001`)에만 열림 | 256 MB      |
+
+- 모두 합쳐 약 1.5 GB입니다. 앱 쪽(약 4.7 GB)과 더하면 6.2 GB이고 나머지가 OS·페이지 캐시 몫입니다.
+- 보관: 지표 15일 또는 2 GB 중 먼저 닿는 쪽, 로그 14일(Loki compactor가 지움). 모니터링 컨테이너 자체 로그는 컨테이너마다 10 MB × 3개까지만 남깁니다.
+- 로그에는 `container`, `project`, `service` 라벨이 붙습니다. 앱(`service="app"`, `migrate`) 로그는 pino JSON의 숫자 수준을 `level` 라벨(`info`, `warn`, `error` 등)로 바꿉니다. 예: `{project="wordmate", service="app", level="error"}`
+- 설정 검사: `deploy/prod/monitoring/`을 바꾸는 PR에서 `monitoring-check.yml`이 compose·Prometheus 설정·알림 규칙 테스트(`prometheus/tests/`)·Loki·Alloy 설정을 검사하고, 전체를 띄워 수집·로그 전달·Grafana 프로비저닝까지 확인합니다.
+
+처음 한 번 서버에서 띄웁니다(앱 첫 배포 뒤, 앱 네트워크와 설정 파일이 생긴 다음). 백업 지표 폴더는 node-exporter가 읽으므로 먼저 있어야 합니다(없으면 시작이 실패함, 백업 타이머를 설치했다면 이미 있음).
+
+```bash
+mkdir -p ~/wordmate/metrics
+cd ~/wordmate/monitoring
+cat > .env <<'EOF'
+GF_SECURITY_ADMIN_PASSWORD=     # openssl rand -hex 16
+# ALERT_DISCORD_WEBHOOK_URL=    # 알림을 받을 때만 (아래 참고)
+# ALERT_SLACK_WEBHOOK_URL=
+EOF
+chmod 600 .env
+docker compose up -d
+docker compose ps
+```
+
+- `.env`는 서버의 `~/wordmate/monitoring/.env`에만 둡니다(배포가 덮어쓰지 않음). `GF_SECURITY_ADMIN_PASSWORD`가 없으면 시작하지 않습니다.
+- Grafana 비밀번호는 처음 뜰 때만 적용됩니다. 나중에 바꾸려면 `docker compose exec grafana grafana cli admin reset-admin-password '새 비밀번호'`를 실행합니다.
+- 배포로 설정 파일이 바뀐 뒤 적용: `cd ~/wordmate/monitoring && docker compose up -d --force-recreate`
+- 앱 compose를 `docker compose down`으로 내릴 때는 Prometheus가 앱 네트워크에 붙어 있어 네트워크를 지우지 못합니다. 모니터링을 먼저 내리거나(`docker compose down`), 앱은 `stop`으로 멈춥니다.
+
+Grafana 접속: 외부에 열지 않으므로 SSH 터널로 들어갑니다. 내 PC에서 아래를 실행해 두고 브라우저로 `http://localhost:3001`에 접속해 `admin` / `.env`의 비밀번호로 로그인합니다. 대시보드는 Dashboards → WordMate(요청 수·지연·5xx(라우트별), 실시간 연결, 큐 작업, CPU·메모리·디스크, 마지막 백업 후 경과 시간, 앱 로그)입니다.
+
+```bash
+ssh -N -L 3001:127.0.0.1:3001 -p {SSH 포트} ubuntu@{서버 주소}
+```
+
+알림 규칙(`prometheus/rules/wordmate.yml`):
+
+| 알림                     | 조건                                                         | 수준     |
+| ------------------------ | ------------------------------------------------------------ | -------- |
+| `AppDown`                | 앱 지표 수집 실패 2분                                        | critical |
+| `HighErrorRate`          | 5분 동안 5xx 비율 5% 초과 (초당 0.2건 이상일 때), 5분 지속   | critical |
+| `HighLatency`            | 5분 동안 응답 p95 1초 초과 (초당 0.2건 이상일 때), 10분 지속 | warning  |
+| `QueueUnreachable`       | `wordmate_queue_up == 0` 5분                                 | warning  |
+| `QueueFailedJobsGrowing` | 큐의 실패 작업이 1시간에 3개 이상 늘어남                     | warning  |
+| `DiskSpaceLow`           | 디스크 남은 공간 15% 미만 10분                               | critical |
+| `MemoryPressure`         | 사용 가능한 메모리 10% 미만 10분                             | warning  |
+| `OomKill`                | 메모리 부족으로 프로세스가 강제 종료됨(mem_limit 도달 등)    | warning  |
+| `BackupStale`            | 마지막 백업 성공 후 26시간 초과, 또는 백업 지표 없음 30분    | critical |
+| `MonitoringTargetDown`   | 앱 외 수집 대상(node-exporter·Loki 등) 실패 5분              | warning  |
+| `TextfileMetricError`    | 백업 지표 파일을 읽지 못함 10분                              | warning  |
+
+- 앱이 죽어 있는 동안은 오류율·지연·큐 알림을 함께 보내지 않습니다(같은 원인).
+- 백업 타이머를 설치하기 전에는 `BackupStale`이 계속 울립니다. 상용 백업·복구의 타이머 설치를 먼저 합니다.
+
+알림 받기: 웹훅이 없으면 알림은 Grafana의 Alerting → Alert rules(데이터 소스 Prometheus)와 Alertmanager 데이터 소스에서만 보이고 아무 곳에도 보내지 않습니다. 받으려면 `.env`에 웹훅 주소를 넣고 Alertmanager를 다시 띄웁니다. 둘 다 넣으면 양쪽으로 보냅니다.
+
+- Discord: 채널 설정 → 연동 → 웹후크 → 새 웹후크 → URL 복사 → `ALERT_DISCORD_WEBHOOK_URL`
+- Slack: Incoming Webhooks 앱으로 만든 URL → `ALERT_SLACK_WEBHOOK_URL`
+- 적용: `cd ~/wordmate/monitoring && docker compose up -d alertmanager` (주소가 바뀌면 컨테이너가 새로 만들어짐)
+- 같은 알림은 4시간마다 다시 보내고, 해결되면 해결 알림을 보냅니다.
+
 ## 인증
 
 1. 클라이언트가 PKCE로 DataGSM 로그인 → 인가 코드 수신
