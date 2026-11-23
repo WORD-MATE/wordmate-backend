@@ -66,4 +66,10 @@ describe('validateEnv', () => {
       validateEnv({ ...required, DATABASE_URL: 'postgres://localhost/wordmate' }),
     ).toThrow(/DATABASE_URL/);
   });
+
+  it('METRICS_PORT는 기본 9464, 0이면 끈다', () => {
+    expect(validateEnv(required).METRICS_PORT).toBe(9464);
+    expect(validateEnv({ ...required, METRICS_PORT: '0' }).METRICS_PORT).toBe(0);
+    expect(() => validateEnv({ ...required, METRICS_PORT: '70000' })).toThrow('METRICS_PORT');
+  });
 });
