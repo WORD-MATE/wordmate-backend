@@ -1,0 +1,120 @@
+name: Deploy (prod)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "되돌릴 이미지 태그 (예: sha-0123456789ab). 비우면 지금 커밋을 빌드해 배포"
+        required: false
+        default: ""
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/word-mate/wordmate-backend
+
+jobs:
+  image:
+    # 되돌리기(태그 지정)면 빌드하지 않고 이미 올라간 이미지를 쓴다
+    if: inputs.tag == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: tag
+        run: echo "tag=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:main
+            ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: image
+    # 빌드를 건너뛴 되돌리기에서도 돌고, 서버 설정(변수·시크릿 등록) 전에는 건너뛴다
+    if: ${{ !cancelled() && !failure() && vars.PROD_DOMAIN != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://${{ vars.PROD_DOMAIN }}/health
+    permissions:
+      contents: read
+      packages: read
+    env:
+      TAG: ${{ inputs.tag != '' && inputs.tag || needs.image.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 태그 확인
+        run: |
+          if ! [[ "$TAG" =~ ^sha-[0-9a-f]{12}$ ]]; then
+            echo "::error::이미지 태그 형식이 아닙니다: $TAG"
+            exit 1
+          fi
+
+      - name: SSH 설정
+        env:
+          SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host prod
+            HostName ${{ secrets.PROD_SSH_HOST }}
+            User ${{ secrets.PROD_SSH_USER }}
+            Port ${{ secrets.PROD_SSH_PORT || 22 }}
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+          EOF
+
+      - name: 배포 파일 복사
+        run: scp deploy/prod/compose.yml prod:wordmate/
+
+      - name: 이미지 교체
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        # 되돌리기용으로 지금 것 말고 최근 sha 이미지 2개를 서버에 남긴다
+        run: |
+          printf '%s' "$TOKEN" | ssh prod "docker login ghcr.io -u $ACTOR --password-stdin"
+          ssh prod "cd wordmate \
+            && IMAGE_TAG=$TAG docker compose pull app migrate; status=\$?; docker logout ghcr.io; [ \$status -eq 0 ] \
+            && docker tag $IMAGE:$TAG $IMAGE:main \
+            && IMAGE_TAG=$TAG docker compose up -d --remove-orphans --wait app \
+            && { docker images $IMAGE --format '{{.Tag}}' | grep '^sha-' | grep -vx $TAG | tail -n +3 | xargs -r -I{} docker rmi $IMAGE:{}; docker image prune -f; }"
+
+      - name: 헬스 체크
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS "https://${{ vars.PROD_DOMAIN }}/health"; then exit 0; fi
+            sleep 5
+          done
+          ssh prod "cd wordmate && docker compose ps && docker compose logs --tail 100 app migrate"
+          exit 1
