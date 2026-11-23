@@ -247,8 +247,19 @@ gunzip -c wordmate.sql.gz | docker compose exec -T mysql sh -c 'mysql -uroot -p"
 2. 저장소의 `deploy/setup-server.sh`를 서버로 복사해 `SWAP_SIZE=4G bash setup-server.sh`로 실행하고 다시 로그인합니다.
 3. `~/wordmate/.env`를 만듭니다. 항목은 개발 서버와 같고, 비밀번호·JWT 키는 개발 서버와 다른 값으로 새로 만듭니다. `SWAGGER_ENABLED`는 넣지 않습니다(상용에서는 API 문서를 열지 않음). `CORS_ORIGINS`·`DATAGSM_REDIRECT_URIS`는 상용 웹 주소로 넣습니다.
 4. 배포용 SSH 키를 개발 서버와 따로 만들어 공개키를 `~/.ssh/authorized_keys`에 추가합니다.
-5. 앱 실행(`compose.yml` 복사, `main` 이미지 받기·교체)은 main 배포 워크플로가 합니다. `main` 이미지는 이 워크플로가 처음 돌 때 만들어지므로, 그 전에 서버에서 직접 `docker compose up`을 하면 이미지를 받지 못합니다.
-6. 첫 배포 뒤 관리자가 될 사람이 한 번 로그인하면, DB에서 그 계정을 찾아 최초 관리자로 지정합니다. 이메일이 비어 있는 계정도 있어서 ID로 지정하고, 바뀐 행이 1개인지 확인합니다. 지정한 사람은 다시 로그인해야 관리자 권한이 토큰에 들어갑니다.
+5. GitHub에 아래 시크릿·변수를 등록합니다. 시크릿은 Environments → `production`, 변수는 저장소 변수에 넣습니다. `PROD_DOMAIN`이 없으면 배포 단계를 건너뜁니다. `production` 환경에 Required reviewers를 켜 두면 배포 전에 승인을 받습니다.
+
+| 종류     | 이름                   | 값                                            |
+| -------- | ---------------------- | --------------------------------------------- |
+| Secret   | `PROD_SSH_HOST`        | 서버 주소                                     |
+| Secret   | `PROD_SSH_USER`        | `ubuntu`                                      |
+| Secret   | `PROD_SSH_PORT`        | SSH 포트 (22면 생략)                          |
+| Secret   | `PROD_SSH_KEY`         | 배포용 개인키                                 |
+| Secret   | `PROD_SSH_KNOWN_HOSTS` | `ssh-keyscan -p {포트} {서버 주소}` 결과      |
+| Variable | `PROD_DOMAIN`          | 상용 도메인 (예: `wordmate.https.gsmsv.site`) |
+
+6. develop을 main에 머지하면 첫 배포가 됩니다. `main` 이미지는 이 워크플로가 처음 돌 때 만들어지므로, 그 전에 서버에서 직접 `docker compose up`을 하면 이미지를 받지 못합니다.
+7. 첫 배포 뒤 관리자가 될 사람이 한 번 로그인하면, DB에서 그 계정을 찾아 최초 관리자로 지정합니다. 이메일이 비어 있는 계정도 있어서 ID로 지정하고, 바뀐 행이 1개인지 확인합니다. 지정한 사람은 다시 로그인해야 관리자 권한이 토큰에 들어갑니다.
 
 ```bash
 docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" wordmate'
@@ -257,6 +268,15 @@ docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" wordmate'
 ```
 
 운영 명령은 개발 서버와 같습니다(`docker compose`는 `~/wordmate`에서 실행).
+
+### 상용 배포·되돌리기
+
+`main`에 push되면 `deploy-prod.yml`이 이미지를 `main`·`sha-{커밋 12자}` 태그로 GHCR에 올리고, 서버에서 마이그레이션 뒤 앱을 교체합니다. 끝나면 `https://{PROD_DOMAIN}/health`로 확인하고, 실패하면 컨테이너 상태와 로그를 남기고 실패로 끝납니다.
+
+- 배포한 이미지는 서버에서 `main` 태그로도 붙여 두므로 서버에서 직접 `docker compose`를 실행해도 마지막 배포 이미지를 씁니다.
+- 되돌리기용으로 서버에 직전 `sha-*` 이미지 2개를 남깁니다.
+- 되돌리기: Actions → Deploy (prod) → Run workflow에서 브랜치를 `main`으로 고르고(기본값이 develop이라 바꿔야 함, main이 아니면 아무것도 하지 않음) `tag`에 이전 태그(예: `sha-0123456789ab`)를 넣으면 빌드 없이 그 이미지로 바꿉니다. 태그는 GHCR 패키지 목록이나 이전 배포 로그에서 찾습니다.
+- 마이그레이션은 되돌리지 않습니다. 스키마를 바꾼 배포를 되돌리면 예전 코드가 새 스키마에서 돌게 되므로, 컬럼 삭제·이름 변경 같은 마이그레이션은 코드 배포와 나눠서 올립니다.
 
 ## 인증
 
