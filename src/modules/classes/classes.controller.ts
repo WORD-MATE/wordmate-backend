@@ -61,7 +61,7 @@ export class ClassDashboardController {
 
   @ApiOperation({
     summary: '반 학습 대시보드',
-    description: `이번 주(월요일부터)·이번 달(1일부터) 오늘까지(KST). 랭킹 공개 설정과 관계없이 보여줌. 400 VALIDATION_FAILED, ${CLASS_ERRORS}`,
+    description: `이번 주(월요일부터)·이번 달(1일부터) 오늘까지(KST). 랭킹 공개 설정과 관계없이 보여줌. 400 INVALID_REQUEST, ${CLASS_ERRORS}`,
   })
   @Get(':classId/dashboard')
   @ZodResponse(ClassDashboard)

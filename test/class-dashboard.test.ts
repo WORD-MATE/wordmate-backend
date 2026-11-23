@@ -51,8 +51,8 @@ describe('교사 반 학생 목록·대시보드', () => {
   const today = kstDate();
   const week = kstWeekRange(today);
   const month = kstMonthRange(today);
-  // 이번 주·이번 달 어느 쪽에도 들지 않는 시각
-  const before = new Date(Math.min(week.start.getTime(), month.start.getTime()) - 86_400_000);
+  // 이번 주·이번 달 어느 쪽에도 들지 않고, 연속 학습도 끊긴 것으로 보이는 시각
+  const before = new Date(Math.min(week.start.getTime(), month.start.getTime()) - 2 * 86_400_000);
   const beforeDate = kstDate(before);
 
   const makeClass = async (classNo: number) => {
@@ -244,6 +244,7 @@ describe('교사 반 학생 목록·대시보드', () => {
   afterAll(async () => {
     // 방을 지우면 대결·결과가, 단어를 지우면 오답노트가 함께 지워진다
     if (roomIds.length > 0) await db.delete(battleRooms).where(inArray(battleRooms.id, roomIds));
+    await db.delete(studyRecords).where(inArray(studyRecords.userId, userIds));
     await db.delete(words).where(inArray(words.packId, packIds));
     await db.delete(packs).where(inArray(packs.id, packIds));
     await db.delete(classes).where(inArray(classes.id, classIds));
@@ -333,7 +334,7 @@ describe('교사 반 학생 목록·대시보드', () => {
     }
   });
 
-  it('없는 반 404, 담당 반이 없는 교사 403 TEACHER_CLASS_REQUIRED, 학생 403, 기간 누락 400', async () => {
+  it('없는 반 404, 담당 반이 없는 교사 403 TEACHER_CLASS_REQUIRED, 학생 403, 잘못된 기간 400', async () => {
     const missing = await call(teacher, `/classes/${newId()}/students`);
     expect(missing.statusCode).toBe(404);
     expect(missing.json().code).toBe('CLASS_NOT_FOUND');
@@ -346,6 +347,6 @@ describe('교사 반 학생 목록·대시보드', () => {
     expect((await call(first, `/classes/${classId}/students`)).json().code).toBe('FORBIDDEN');
     const invalid = await call(teacher, `/classes/${classId}/dashboard?period=DAY`);
     expect(invalid.statusCode).toBe(400);
-    expect(invalid.json().code).toBe('VALIDATION_FAILED');
+    expect(invalid.json().code).toBe('INVALID_REQUEST');
   });
 });
