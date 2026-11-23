@@ -176,7 +176,7 @@ docker run -p 3000:3000 -e DATABASE_URL=... -e VALKEY_URL=... wordmate-backend
 ### 서버 최초 설정
 
 1. 학교 서버 관리 페이지에서 도메인을 추가합니다 (서브도메인 `wordmate-dev`, 내부 포트 `3000`).
-2. 서버에서 `deploy/dev/setup-server.sh`를 실행합니다 (Docker 설치, swap 2GB, `~/wordmate` 생성). 끝나면 다시 로그인합니다.
+2. 서버에서 `deploy/setup-server.sh`를 실행합니다 (Docker 설치, swap 2GB, `~/wordmate` 생성). 끝나면 다시 로그인합니다.
 3. `~/wordmate/.env`를 만듭니다.
 
 ```bash
@@ -187,6 +187,8 @@ DATAGSM_CLIENT_ID=
 DATAGSM_REDIRECT_URIS=
 CORS_ORIGINS=
 SWAGGER_ENABLED=true
+DATAGSM_API_KEY=         # 학적 동기화 (없으면 건너뜀)
+# TRUST_PROXY=10.0.0.117 # 학교 프록시 주소가 다르면 지정
 ```
 
 4. 배포용 SSH 키를 만들어 공개키를 서버의 `~/.ssh/authorized_keys`에 추가합니다.
@@ -213,6 +215,48 @@ docker compose up -d --force-recreate app     # .env 수정 후 적용
 ```
 
 배포 때 받은 이미지에 `develop` 태그도 붙여 두므로, 서버에서 직접 `docker compose`를 실행해도 마지막 배포 이미지를 씁니다 (GHCR 로그인 불필요).
+
+### 개발 서버 이전
+
+새 서버로 옮길 때는 최초 설정 1~4를 새 서버에서 다시 하고, GitHub의 `DEV_SSH_*` 시크릿과 `DEV_DOMAIN`을 새 서버 값으로 바꿉니다. 바꾸기 전까지는 develop 머지가 옛 서버로 배포됩니다.
+
+개발 데이터를 옮기려면 옛 서버에서 덤프해 새 서버에서 넣습니다. 새 서버에서는 앱을 띄우기 전에 MySQL만 먼저 올립니다.
+
+```bash
+# 옛 서버
+cd ~/wordmate && docker compose exec -T mysql sh -c 'mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines wordmate' | gzip > wordmate.sql.gz
+# 새 서버 (wordmate.sql.gz를 복사한 뒤)
+cd ~/wordmate && docker compose up -d mysql
+gunzip -c wordmate.sql.gz | docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" wordmate'
+```
+
+`JWT_PRIVATE_KEY`를 새로 만들면 기존 로그인은 모두 풀리고 문의 이미지 서명 주소도 바뀝니다. 그대로 쓰려면 옛 서버의 값을 옮깁니다.
+
+## 배포 (상용 서버)
+
+`deploy/prod/compose.yml`로 개발 서버와 같은 구성(앱·마이그레이션·MySQL·Valkey)을 띄웁니다. 기본 이미지 태그는 `main`입니다.
+
+- 서버 사양: 2 Core / 8 GB / 40 GB. 메모리 제한은 앱 1.5 GB, MySQL 2.5 GB(buffer pool 1.5 GB), Valkey 640 MB이고, 나머지는 모니터링과 OS 몫입니다.
+- 앱 포트(3000)만 서버에 열고 MySQL·Valkey는 컨테이너 네트워크 안에서만 씁니다.
+- 부하 테스트 계정 스크립트는 상용에서 막혀 있습니다(`LOAD_TEST_ALLOWED` 없음).
+- 데이터는 named volume `mysql-data`, `valkey-data`, `uploads`(문의 이미지)에 있습니다.
+
+### 상용 서버 최초 설정
+
+1. 학교 서버 관리 페이지에서 도메인을 추가합니다 (내부 포트 `3000`).
+2. 저장소의 `deploy/setup-server.sh`를 서버로 복사해 `SWAP_SIZE=4G bash setup-server.sh`로 실행하고 다시 로그인합니다.
+3. `~/wordmate/.env`를 만듭니다. 항목은 개발 서버와 같고, 비밀번호·JWT 키는 개발 서버와 다른 값으로 새로 만듭니다. `SWAGGER_ENABLED`는 넣지 않습니다(상용에서는 API 문서를 열지 않음). `CORS_ORIGINS`·`DATAGSM_REDIRECT_URIS`는 상용 웹 주소로 넣습니다.
+4. 배포용 SSH 키를 개발 서버와 따로 만들어 공개키를 `~/.ssh/authorized_keys`에 추가합니다.
+5. 앱 실행(`compose.yml` 복사, `main` 이미지 받기·교체)은 main 배포 워크플로가 합니다. `main` 이미지는 이 워크플로가 처음 돌 때 만들어지므로, 그 전에 서버에서 직접 `docker compose up`을 하면 이미지를 받지 못합니다.
+6. 첫 배포 뒤 관리자가 될 사람이 한 번 로그인하면, DB에서 그 계정을 찾아 최초 관리자로 지정합니다. 이메일이 비어 있는 계정도 있어서 ID로 지정하고, 바뀐 행이 1개인지 확인합니다. 지정한 사람은 다시 로그인해야 관리자 권한이 토큰에 들어갑니다.
+
+```bash
+docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" wordmate'
+# mysql> SELECT BIN_TO_UUID(id), name, email, student_number, role FROM users WHERE name = '이름';
+# mysql> UPDATE users SET is_admin = 1 WHERE id = UUID_TO_BIN('위에서 찾은 ID');   -- Rows matched: 1 확인
+```
+
+운영 명령은 개발 서버와 같습니다(`docker compose`는 `~/wordmate`에서 실행).
 
 ## 인증
 

@@ -15,8 +15,9 @@ x-app: &app
     LOAD_TEST_ALLOWED: "true"
     DATABASE_URL: mysql://wordmate:${MYSQL_PASSWORD:?}@mysql:3306/wordmate
     VALKEY_URL: redis://valkey:6379
-    # 학교 프록시(10.0.0.117)만 앱에 붙는다. 실제 IP는 학교 입구에서 172.10.104.1로 바뀌어 넘어온다
-    TRUST_PROXY: 10.0.0.117
+    # 학교 프록시(10.0.0.117)만 앱에 붙는다. 실제 IP는 학교 입구에서 172.10.104.1로 바뀌어 넘어온다.
+    # 프록시 주소가 다르면 .env의 TRUST_PROXY로 바꾼다
+    TRUST_PROXY: ${TRUST_PROXY:-10.0.0.117}
   networks: [internal]
   logging: *logging
 
