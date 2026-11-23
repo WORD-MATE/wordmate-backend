@@ -10,6 +10,8 @@ import {
 } from 'drizzle-orm/mysql-core';
 import { ACCOUNT_STATUS, ROLE } from '../../../common/enums.js';
 import { id, timestamps } from '../columns.js';
+import { binaryUuid } from '../uuid.js';
+import { badges } from './badges.js';
 
 export const users = mysqlTable(
   'users',
@@ -28,6 +30,9 @@ export const users = mysqlTable(
     classNo: tinyint('class_no'),
     number: tinyint('number'),
     avatarId: varchar('avatar_id', { length: 32 }).notNull().default('default'),
+    representativeBadgeId: binaryUuid('representative_badge_id').references(() => badges.id, {
+      onDelete: 'set null',
+    }),
     rankingPublic: boolean('ranking_public').notNull().default(true),
     rankingOnboarded: boolean('ranking_onboarded').notNull().default(false),
     totalXp: int('total_xp').notNull().default(0),

@@ -8,12 +8,12 @@ import { OnboardingGuard } from './onboarding.guard.js';
 import { TeacherClassService } from './teacher-class.service.js';
 import { UserDirectoryController } from './user-directory.controller.js';
 import { UserDirectoryService } from './user-directory.service.js';
-import { UsersController } from './users.controller.js';
+import { AvatarsController, UsersController } from './users.controller.js';
 import { UsersService } from './users.service.js';
 
 @Module({
   imports: [PoliciesModule, XpModule],
-  controllers: [UsersController, UserDirectoryController],
+  controllers: [UsersController, AvatarsController, UserDirectoryController],
   providers: [
     AgreementService,
     NextStepService,

@@ -10,14 +10,17 @@ import { ZodBody, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import { XpHistoryPage } from '../xp/xp.schemas.js';
 import { XpHistoryService } from '../xp/xp-history.service.js';
 import { AgreementService } from './agreement.service.js';
+import { avatarList } from './avatars.js';
 import { Me } from './me.schema.js';
 import { NextStepService } from './next-step.service.js';
 import {
   AgreementStatus,
+  AvatarList,
   NextStepResponse,
   PrivacySettings,
   SubmitAgreements,
   UpdatePrivacy,
+  UpdateProfile,
 } from './users.schemas.js';
 import { UsersService } from './users.service.js';
 
@@ -68,6 +71,20 @@ export class UsersController {
   }
 
   @ApiOperation({
+    summary: '프로필 수정',
+    description:
+      '아바타와 대표 배지. 생략한 항목은 그대로, null이면 해제(아바타는 default). 이름·학번·학년·반은 DataGSM 값이라 바꿀 수 없음. 교사는 배지가 없어 대표 배지를 지정할 수 없음. 400 USER_AVATAR_NOT_FOUND / USER_BADGE_NOT_OWNED',
+  })
+  @Patch('profile')
+  @ZodResponse(Me)
+  updateProfile(
+    @ZodBody(UpdateProfile) body: z.infer<typeof UpdateProfile>,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.users.updateProfile(currentUser(request).userId, body);
+  }
+
+  @ApiOperation({
     summary: '랭킹 공개 설정',
     description:
       '랭킹 첫 진입 안내와 설정 화면이 같이 씀(호출하면 rankingOnboarded=true). 비공개면 랭킹 목록에서 빠지지만 점수는 쌓이고 내 순위는 볼 수 있음',
@@ -94,5 +111,20 @@ export class UsersController {
     @Req() request: FastifyRequest,
   ) {
     return this.xpHistoryService.list(currentUser(request).userId, query);
+  }
+}
+
+@ApiTags('users')
+@Auth('USER')
+@Controller('users')
+export class AvatarsController {
+  @ApiOperation({
+    summary: '기본 아바타 목록',
+    description: '정적 데이터라 앱에서 캐시해도 됨. imageUrl은 앱이 이미지 주소로 바꾸는 키',
+  })
+  @Get('avatars')
+  @ZodResponse(AvatarList)
+  list() {
+    return avatarList();
   }
 }

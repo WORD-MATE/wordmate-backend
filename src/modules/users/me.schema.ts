@@ -58,7 +58,7 @@ export function toMe(user: User, teacherClasses: ClassSummary[] = []): Me {
     role: user.role,
     isAdmin: user.isAdmin,
     avatarId: user.avatarId,
-    representativeBadgeId: null,
+    representativeBadgeId: user.representativeBadgeId,
     rankingPublic: user.rankingPublic,
     rankingOnboarded: user.rankingOnboarded,
     level: levelOf(user.totalXp),
