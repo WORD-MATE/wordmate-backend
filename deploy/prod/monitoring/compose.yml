@@ -100,18 +100,23 @@ services:
     restart: unless-stopped
     mem_limit: 256m
     environment:
-      # 처음 뜰 때만 적용된다. 나중에 바꾸려면 grafana cli로 재설정한다
+      # 관리자 이름·비밀번호는 처음 뜰 때만 적용된다. 나중에 바꾸려면 grafana cli로 재설정한다
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:?}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_ALLOW_ORG_CREATE: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
       GF_NEWS_NEWS_FEED_ENABLED: "false"
-      GF_SERVER_ROOT_URL: http://localhost:3001
+      # 서브도메인(HTTPS)으로 열면 공개 주소와 HTTPS 전용 쿠키를 .env에서 켠다
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3001}
+      GF_SECURITY_COOKIE_SECURE: ${GRAFANA_COOKIE_SECURE:-false}
+      GF_SECURITY_STRICT_TRANSPORT_SECURITY: ${GRAFANA_COOKIE_SECURE:-false}
     ports:
-      # 외부에 열지 않고 SSH 터널로만 접속한다
-      - "127.0.0.1:3001:3000"
+      # 학교 프록시가 서브도메인으로 넘겨주도록 서버 외부에 연다 (로그인 필수, 회원가입·익명 접근 없음)
+      - "3001:3000"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/etc/grafana/dashboards:ro
