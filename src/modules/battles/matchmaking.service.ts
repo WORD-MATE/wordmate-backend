@@ -71,6 +71,7 @@ export type MatchTicket = { queuedAt: string; timeoutAt: string };
 @Injectable()
 export class MatchmakingService implements OnModuleInit, BeforeApplicationShutdown {
   private readonly logger = new Logger(MatchmakingService.name);
+  // 종료 때 진행 중인 성사를 기다리기 위한 목록이라 서버마다 따로 둔다. 짝짓기 정확성은 Valkey 스크립트가 보장한다
   private readonly inFlight = new Set<Promise<void>>();
 
   constructor(

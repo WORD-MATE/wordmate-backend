@@ -68,6 +68,7 @@ export const ChallengeErrors = {
 
 @Injectable()
 export class ChallengesService {
+  // 서버마다 따로 둔다. 여러 서버가 동시에 만들어도 날짜 기본 키와 INSERT IGNORE가 하나만 남긴다
   private readonly generating = new Map<string, Promise<DailyChallenge | null>>();
   private readonly failedUntil = new Map<string, number>();
 
