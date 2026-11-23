@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
+# 학교 서버(Ubuntu) 최초 설정. 개발·상용 서버 모두 같은 스크립트를 쓴다
+# 사용: bash setup-server.sh            (swap 2G)
+#       SWAP_SIZE=4G bash setup-server.sh
 set -euo pipefail
+
+SWAP_SIZE="${SWAP_SIZE:-2G}"
 
 if ! command -v docker >/dev/null; then
   sudo apt-get update
@@ -14,9 +19,9 @@ if ! command -v docker >/dev/null; then
   sudo usermod -aG docker "$USER"
 fi
 
-# 메모리가 4GB라 MySQL·빌드 피크에 OOM이 나지 않게 swap 2GB를 둔다
+# MySQL 피크나 메모리 제한 근처에서 OOM으로 컨테이너가 죽지 않게 swap을 둔다
 if ! swapon --show | grep -q /swapfile; then
-  sudo fallocate -l 2G /swapfile
+  sudo fallocate -l "$SWAP_SIZE" /swapfile
   sudo chmod 600 /swapfile
   sudo mkswap /swapfile
   sudo swapon /swapfile
@@ -24,4 +29,5 @@ if ! swapon --show | grep -q /swapfile; then
 fi
 
 mkdir -p "$HOME/wordmate"
+chmod 700 "$HOME/wordmate"
 echo "완료. docker 그룹 적용을 위해 다시 로그인하세요."
