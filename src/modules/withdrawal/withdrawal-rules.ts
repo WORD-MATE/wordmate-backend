@@ -46,6 +46,7 @@ export const anonymizedUser = (now: Date) =>
     classNo: null,
     number: null,
     avatarId: 'default',
+    representativeBadgeId: null,
     isAdmin: false,
     rankingPublic: false,
     rankingOnboarded: false,
