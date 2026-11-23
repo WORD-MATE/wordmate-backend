@@ -5,9 +5,17 @@ import type { AuthUser } from '../../common/auth/auth-user.js';
 import { AppException } from '../../common/errors/app-exception.js';
 import { type CursorPage, decodeCursor, toCursorPage } from '../../common/pagination.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
-import { blocks, friendRequests, friendships, users } from '../../infra/db/schema/index.js';
+import {
+  badges,
+  blocks,
+  friendRequests,
+  friendships,
+  userBadges,
+  users,
+} from '../../infra/db/schema/index.js';
 import { blockersAmong } from '../blocks/block-queries.js';
 import type {
+  RepresentativeBadge,
   UserProfile,
   UserRelation,
   UserSearchItem,
@@ -77,18 +85,20 @@ export class UserDirectoryService {
     const [target] = await this.db.select().from(users).where(eq(users.id, userId));
     if (!target) throw UserDirectoryErrors.userNotFound();
     if (target.id === viewer.userId) {
-      return toUserProfile(viewer.userId, target, {
-        isFriend: false,
-        friendRequest: null,
-        isBlocked: false,
-      });
+      return toUserProfile(
+        viewer.userId,
+        target,
+        { isFriend: false, friendRequest: null, isBlocked: false },
+        await this.representativeBadge(target.id, target.representativeBadgeId),
+      );
     }
     const ids = [target.id];
-    const [blockedMe, friends, requests, blockedByMe] = await Promise.all([
+    const [blockedMe, friends, requests, blockedByMe, badge] = await Promise.all([
       blockersAmong(this.db, viewer.userId, ids),
       this.friendsAmong(viewer.userId, ids),
       this.requestsAmong(viewer.userId, ids),
       this.blockedAmong(viewer.userId, ids),
+      this.representativeBadge(target.id, target.representativeBadgeId),
     ]);
     if (blockedMe.has(target.id)) throw UserDirectoryErrors.userNotFound();
     const relation: UserRelation = {
@@ -96,7 +106,27 @@ export class UserDirectoryService {
       friendRequest: requestDirection(viewer.userId, requests.get(target.id)),
       isBlocked: blockedByMe.has(target.id),
     };
-    return toUserProfile(viewer.userId, target, relation);
+    return toUserProfile(viewer.userId, target, relation, badge);
+  }
+
+  /** 숨긴 배지나 더는 갖고 있지 않은 배지는 보이지 않는다 */
+  private async representativeBadge(
+    userId: string,
+    badgeId: string | null,
+  ): Promise<RepresentativeBadge | null> {
+    if (!badgeId) return null;
+    const [row] = await this.db
+      .select({ badgeId: badges.id, name: badges.name, imageUrl: badges.imageUrl })
+      .from(userBadges)
+      .innerJoin(badges, eq(badges.id, userBadges.badgeId))
+      .where(
+        and(
+          eq(userBadges.userId, userId),
+          eq(userBadges.badgeId, badgeId),
+          eq(badges.active, true),
+        ),
+      );
+    return row ?? null;
   }
 
   private async friendsAmong(viewerId: string, ids: string[]): Promise<Set<string>> {

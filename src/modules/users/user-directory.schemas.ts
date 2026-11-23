@@ -31,6 +31,7 @@ export type UserRelation = z.infer<typeof UserRelation>;
 export const RepresentativeBadge = z
   .object({ badgeId: z.string(), name: z.string(), imageUrl: z.string() })
   .meta({ id: 'RepresentativeBadge' });
+export type RepresentativeBadge = z.infer<typeof RepresentativeBadge>;
 
 export const UserProfile = z
   .object({
@@ -39,7 +40,9 @@ export const UserProfile = z
     isPublic: z.boolean().describe('랭킹 공개 여부. 교사·탈퇴한 사용자는 false'),
     level: z.number().int().nullable().describe('비공개·교사·탈퇴면 null (내 프로필은 항상 보임)'),
     tier: z.string().nullable(),
-    representativeBadge: RepresentativeBadge.nullable(),
+    representativeBadge: RepresentativeBadge.nullable().describe(
+      '랭킹 비공개·정지·휴면·탈퇴·교사면 null (내 프로필은 보임)',
+    ),
     relation: UserRelation,
   })
   .meta({ id: 'UserProfile' });

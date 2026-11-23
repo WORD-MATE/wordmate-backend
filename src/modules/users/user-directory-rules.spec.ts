@@ -90,6 +90,20 @@ describe('toUserProfile', () => {
   });
 });
 
+describe('toUserProfile 대표 배지', () => {
+  const badge = { badgeId: 'b1', name: '첫 학습', imageUrl: 'badges/first' };
+
+  it('공개 프로필과 내 프로필에만 보인다', () => {
+    expect(toUserProfile('me', target, relation, badge).representativeBadge).toEqual(badge);
+    const hidden = { ...target, rankingPublic: false };
+    expect(toUserProfile('me', hidden, relation, badge).representativeBadge).toBeNull();
+    expect(toUserProfile('target', hidden, relation, badge).representativeBadge).toEqual(badge);
+    expect(
+      toUserProfile('me', { ...target, status: 'WITHDRAWN' }, relation, badge).representativeBadge,
+    ).toBeNull();
+  });
+});
+
 describe('toSearchSummary', () => {
   it('랭킹 비공개면 티어를 숨긴다', () => {
     expect(toSearchSummary(target).tier).toBe('BRONZE');

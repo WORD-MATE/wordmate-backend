@@ -1,6 +1,6 @@
 import type { User } from '../../infra/db/schema/users.js';
 import { levelOf } from './me.schema.js';
-import type { UserProfile, UserRelation } from './user-directory.schemas.js';
+import type { RepresentativeBadge, UserProfile, UserRelation } from './user-directory.schemas.js';
 import { toUserSummary, type UserSummary } from './user-summary.js';
 
 type FriendRequestPair = { requesterId: string; receiverId: string };
@@ -23,6 +23,7 @@ export function toUserProfile(
   viewerId: string,
   target: ProfileTarget,
   relation: UserRelation,
+  badge: RepresentativeBadge | null = null,
 ): UserProfile {
   const isMe = target.id === viewerId;
   const summary = toUserSummary(target);
@@ -37,8 +38,8 @@ export function toUserProfile(
     isPublic,
     level: level?.level ?? null,
     tier: level?.tier ?? null,
-    // 대표 배지 지정 기능이 들어오면 채운다
-    representativeBadge: null,
+    // 배지 목록처럼 랭킹 비공개면 남에게 배지를 보이지 않는다
+    representativeBadge: visible ? badge : null,
     relation,
   };
 }
