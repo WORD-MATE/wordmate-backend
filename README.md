@@ -237,11 +237,18 @@ docker compose up -d --force-recreate app     # .env 수정 후 적용
 - `DELETE /devices/{deviceId}`: 다른 기기 원격 로그아웃. 그 기기는 액세스 토큰이 만료되는 최대 30분 뒤 로그아웃됨. 현재 기기는 `POST /auth/logout` 사용
 - 로그아웃·원격 로그아웃·리프레시 토큰 재사용 감지 시 푸시 등록도 함께 해제됩니다
 
+### 프로필
+
+- `PATCH /users/me/profile { avatarId?, representativeBadgeId? }` → `Me`. 생략한 항목은 그대로 두고, `null`이면 해제합니다(아바타는 `default`로 돌아감). 이름·학번·학년·반은 DataGSM 값이라 바꿀 수 없습니다.
+- 목록에 없는 아바타는 400 `USER_AVATAR_NOT_FOUND`, 가지고 있지 않거나 내려간(`active=false`) 배지는 400 `USER_BADGE_NOT_OWNED`입니다. 교사는 아바타만 바꿀 수 있습니다(배지가 없어 대표 배지는 항상 `USER_BADGE_NOT_OWNED`).
+- 대표 배지는 `users.representative_badge_id`에 저장합니다. 배지 정의가 지워지면 FK로 비워집니다.
+- `GET /users/avatars`: 기본 아바타 목록 `[{ avatarId, imageUrl }]`. 별도 테이블 없이 코드의 `AVATAR_IDS`(src/modules/users/avatars.ts)가 목록이고 지금 값은 임시입니다. `imageUrl`은 배지처럼 앱이 이미지 주소로 바꾸는 키(`avatars/{avatarId}`)입니다. 목록에서 ID를 빼려면 그 ID를 저장한 사용자도 `default`로 바꿔야 합니다.
+
 ### 회원 탈퇴
 
 `DELETE /users/me { confirm: true }` → 204. `confirm`이 없거나 false면 400 `USER_WITHDRAW_NOT_CONFIRMED`. 약관 동의·담당 반 선택 전에도 호출할 수 있습니다.
 
-- 유예 기간 없이 바로 파기합니다. 사용자 행은 끝난 대결 결과처럼 다른 사람의 기록이 참조해서 지우지 않고 비웁니다: 상태 `WITHDRAWN`, 이름은 "탈퇴한 사용자", 이메일·학번·학년·반·번호·DataGSM 식별값(계정 ID·학생 ID)·마지막 로그인·정지 정보는 NULL, 관리자 권한·XP·랭킹 공개는 해제. DataGSM 토큰은 원래 저장하지 않습니다.
+- 유예 기간 없이 바로 파기합니다. 사용자 행은 끝난 대결 결과처럼 다른 사람의 기록이 참조해서 지우지 않고 비웁니다: 상태 `WITHDRAWN`, 이름은 "탈퇴한 사용자", 이메일·학번·학년·반·번호·DataGSM 식별값(계정 ID·학생 ID)·마지막 로그인·정지 정보는 NULL, 관리자 권한·XP·랭킹 공개는 해제, 아바타·대표 배지는 기본값으로. DataGSM 토큰은 원래 저장하지 않습니다.
 - 모든 기기(세션·리프레시 토큰·푸시 등록)를 지우고, 남은 액세스 토큰은 Valkey 차단으로 바로 401 `AUTH_INVALID`가 됩니다. 이미 열린 WebSocket은 다음 메시지에서 끊깁니다.
 - 지우는 것: 학습 세션·기록·오답노트·암기 진행·일별 통계·연속 학습·즐겨찾기·연습·챌린지 기록·오늘의 문장 완료, XP 원장·배지·미션·지난 시즌 순위·부정 의심 표시, 친구·친구 요청·차단(양쪽 방향), 알림·알림 설정·공지 읽음·약관 동의 이력, 문의(첨부 이미지 파일 포함), 교사의 담당 반 연결.
 - 내 단어팩은 단어와 함께 지웁니다. 대결방에 쓰인 팩은 다른 사람의 대결 문항이 단어를 참조하므로 소프트 삭제하고 공유를 끊습니다. 다른 사람이 복사한 팩은 따로 있는 사본이라 그대로 남습니다.
