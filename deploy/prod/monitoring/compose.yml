@@ -1,0 +1,142 @@
+# 앱 compose(wordmate)와 프로젝트를 나눠, 배포의 --remove-orphans가 모니터링을 지우지 않게 한다
+name: wordmate-monitoring
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    mem_limit: 512m
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=2GB
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    networks: [monitoring, wordmate]
+    logging: *logging
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    restart: unless-stopped
+    mem_limit: 64m
+    entrypoint: ["/bin/sh", "/etc/alertmanager/start.sh"]
+    environment:
+      ALERT_DISCORD_WEBHOOK_URL: ${ALERT_DISCORD_WEBHOOK_URL:-}
+      ALERT_SLACK_WEBHOOK_URL: ${ALERT_SLACK_WEBHOOK_URL:-}
+    volumes:
+      - ./alertmanager:/etc/alertmanager:ro
+      - alertmanager-data:/alertmanager
+    networks: [monitoring]
+    logging: *logging
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    restart: unless-stopped
+    mem_limit: 64m
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --collector.textfile.directory=/textfile
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|run|sys|var/lib/docker/.+|var/snap/.+)($$|/)
+    volumes:
+      - type: bind
+        source: /
+        target: /host
+        read_only: true
+        bind:
+          propagation: rslave
+      # 없는 폴더를 도커가 root 소유로 만들면 backup.sh가 지표 파일을 쓰지 못하므로 미리 만들어 둔다
+      - type: bind
+        source: ../metrics
+        target: /textfile
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [monitoring]
+    logging: *logging
+
+  loki:
+    image: grafana/loki:3.5.3
+    restart: unless-stopped
+    mem_limit: 384m
+    command: ["-config.file=/etc/loki/loki.yml"]
+    environment:
+      GOMEMLIMIT: 300MiB
+    volumes:
+      - ./loki:/etc/loki:ro
+      - loki-data:/loki
+    networks: [monitoring]
+    logging: *logging
+
+  alloy:
+    image: grafana/alloy:v1.10.0
+    restart: unless-stopped
+    mem_limit: 256m
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - --disable-reporting
+      - /etc/alloy/config.alloy
+    environment:
+      GOMEMLIMIT: 200MiB
+    volumes:
+      - ./alloy:/etc/alloy:ro
+      - alloy-data:/var/lib/alloy/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
+    networks: [monitoring]
+    logging: *logging
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      # 처음 뜰 때만 적용된다. 나중에 바꾸려면 grafana cli로 재설정한다
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:?}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_SERVER_ROOT_URL: http://localhost:3001
+    ports:
+      # 외부에 열지 않고 SSH 터널로만 접속한다
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [prometheus, loki]
+    networks: [monitoring]
+    logging: *logging
+
+networks:
+  monitoring:
+    # 앱 네트워크와 같은 이유(학교 서버 NIC MTU 1400)로 낮춘다. 알림 웹훅이 외부로 나간다
+    driver_opts:
+      com.docker.network.driver.mtu: "1400"
+    ipam:
+      config:
+        - subnet: 172.30.1.0/24
+  wordmate:
+    # Prometheus가 app:9464를 수집하려고 앱 compose의 네트워크에 붙는다
+    name: wordmate_internal
+    external: true
+
+volumes:
+  prometheus-data:
+  alertmanager-data:
+  loki-data:
+  alloy-data:
+  grafana-data:
