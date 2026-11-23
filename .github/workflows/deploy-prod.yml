@@ -99,6 +99,8 @@ jobs:
         run: |
           scp deploy/prod/compose.yml deploy/prod/backup.sh deploy/prod/restore.sh \
             deploy/prod/verify-backup.sh deploy/prod/install-backup.sh prod:wordmate/
+          # 모니터링 설정만 옮긴다. 다시 띄우는 것은 서버에서 직접 한다(README 상용 모니터링)
+          scp -r deploy/prod/monitoring prod:wordmate/
 
       # 마이그레이션이 데이터를 바꾸기 전에 되돌릴 지점을 남긴다 (첫 배포처럼 MySQL이 아직 없으면 건너뜀)
       - name: 배포 전 백업
