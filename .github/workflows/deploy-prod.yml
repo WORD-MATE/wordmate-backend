@@ -96,7 +96,14 @@ jobs:
           EOF
 
       - name: 배포 파일 복사
-        run: scp deploy/prod/compose.yml prod:wordmate/
+        run: |
+          scp deploy/prod/compose.yml deploy/prod/backup.sh deploy/prod/restore.sh \
+            deploy/prod/verify-backup.sh deploy/prod/install-backup.sh prod:wordmate/
+
+      # 마이그레이션이 데이터를 바꾸기 전에 되돌릴 지점을 남긴다 (첫 배포처럼 MySQL이 아직 없으면 건너뜀)
+      - name: 배포 전 백업
+        run: |
+          ssh prod 'cd wordmate && if [ -n "$(docker compose ps --status running -q mysql)" ]; then bash backup.sh; else echo "MySQL이 없어 백업을 건너뜁니다."; fi'
 
       - name: 이미지 교체
         env:

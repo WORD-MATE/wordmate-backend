@@ -278,6 +278,41 @@ docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" wordmate'
 - 되돌리기: Actions → Deploy (prod) → Run workflow에서 브랜치를 `main`으로 고르고(기본값이 develop이라 바꿔야 함, main이 아니면 아무것도 하지 않음) `tag`에 이전 태그(예: `sha-0123456789ab`)를 넣으면 빌드 없이 그 이미지로 바꿉니다. 태그는 GHCR 패키지 목록이나 이전 배포 로그에서 찾습니다.
 - 마이그레이션은 되돌리지 않습니다. 스키마를 바꾼 배포를 되돌리면 예전 코드가 새 스키마에서 돌게 되므로, 컬럼 삭제·이름 변경 같은 마이그레이션은 코드 배포와 나눠서 올립니다.
 
+### 상용 백업·복구
+
+`deploy/prod/`의 스크립트를 배포 워크플로가 서버 `~/wordmate/`에 복사합니다. 백업은 `~/wordmate/backups/`에 쌓입니다.
+
+- 매일 05:00(KST): `backup.sh`가 MySQL 덤프(`mysql/wordmate-{시각}.sql.gz`)와 문의 이미지(`uploads/uploads-{시각}.tar.gz`)를 만들고, 14일(`BACKUP_KEEP_DAYS`) 지난 백업을 지웁니다. 학적 동기화·부정 의심 감지가 끝난 뒤입니다.
+- 상용 배포 때 마이그레이션 전에 한 번 더 백업합니다(MySQL이 아직 없는 첫 배포는 건너뜀).
+- 덤프는 `--single-transaction`이라 서비스를 멈추지 않습니다. 받는 중 실패하면 `.part` 파일만 남고 1시간 뒤 지워집니다.
+- 성공하면 `~/wordmate/metrics/backup.prom`에 마지막 성공 시각을 남깁니다(백업 폴더는 소유자만 읽고, 이 파일만 따로 둠). 모니터링이 이 값을 보고 백업이 멈추면 알립니다.
+- 백업이 서버 디스크에만 있으므로 서버를 잃으면 백업도 잃습니다. 주기적으로 다른 곳(개발 서버, 개인 PC 등)에 복사해 둡니다.
+
+처음 한 번 타이머를 설치합니다(첫 배포 뒤 스크립트가 서버에 복사된 다음).
+
+```bash
+cd ~/wordmate
+bash install-backup.sh                       # systemd 타이머 등록
+sudo systemctl start wordmate-backup         # 바로 한 번 실행
+journalctl -u wordmate-backup -n 50          # 결과 확인
+ls -lh backups/mysql backups/uploads
+```
+
+복구 리허설(운영 DB는 건드리지 않음): 임시 MySQL 컨테이너에 덤프를 넣어 테이블·사용자 수를 출력합니다. 한 달에 한 번 정도 돌려 백업이 실제로 읽히는지 확인합니다.
+
+```bash
+bash verify-backup.sh                        # 가장 최근 백업
+bash verify-backup.sh backups/mysql/wordmate-20261201-050000.sql.gz
+```
+
+실제 복구: 앱을 멈추고 DB(와 문의 이미지)를 백업 내용으로 바꾼 뒤 앱을 다시 띄웁니다. 지금 데이터가 지워지므로 `--yes`가 있어야 돕니다. 복구 전 상태도 남기려면 먼저 `bash backup.sh`를 한 번 돌립니다.
+
+```bash
+bash restore.sh backups/mysql/wordmate-20261201-050000.sql.gz backups/uploads/uploads-20261201-050000.tar.gz --yes
+```
+
+덤프가 앱 버전보다 예전 스키마여도 앱이 뜰 때 `migrate`가 마이그레이션을 다시 적용합니다. 반대로 덤프가 지금 앱보다 새 스키마면 그 시점의 이미지로 되돌린 뒤 복구합니다.
+
 ## 인증
 
 1. 클라이언트가 PKCE로 DataGSM 로그인 → 인가 코드 수신
