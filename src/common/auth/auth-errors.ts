@@ -19,6 +19,14 @@ export const AuthErrors = {
       reason,
       until: until?.toISOString() ?? null,
     }),
+  withdrawnSuspended: (until: Date | null) =>
+    forbidden(
+      'AUTH_WITHDRAWN_SUSPENDED',
+      '이용 정지 기간에 탈퇴한 계정이라 다시 가입할 수 없습니다.',
+      {
+        until: until?.toISOString() ?? null,
+      },
+    ),
   accountInactive: (reason: 'GRADUATED_OR_LEFT' | 'DATAGSM_PENDING') =>
     forbidden('ACCOUNT_INACTIVE', '이용할 수 없는 계정입니다.', { reason }),
 };

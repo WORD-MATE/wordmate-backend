@@ -39,6 +39,6 @@ import { RoomsService } from './rooms.service.js';
     BattleQueue,
     BattleProcessor,
   ],
-  exports: [RoomsService],
+  exports: [LobbyService, MatchQueue, RoomsService],
 })
 export class BattlesModule {}

@@ -9,6 +9,7 @@ import { VALKEY } from '../../infra/valkey/valkey.module.js';
 import {
   encodeScore,
   periodKey,
+  previousPeriodDate,
   RANK_KEY_TTL_SECONDS,
   type RankMember,
   rankKey,
@@ -185,6 +186,31 @@ export class RankingService {
       }
     } catch (error) {
       this.logger.error(`랭킹 범위 이동 실패 (user ${userId}): ${String(error)}`);
+    }
+  }
+
+  /**
+   * 탈퇴한 사용자를 이번 기간과 아직 시즌 마감 전일 수 있는 지난 기간의 랭킹에서 뺀다.
+   * 목록 캐시도 지워 5분을 기다리지 않고 바로 빠지게 한다. 실패는 로그만 남긴다 (복구 명령은 원장 기준이라 다시 넣지 않는다)
+   */
+  async removeUser(userId: string, member: RankMember, at = new Date()): Promise<void> {
+    const scopes = scopeKeys(member);
+    if (scopes.length === 0) return;
+    const today = kstDate(at);
+    const keys = RANK_PERIOD.flatMap((period) => {
+      const previous = previousPeriodDate(period, today);
+      const dates = previous ? [today, previous] : [today];
+      return dates.flatMap((date) => scopes.map((scope) => rankKey(period, date, scope)));
+    });
+    try {
+      const pipeline = this.valkey.multi();
+      for (const key of keys) {
+        pipeline.zrem(key, userId);
+        pipeline.del(`rank:top:${key}`);
+      }
+      await pipeline.exec();
+    } catch (error) {
+      this.logger.error(`랭킹에서 탈퇴자 제거 실패 (user ${userId}): ${String(error)}`);
     }
   }
 

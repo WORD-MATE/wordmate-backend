@@ -127,7 +127,17 @@ export class AdminSanctionsService {
       })
       .catch(async (error: unknown) => {
         if (suspends && !alreadySuspended) {
-          await this.blocks.unblock(body.userId).catch(() => undefined);
+          // 그사이 탈퇴했으면 탈퇴 차단으로 되돌린다 (풀면 탈퇴자의 남은 토큰이 살아난다)
+          const [latest] = await this.db
+            .select({ status: users.status })
+            .from(users)
+            .where(eq(users.id, body.userId))
+            .catch(() => []);
+          const restore =
+            latest?.status === 'WITHDRAWN'
+              ? this.blocks.block(body.userId, 'WITHDRAWN')
+              : this.blocks.unblock(body.userId);
+          await restore.catch(() => undefined);
         }
         throw error;
       });
