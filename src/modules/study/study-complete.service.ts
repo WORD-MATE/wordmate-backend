@@ -34,6 +34,50 @@ import { isLive, StudyErrors } from './study-sessions.service.js';
 
 const INSERT_CHUNK = 500;
 
+const loadAnswers = (tx: Transaction, sessionId: string) =>
+  tx
+    .select({
+      idx: studyAnswers.idx,
+      correct: studyAnswers.correct,
+      known: studyAnswers.known,
+      counted: studyAnswers.counted,
+      typedAnswer: studyAnswers.typedAnswer,
+      wordId: studySessionQuestions.wordId,
+      questionType: studySessionQuestions.questionType,
+      english: words.english,
+      meanings: words.meanings,
+    })
+    .from(studyAnswers)
+    .innerJoin(
+      studySessionQuestions,
+      and(
+        eq(studySessionQuestions.sessionId, studyAnswers.sessionId),
+        eq(studySessionQuestions.idx, studyAnswers.idx),
+      ),
+    )
+    .innerJoin(words, eq(words.id, studySessionQuestions.wordId))
+    .where(eq(studyAnswers.sessionId, sessionId))
+    .orderBy(asc(studyAnswers.idx));
+
+type Answered = Awaited<ReturnType<typeof loadAnswers>>;
+
+const saveItems = async (tx: Transaction, recordId: string, answered: Answered) => {
+  const items = answered.map((a) => ({
+    recordId,
+    idx: a.idx,
+    wordId: a.wordId,
+    english: a.english,
+    meanings: a.meanings,
+    questionType: a.questionType,
+    correct: a.correct,
+    known: a.known,
+    userAnswer: a.typedAnswer,
+  }));
+  for (let i = 0; i < items.length; i += INSERT_CHUNK) {
+    await tx.insert(studyRecordItems).values(items.slice(i, i + INSERT_CHUNK));
+  }
+};
+
 @Injectable()
 export class StudyCompleteService {
   constructor(
@@ -66,30 +110,7 @@ export class StudyCompleteService {
         .set({ status: 'COMPLETED', completedAt: now })
         .where(eq(studySessions.id, session.id));
 
-      const answered = await tx
-        .select({
-          idx: studyAnswers.idx,
-          correct: studyAnswers.correct,
-          known: studyAnswers.known,
-          counted: studyAnswers.counted,
-          typedAnswer: studyAnswers.typedAnswer,
-          wordId: studySessionQuestions.wordId,
-          questionType: studySessionQuestions.questionType,
-          english: words.english,
-          meanings: words.meanings,
-        })
-        .from(studyAnswers)
-        .innerJoin(
-          studySessionQuestions,
-          and(
-            eq(studySessionQuestions.sessionId, studyAnswers.sessionId),
-            eq(studySessionQuestions.idx, studyAnswers.idx),
-          ),
-        )
-        .innerJoin(words, eq(words.id, studySessionQuestions.wordId))
-        .where(eq(studyAnswers.sessionId, session.id))
-        .orderBy(asc(studyAnswers.idx));
-
+      const answered = await loadAnswers(tx, session.id);
       const counts = countAnswers(session.mode, answered);
       const xp = await this.grantXp(tx, session, body, answered, today, now);
 
@@ -109,29 +130,13 @@ export class StudyCompleteService {
         completedAt: now,
         completedDate: today,
       });
-      const items = answered.map((a) => ({
-        recordId,
-        idx: a.idx,
-        wordId: a.wordId,
-        english: a.english,
-        meanings: a.meanings,
-        questionType: a.questionType,
-        correct: a.correct,
-        known: a.known,
-        userAnswer: a.typedAnswer,
-      }));
-      for (let i = 0; i < items.length; i += INSERT_CHUNK) {
-        await tx.insert(studyRecordItems).values(items.slice(i, i + INSERT_CHUNK));
-      }
+      await saveItems(tx, recordId, answered);
 
       // 답을 하나도 내지 않은 학습은 그날 학습한 것으로 치지 않는다 (달력·스트릭이 같은 기준)
-      let streak: CompleteResult['streak'] = null;
-      if (answered.length > 0) {
-        await this.addDailyStats(tx, user.userId, today, session, answered, xp.earned);
-        streak = await this.updateStreak(tx, user.userId, today);
-        await addMissionProgress(tx, user.userId, 'STUDY_COMPLETE', 1, now);
-        await addMissionProgress(tx, user.userId, 'WORDS_STUDIED', answered.length, now);
-      }
+      const streak =
+        answered.length > 0
+          ? await this.settleDay(tx, user.userId, today, session, answered, xp.earned, now)
+          : null;
 
       return {
         recordId,
@@ -144,6 +149,23 @@ export class StudyCompleteService {
     await this.ranking.addXp(user.userId, result.xp.earned, completedAt);
     await this.badges.evaluate(user.userId);
     return result;
+  }
+
+  /** 오늘 학습 통계·스트릭·미션을 갱신하고 스트릭을 돌려준다 */
+  private async settleDay(
+    tx: Transaction,
+    userId: string,
+    today: string,
+    session: StudySessionRow,
+    answered: Answered,
+    xpEarned: number,
+    now: Date,
+  ): Promise<CompleteResult['streak']> {
+    await this.addDailyStats(tx, userId, today, session, answered, xpEarned);
+    const streak = await this.updateStreak(tx, userId, today);
+    await addMissionProgress(tx, userId, 'STUDY_COMPLETE', 1, now);
+    await addMissionProgress(tx, userId, 'WORDS_STUDIED', answered.length, now);
+    return streak;
   }
 
   private async grantXp(
