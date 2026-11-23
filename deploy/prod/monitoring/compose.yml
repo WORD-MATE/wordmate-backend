@@ -114,6 +114,7 @@ services:
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3001}
       GF_SECURITY_COOKIE_SECURE: ${GRAFANA_COOKIE_SECURE:-false}
       GF_SECURITY_STRICT_TRANSPORT_SECURITY: ${GRAFANA_COOKIE_SECURE:-false}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/wordmate.json
     ports:
       # 학교 프록시가 서브도메인으로 넘겨주도록 서버 외부에 연다 (로그인 필수, 회원가입·익명 접근 없음)
       - "3001:3000"
