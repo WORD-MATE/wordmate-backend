@@ -275,7 +275,7 @@ docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" wordmate'
 
 - 배포한 이미지는 서버에서 `main` 태그로도 붙여 두므로 서버에서 직접 `docker compose`를 실행해도 마지막 배포 이미지를 씁니다.
 - 되돌리기용으로 서버에 직전 `sha-*` 이미지 2개를 남깁니다.
-- 되돌리기: Actions → Deploy (prod) → Run workflow에서 `tag`에 이전 태그(예: `sha-0123456789ab`)를 넣으면 빌드 없이 그 이미지로 바꿉니다. 태그는 GHCR 패키지 목록이나 이전 배포 로그에서 찾습니다.
+- 되돌리기: Actions → Deploy (prod) → Run workflow에서 브랜치를 `main`으로 고르고(기본값이 develop이라 바꿔야 함, main이 아니면 아무것도 하지 않음) `tag`에 이전 태그(예: `sha-0123456789ab`)를 넣으면 빌드 없이 그 이미지로 바꿉니다. 태그는 GHCR 패키지 목록이나 이전 배포 로그에서 찾습니다.
 - 마이그레이션은 되돌리지 않습니다. 스키마를 바꾼 배포를 되돌리면 예전 코드가 새 스키마에서 돌게 되므로, 컬럼 삭제·이름 변경 같은 마이그레이션은 코드 배포와 나눠서 올립니다.
 
 ## 인증
