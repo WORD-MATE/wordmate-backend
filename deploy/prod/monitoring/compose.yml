@@ -45,7 +45,6 @@ services:
     command:
       - --path.rootfs=/host
       - --collector.textfile.directory=/textfile
-      - --collector.filesystem.mount-points-exclude=^/(dev|proc|run|sys|var/lib/docker/.+|var/snap/.+)($$|/)
     volumes:
       - type: bind
         source: /

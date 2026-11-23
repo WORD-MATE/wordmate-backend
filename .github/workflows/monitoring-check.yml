@@ -22,6 +22,7 @@ jobs:
     timeout-minutes: 15
     defaults:
       run:
+        shell: bash
         working-directory: deploy/prod/monitoring
     steps:
       - uses: actions/checkout@v5
@@ -50,7 +51,11 @@ jobs:
         run: docker compose run --rm --no-deps -T alloy fmt /etc/alloy/config.alloy | diff -u alloy/config.alloy -
 
       - name: 전체 실행
-        run: docker compose up -d --wait
+        run: |
+          docker compose up -d --wait
+          # 앱 컨테이너처럼 라벨을 단 컨테이너로 pino 수준 변환을 확인한다
+          docker run -d --name fake-app --label com.docker.compose.project=wordmate --label com.docker.compose.service=app \
+            busybox:1.37 sh -c 'while true; do echo "{\"level\":50,\"msg\":\"ci\"}"; sleep 2; done'
 
       - name: 동작 확인
         run: |
@@ -71,10 +76,11 @@ jobs:
           curl -fsS --retry 30 --retry-delay 2 --retry-all-errors -u admin:ci-password http://127.0.0.1:3001/api/datasources | has '"uid":"loki"'
           curl -fsS --retry 30 --retry-delay 2 --retry-all-errors -u admin:ci-password 'http://127.0.0.1:3001/api/search?query=WordMate' | has '"uid":"wordmate"'
           for i in $(seq 1 30); do
-            if prom 'http://loki:3100/loki/api/v1/label/project/values' | has 'wordmate-monitoring'; then exit 0; fi
+            if prom 'http://loki:3100/loki/api/v1/label/project/values' | has 'wordmate-monitoring' \
+              && prom 'http://loki:3100/loki/api/v1/label/level/values' | has '"error"'; then exit 0; fi
             sleep 3
           done
-          echo "::error::Loki에 컨테이너 로그가 들어오지 않습니다"
+          echo "::error::Loki에 컨테이너 로그가 들어오지 않거나 앱 로그 수준이 라벨로 붙지 않습니다"
           exit 1
 
       - name: 실패 시 로그
