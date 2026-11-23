@@ -23,6 +23,7 @@ import {
 import { newId } from '../../infra/db/uuid.js';
 import { VALKEY } from '../../infra/valkey/valkey.module.js';
 import { blockedEitherWay } from '../blocks/block-queries.js';
+import { ClassErrors } from '../classes/classes.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PacksService } from '../packs/packs.service.js';
 import { RealtimeService } from '../realtime/realtime.service.js';
@@ -250,7 +251,7 @@ export class RoomsService {
       .select({ classId: teacherClasses.classId })
       .from(teacherClasses)
       .where(and(eq(teacherClasses.teacherId, user.userId), eq(teacherClasses.classId, classId)));
-    if (!owned) throw CommonErrors.forbidden('담당 반이 아닙니다.');
+    if (!owned) throw ClassErrors.notAssigned();
     const pack = rematch?.pack ?? (await this.packs.findVisible(user, body.packId));
     if (pack.wordCount < MIN_BATTLE_WORDS) throw RoomErrors.packTooFewWords();
     await this.expireOverdue();
