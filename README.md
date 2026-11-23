@@ -128,6 +128,7 @@ create(@ZodBody(CreatePack) body: z.infer<typeof CreatePack>) { ... }
 | `DATAGSM_OPENAPI_URL`   | `https://openapi.datagsm.kr`             | DataGSM OpenAPI 서버 (학적 동기화)                                  |
 | `DATAGSM_API_KEY`       | (없음)                                   | DataGSM OpenAPI 키 (`student:read`). 없으면 학적 동기화를 건너뜀    |
 | `TRUST_PROXY`           | (없음)                                   | 신뢰할 리버스 프록시 IP·CIDR, 쉼표로 구분 (실제 클라이언트 IP 판별) |
+| `METRICS_PORT`          | `9464`                                   | `/metrics` 전용 내부 포트 (서버에 열지 않음). `0`이면 끔            |
 | `SWAGGER_ENABLED`       | `production`이 아니면 켜짐               | `true` / `false`로 Swagger 문서 강제 설정                           |
 | `SHARE_LINK_BASE`       | `wordmate://`                            | 공유 링크 앞부분. 웹 도메인이 생기면 `https://도메인`으로 바꿈      |
 | `APNS_KEY_P8`           | (없음)                                   | APNs 인증 키(.p8) PEM. 한 줄로 넣을 때는 줄바꿈을 `\n`으로          |
@@ -157,6 +158,34 @@ valkey-cli SET app:config '{"maintenance":{"enabled":true,"message":"정기 점�
 - 점검 중: 503 `MAINTENANCE` (`detail`: `message`, `endsAt`)
 - 최소 버전 미만: 426 `UPDATE_REQUIRED` (`detail.storeUrl`, 웹은 `null`)
 - `GET /app/status`는 점검 중에도 200으로 점검 정보와 업데이트 상태(`REQUIRED` / `RECOMMENDED` / `NONE`)를 돌려줍니다.
+
+## 상태 확인·지표
+
+상태 확인은 인증·클라이언트 헤더가 필요 없고 점검 중·강제 업데이트 중에도 응답합니다. 10초마다 오는 요청이라 접속 로그와 요청 지표에서는 뺍니다(오류는 로그에 남음).
+
+| 엔드포인트          | 확인 내용                    | 실패                                                       | 용도                           |
+| ------------------- | ---------------------------- | ---------------------------------------------------------- | ------------------------------ |
+| `GET /health`       | DB·Valkey 연결 (각 2초 제한) | 503 `HEALTH_CHECK_FAILED`                                  | 컨테이너 healthcheck·배포 확인 |
+| `GET /health/live`  | 프로세스가 응답하는지만      | 없음                                                       | 의존 서비스와 무관한 생존 확인 |
+| `GET /health/ready` | DB·Valkey 연결과 응답 시간   | 503 `HEALTH_CHECK_FAILED`, 종료 중이면 503 `SHUTTING_DOWN` | 요청을 받을 준비가 됐는지      |
+
+`/health`는 기존 응답(`{"status":"ok","checks":{"db":"up","valkey":"up"}}`)을 그대로 유지합니다. compose의 `restart: unless-stopped`는 unhealthy만으로 컨테이너를 다시 시작하지 않으므로 Valkey가 잠깐 느려도 재시작되지 않습니다.
+
+### 지표 (Prometheus)
+
+`GET /metrics`는 API 포트(3000)가 아니라 내부 포트 `METRICS_PORT`(기본 `9464`)에서만 응답합니다. compose에서 이 포트를 서버에 열지 않으므로 학교 프록시를 거친 외부 요청은 닿지 않고, 같은 도커 네트워크(`wordmate_internal`)의 Prometheus만 `app:9464/metrics`로 수집합니다. `METRICS_PORT=0`이면 끕니다.
+
+| 지표                            | 라벨                        | 설명                                                |
+| ------------------------------- | --------------------------- | --------------------------------------------------- |
+| `http_requests_total`           | `method`, `route`, `status` | 요청 수. 오류율은 `status`로 계산                   |
+| `http_request_duration_seconds` | `method`, `route`, `status` | 처리 시간 히스토그램 (10ms~10s)                     |
+| `wordmate_realtime_connections` | 없음                        | 이 인스턴스에 인증을 마친 WebSocket 연결 수         |
+| `wordmate_queue_jobs`           | `queue`, `state`            | 큐별 `waiting` / `active` / `delayed` / `failed` 수 |
+| `wordmate_queue_up`             | `queue`                     | 큐 작업 수를 1초 안에 읽었으면 1, 아니면 0          |
+| `process_*`, `nodejs_*`         | 없음                        | 메모리·CPU·이벤트 루프 지연·GC 등 기본 지표         |
+
+- `route`는 실제 주소가 아니라 라우트 패턴(`/packs/:packId`)이라 라벨 수가 늘지 않습니다. 맞는 라우트가 없는 요청은 `UNMATCHED` 하나로 묶습니다.
+- 큐 작업 수는 수집할 때 Valkey에서 읽습니다. Valkey가 느리면 그 큐만 `wordmate_queue_up 0`이 되고 나머지 지표는 그대로 나옵니다.
 
 ## Docker
 
