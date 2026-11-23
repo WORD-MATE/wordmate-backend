@@ -4,7 +4,7 @@ import { BATTLE_QUEUE, BattleJob } from './battle.queue.js';
 import { LobbyService } from './lobby.service.js';
 import { MatchmakingService } from './matchmaking.service.js';
 import { PlayService } from './play.service.js';
-import { RoomsService } from './rooms.service.js';
+import { RoomExpiryService } from './room-expiry.service.js';
 
 type BattleJobData = {
   roomId?: string;
@@ -20,7 +20,7 @@ type BattleJobData = {
 @Processor(BATTLE_QUEUE, { concurrency: 20 })
 export class BattleProcessor extends WorkerHost {
   constructor(
-    private readonly rooms: RoomsService,
+    private readonly expiry: RoomExpiryService,
     private readonly lobby: LobbyService,
     private readonly play: PlayService,
     private readonly matchmaking: MatchmakingService,
@@ -31,7 +31,7 @@ export class BattleProcessor extends WorkerHost {
   async process(job: Job<BattleJobData>): Promise<unknown> {
     switch (job.name) {
       case BattleJob.expireRoom:
-        return this.rooms.expireOrReschedule(job.data.roomId as string);
+        return this.expiry.expireOrReschedule(job.data.roomId as string);
       case BattleJob.startBattle:
         return this.lobby.begin(job.data.roomId as string, new Date(job.data.countdownEndsAt ?? 0));
       case BattleJob.startQuestion:
