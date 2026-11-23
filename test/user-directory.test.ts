@@ -83,7 +83,7 @@ describe('사용자 검색·프로필', () => {
 
   describe('검색', () => {
     it('교사·나·나를 차단한 사용자·쓸 수 없는 계정은 빼고, 내가 차단한 사용자는 넣는다', async () => {
-      const me = await makeUser({ name: `${tag}가` });
+      const me = await makeUser({ name: `${tag}목0` });
       const friend = await makeUser({ name: `${tag}목1` });
       const sent = await makeUser({ name: `${tag}목2` });
       const received = await makeUser({ name: `${tag}목3` });
@@ -93,6 +93,7 @@ describe('사용자 검색·프로필', () => {
       await makeUser({ name: `${tag}목7`, status: 'SUSPENDED' });
       await makeUser({ name: `${tag}목8`, status: 'INACTIVE' });
       await makeUser({ name: `${tag}목9`, status: 'WITHDRAWN' });
+      const hidden = await makeUser({ name: `${tag}목A`, rankingPublic: false });
       await befriend(me, friend);
       await request(me, sent);
       await request(received, me);
@@ -121,6 +122,11 @@ describe('사용자 검색·프로필', () => {
         },
         {
           user: expect.objectContaining({ userId: blockedByMe.userId }),
+          isFriend: false,
+          friendRequest: null,
+        },
+        {
+          user: expect.objectContaining({ userId: hidden.userId, tier: null }),
           isFriend: false,
           friendRequest: null,
         },
