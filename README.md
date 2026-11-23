@@ -380,7 +380,7 @@ docker compose ps
 - 배포로 설정 파일이 바뀐 뒤 적용: `cd ~/wordmate/monitoring && docker compose up -d --force-recreate`
 - 앱 compose를 `docker compose down`으로 내릴 때는 Prometheus가 앱 네트워크에 붙어 있어 네트워크를 지우지 못합니다. 모니터링을 먼저 내리거나(`docker compose down`), 앱은 `stop`으로 멈춥니다.
 
-Grafana 접속: 학교 서버 관리 페이지에서 서브도메인을 하나 더 만들어 내부 포트 `3001`로 연결하고, `.env`에 아래를 넣은 뒤 `docker compose up -d --force-recreate grafana`로 적용합니다. 대시보드는 Dashboards → WordMate(요청 수·지연·5xx(라우트별), 실시간 연결, 큐 작업, CPU·메모리·디스크, 마지막 백업 후 경과 시간, 앱 로그)입니다.
+Grafana 접속: 학교 서버 관리 페이지에서 서브도메인을 하나 더 만들어 내부 포트 `3001`로 연결하고, `.env`에 아래를 넣은 뒤 `docker compose up -d --force-recreate grafana`로 적용합니다. 로그인하면 WordMate 대시보드(요청 수·지연·5xx(라우트별), 실시간 연결, 큐 작업, CPU·메모리·디스크, 마지막 백업 후 경과 시간, 앱 로그)가 홈으로 열립니다.
 
 ```bash
 GRAFANA_ROOT_URL=https://{Grafana 서브도메인}
