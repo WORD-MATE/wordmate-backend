@@ -325,65 +325,7 @@ export class RoomsService {
     try {
       // 같은 방 참가는 서버 안에서 먼저 줄을 세워, 방 잠금을 기다리는 동안 DB 연결을 붙잡지 않게 한다
       joined = await this.joinQueue.run(found.id, () =>
-        this.db.transaction(async (tx) => {
-          const [room] = await tx
-            .select()
-            .from(battleRooms)
-            .where(eq(battleRooms.id, found.id))
-            .for('update');
-          if (!room || room.status === 'EXPIRED' || room.status === 'FINISHED') {
-            throw RoomErrors.notFound();
-          }
-          // 내 기록과 남아 있는 인원을 한 번에 읽는다
-          const rows = await tx
-            .select({
-              userId: battleRoomParticipants.userId,
-              active: battleRoomParticipants.active,
-              state: battleRoomParticipants.state,
-            })
-            .from(battleRoomParticipants)
-            .where(
-              and(
-                eq(battleRoomParticipants.roomId, room.id),
-                or(
-                  eq(battleRoomParticipants.active, true),
-                  eq(battleRoomParticipants.userId, user.userId),
-                ),
-              ),
-            );
-          const mine = rows.find((row) => row.userId === user.userId);
-          if (mine?.active) return false;
-          if (mine?.state === 'KICKED') throw RoomErrors.kicked();
-          if (room.status !== 'WAITING') throw RoomErrors.alreadyStarted();
-          if (!member) throw RoomErrors.classOnly();
-          const occupied = rows.filter((row) => row.active).length;
-          if (occupied >= room.maxParticipants) throw RoomErrors.full();
-
-          // 예전에 방장이었다 나간 사람이 다시 들어와도 방장 표시가 남지 않게 지운다
-          const values = {
-            state: 'CONNECTED' as const,
-            active: true,
-            isHost: false,
-            joinedAt: new Date(),
-            leftAt: null,
-          };
-          if (mine) {
-            await tx
-              .update(battleRoomParticipants)
-              .set(values)
-              .where(
-                and(
-                  eq(battleRoomParticipants.roomId, room.id),
-                  eq(battleRoomParticipants.userId, user.userId),
-                ),
-              );
-          } else {
-            await tx
-              .insert(battleRoomParticipants)
-              .values({ roomId: room.id, userId: user.userId, ...values });
-          }
-          return true;
-        }),
+        this.db.transaction((tx) => this.takeSeat(tx, found.id, user, member)),
       );
     } catch (error) {
       if (isDuplicateKeyError(error, ACTIVE_USER_INDEX)) {
@@ -403,6 +345,72 @@ export class RoomsService {
     }
     await this.leaveMatchQueue(user.userId);
     return room;
+  }
+
+  /** 방을 잠가 정원·상태를 확인한 뒤 참가 기록을 만든다. 이미 참가 중이면 false */
+  private async takeSeat(
+    tx: Transaction,
+    roomId: string,
+    user: AuthUser,
+    member: boolean,
+  ): Promise<boolean> {
+    const [room] = await tx
+      .select()
+      .from(battleRooms)
+      .where(eq(battleRooms.id, roomId))
+      .for('update');
+    if (!room || room.status === 'EXPIRED' || room.status === 'FINISHED') {
+      throw RoomErrors.notFound();
+    }
+    // 내 기록과 남아 있는 인원을 한 번에 읽는다
+    const rows = await tx
+      .select({
+        userId: battleRoomParticipants.userId,
+        active: battleRoomParticipants.active,
+        state: battleRoomParticipants.state,
+      })
+      .from(battleRoomParticipants)
+      .where(
+        and(
+          eq(battleRoomParticipants.roomId, room.id),
+          or(
+            eq(battleRoomParticipants.active, true),
+            eq(battleRoomParticipants.userId, user.userId),
+          ),
+        ),
+      );
+    const mine = rows.find((row) => row.userId === user.userId);
+    if (mine?.active) return false;
+    if (mine?.state === 'KICKED') throw RoomErrors.kicked();
+    if (room.status !== 'WAITING') throw RoomErrors.alreadyStarted();
+    if (!member) throw RoomErrors.classOnly();
+    const occupied = rows.filter((row) => row.active).length;
+    if (occupied >= room.maxParticipants) throw RoomErrors.full();
+
+    // 예전에 방장이었다 나간 사람이 다시 들어와도 방장 표시가 남지 않게 지운다
+    const values = {
+      state: 'CONNECTED' as const,
+      active: true,
+      isHost: false,
+      joinedAt: new Date(),
+      leftAt: null,
+    };
+    if (mine) {
+      await tx
+        .update(battleRoomParticipants)
+        .set(values)
+        .where(
+          and(
+            eq(battleRoomParticipants.roomId, room.id),
+            eq(battleRoomParticipants.userId, user.userId),
+          ),
+        );
+    } else {
+      await tx
+        .insert(battleRoomParticipants)
+        .values({ roomId: room.id, userId: user.userId, ...values });
+    }
+    return true;
   }
 
   /** 빠른 매칭을 기다리다 직접 방에 들어가면 대기열에서 뺀다 (실패해도 대기 만료가 정리한다) */
