@@ -19,6 +19,10 @@ export const ClassErrors = {
     new AppException('CLASS_NOT_FOUND', '존재하지 않는 반입니다.', HttpStatus.BAD_REQUEST, {
       classIds,
     }),
+  missing: () =>
+    new AppException('CLASS_NOT_FOUND', '존재하지 않는 반입니다.', HttpStatus.NOT_FOUND),
+  notAssigned: () =>
+    new AppException('CLASS_NOT_ASSIGNED', '담당 반이 아닙니다.', HttpStatus.FORBIDDEN),
 };
 
 @Injectable()

@@ -1,15 +1,19 @@
 import { Controller, Get, Put, Req } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { SkipTeacherClassCheck } from '../../common/auth/onboarding.decorator.js';
-import { ZodBody, ZodResponse } from '../../common/zod/decorators.js';
+import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import { NextStepService } from '../users/next-step.service.js';
 import { TeacherClassService } from '../users/teacher-class.service.js';
+import { ClassDashboardService } from './class-dashboard.service.js';
 import {
+  ClassDashboard,
   ClassList,
+  ClassStudentList,
+  DashboardQuery,
   SetTeacherClasses,
   SetTeacherClassesResponse,
   TeacherClassList,
@@ -33,6 +37,40 @@ export class ClassesController {
   @ZodResponse(ClassList)
   list() {
     return this.classes.list();
+  }
+}
+
+const CLASS_ERRORS =
+  '403 CLASS_NOT_ASSIGNED(담당 반이 아님) / TEACHER_CLASS_REQUIRED, 404 CLASS_NOT_FOUND';
+
+@ApiTags('classes')
+@Auth('TEACHER', 'ADMIN')
+@Controller('classes')
+export class ClassDashboardController {
+  constructor(private readonly dashboards: ClassDashboardService) {}
+
+  @ApiOperation({
+    summary: '반 학생 목록',
+    description: `교사는 담당 반만, 관리자는 모든 반. 번호순. 이메일 등 개인정보 제외. 휴면·탈퇴 학생 제외. ${CLASS_ERRORS}`,
+  })
+  @Get(':classId/students')
+  @ZodResponse(ClassStudentList)
+  students(@ZodParam('classId', z.uuid()) classId: string, @Req() request: FastifyRequest) {
+    return this.dashboards.students(currentUser(request), classId);
+  }
+
+  @ApiOperation({
+    summary: '반 학습 대시보드',
+    description: `이번 주(월요일부터)·이번 달(1일부터) 오늘까지(KST). 랭킹 공개 설정과 관계없이 보여줌. 400 INVALID_REQUEST, ${CLASS_ERRORS}`,
+  })
+  @Get(':classId/dashboard')
+  @ZodResponse(ClassDashboard)
+  dashboard(
+    @ZodParam('classId', z.uuid()) classId: string,
+    @ZodQuery(DashboardQuery) query: z.infer<typeof DashboardQuery>,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.dashboards.dashboard(currentUser(request), classId, query.period);
   }
 }
 

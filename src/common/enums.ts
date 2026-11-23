@@ -104,6 +104,9 @@ export type WrongSort = Values<typeof WRONG_SORT>;
 export const STATS_PERIOD = ['TODAY', 'WEEK', 'MONTH'] as const;
 export type StatsPeriod = Values<typeof STATS_PERIOD>;
 
+export const DASHBOARD_PERIOD = ['WEEK', 'MONTH'] as const;
+export type DashboardPeriod = Values<typeof DASHBOARD_PERIOD>;
+
 export const MORNING_QUIZ_TYPE = ['FILL_BLANK', 'MEANING', 'QUESTION'] as const;
 export type MorningQuizType = Values<typeof MORNING_QUIZ_TYPE>;
 
