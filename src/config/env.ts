@@ -26,6 +26,8 @@ export const envSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   CORS_ORIGINS: commaList(z.url()),
   TRUST_PROXY: commaList(z.union([z.cidrv4(), z.ipv4()])),
+  // /metrics 전용 내부 포트. compose에서 공개하지 않아 같은 도커 네트워크에서만 닿는다. 0이면 끈다
+  METRICS_PORT: z.coerce.number().int().min(0).max(65535).default(9464),
   SWAGGER_ENABLED: z.stringbool().optional(),
   DATABASE_URL: z.url({ protocol: /^mysql$/ }),
   // 대결 참가·매칭이 몰릴 때 연결을 기다리지 않도록 넉넉히 (MySQL max_connections 151보다 작게)

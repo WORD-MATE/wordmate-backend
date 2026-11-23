@@ -122,6 +122,11 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
     return userId;
   }
 
+  /** 이 인스턴스에 인증을 마치고 붙어 있는 연결 수 */
+  get connectionCount(): number {
+    return this.connections.size;
+  }
+
   /** 이 인스턴스의 연결을 먼저 본다 (다시 접속한 직후에는 Valkey 기록이 아직 안 써졌을 수 있다) */
   async isOnline(userId: string): Promise<boolean> {
     if (this.byUser.has(userId)) return true;
