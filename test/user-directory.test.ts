@@ -1,14 +1,16 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { inArray, or } from 'drizzle-orm';
+import { eq, inArray, or } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessTokenService } from '../src/common/auth/access-token.service.js';
 import type { AuthUser } from '../src/common/auth/auth-user.js';
 import { type Database, DB } from '../src/infra/db/db.module.js';
 import {
+  badges,
   blocks,
   friendRequests,
   friendships,
   type NewUser,
+  userBadges,
   users,
 } from '../src/infra/db/schema/index.js';
 import { newId } from '../src/infra/db/uuid.js';
@@ -25,6 +27,7 @@ describe('사용자 검색·프로필', () => {
   let app: NestFastifyApplication;
   let db: Database;
   const userIds: string[] = [];
+  const badgeIds: string[] = [];
   // 공유 DB의 다른 사용자와 섞이지 않게 이름·학번에 이 실행만의 표식을 넣는다
   const tag = `검${newId().slice(-6)}`;
   const studentPrefix = `9${Math.floor(Math.random() * 90000 + 10000)}`;
@@ -66,6 +69,22 @@ describe('사용자 검색·프로필', () => {
   const block = (from: AuthUser, to: AuthUser) =>
     db.insert(blocks).values({ blockerId: from.userId, blockedId: to.userId });
 
+  const makeBadge = async (active = true) => {
+    const id = newId();
+    badgeIds.push(id);
+    await db.insert(badges).values({
+      id,
+      code: `DIRECTORY_TEST_${id.slice(-8)}`,
+      type: 'ACHIEVEMENT',
+      name: '대표 배지 테스트',
+      description: '테스트용',
+      conditionText: '테스트용',
+      imageUrl: 'badges/directory-test',
+      active,
+    });
+    return id;
+  };
+
   beforeAll(async () => {
     app = await createTestApp();
     db = app.get(DB);
@@ -77,6 +96,7 @@ describe('사용자 검색·프로필', () => {
       .where(or(inArray(blocks.blockerId, userIds), inArray(blocks.blockedId, userIds)));
     await db.delete(friendRequests).where(inArray(friendRequests.requesterId, userIds));
     await db.delete(friendships).where(inArray(friendships.userId, userIds));
+    if (badgeIds.length > 0) await db.delete(badges).where(inArray(badges.id, badgeIds));
     await db.delete(users).where(inArray(users.id, userIds));
     await app.close();
   });
@@ -284,6 +304,41 @@ describe('사용자 검색·프로필', () => {
       expect((await get(me, `/users/${newId()}`)).json().code).toBe('USER_NOT_FOUND');
       expect((await get(me, '/users/not-a-uuid')).statusCode).toBe(400);
       expect((await get(blocker, `/users/${me.userId}`)).statusCode).toBe(200);
+    });
+
+    it('대표 배지를 보여주고, 비공개·탈퇴·숨긴 배지는 null', async () => {
+      const viewer = await makeUser();
+      const badgeId = await makeBadge();
+      const hiddenBadgeId = await makeBadge(false);
+      const withBadge = async (overrides: Partial<NewUser>, id = badgeId) => {
+        const user = await makeUser({ ...overrides, representativeBadgeId: null });
+        await db
+          .insert(userBadges)
+          .values({ userId: user.userId, badgeId: id, earnedAt: new Date() });
+        await db.update(users).set({ representativeBadgeId: id }).where(eq(users.id, user.userId));
+        return user;
+      };
+      const expected = { badgeId, name: '대표 배지 테스트', imageUrl: 'badges/directory-test' };
+
+      const open = await withBadge({});
+      expect((await get(viewer, `/users/${open.userId}`)).json().representativeBadge).toEqual(
+        expected,
+      );
+
+      const hidden = await withBadge({ rankingPublic: false });
+      expect((await get(viewer, `/users/${hidden.userId}`)).json().representativeBadge).toBeNull();
+      expect((await get(hidden, `/users/${hidden.userId}`)).json().representativeBadge).toEqual(
+        expected,
+      );
+
+      const withdrawn = await withBadge({});
+      await db.update(users).set({ status: 'WITHDRAWN' }).where(eq(users.id, withdrawn.userId));
+      expect(
+        (await get(viewer, `/users/${withdrawn.userId}`)).json().representativeBadge,
+      ).toBeNull();
+
+      const retired = await withBadge({}, hiddenBadgeId);
+      expect((await get(viewer, `/users/${retired.userId}`)).json().representativeBadge).toBeNull();
     });
 
     it('교사도 볼 수 있고, 교사 프로필은 레벨·티어가 없다', async () => {
