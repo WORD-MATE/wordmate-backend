@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { JOB, JOB_RUN_STATUS, JOB_TRIGGER, type Job } from '../../common/enums.js';
 import { ZodParam, ZodResponse } from '../../common/zod/decorators.js';
 import { AdminJobsService } from './admin-jobs.service.js';
@@ -51,7 +52,11 @@ export class AdminJobsController {
   @Post(':job/run')
   @HttpCode(202)
   @ZodResponse(JobQueued, { status: 202 })
-  run(@ZodParam('job', z.enum(JOB)) job: Job, @Req() request: FastifyRequest) {
-    return this.jobs.run(request.user as AuthUser, job, request);
+  run(
+    @ZodParam('job', z.enum(JOB)) job: Job,
+    @CurrentUser() user: AuthUser,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.jobs.run(user, job, request);
   }
 }

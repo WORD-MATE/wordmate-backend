@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { and, asc, desc, eq, inArray, lte, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, or } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { AppException, CommonErrors } from '../../common/errors/app-exception.js';
@@ -32,15 +32,11 @@ import { BattleQueue } from './battle.queue.js';
 import { type CreateRoom, INVITE_CODE_PATTERN, type Room } from './battle.schemas.js';
 import { BattleErrors } from './battle-results.service.js';
 import { MatchQueue } from './match-queue.js';
+import { RoomExpiryService } from './room-expiry.service.js';
 
 type Rematch = { pack: Pack; battleId: string };
 
 export const ROOM_TTL_MS = 30 * 60 * 1000;
-/** 문항 30개 × (15초 + 결과 2초)보다 넉넉히. 이보다 오래 진행 중이면 멈춘 방으로 보고 닫는다 */
-export const MAX_BATTLE_MS = 30 * 60 * 1000;
-/** 카운트다운이 끝나고 이만큼 지나도 시작 작업이 안 돌았으면 예약이 유실된 것으로 보고 대기실로 돌린다 */
-export const COUNTDOWN_STALL_MS = 30 * 1000;
-const EXPIRY_RECHECK_MS = 60 * 1000;
 export const MIN_BATTLE_WORDS = 10;
 export const JOIN_FAIL_LIMIT = 5;
 export const JOIN_FAIL_WINDOW_SECONDS = 60;
@@ -111,6 +107,7 @@ export class RoomsService {
     private readonly config: ConfigService<Env, true>,
     private readonly matchQueue: MatchQueue,
     private readonly notifications: NotificationsService,
+    private readonly expiry: RoomExpiryService,
   ) {}
 
   private readonly joinQueue = new KeyedSerializer();
@@ -120,7 +117,7 @@ export class RoomsService {
   async create(user: AuthUser, body: CreateRoom, rematch?: Rematch): Promise<Room> {
     const pack = rematch?.pack ?? (await this.packs.findVisible(user, body.packId));
     if (pack.wordCount < MIN_BATTLE_WORDS) throw RoomErrors.packTooFewWords();
-    await this.releaseExpired(user.userId);
+    await this.expiry.releaseExpired(user.userId);
     const roomId = await this.insertRoom(body, pack, {
       type: 'NORMAL',
       hostUserId: user.userId,
@@ -139,8 +136,8 @@ export class RoomsService {
     pack: Pack,
     body: CreateRoom,
   ): Promise<Room> {
-    await this.releaseExpired(hostUserId);
-    await this.releaseExpired(guestUserId);
+    await this.expiry.releaseExpired(hostUserId);
+    await this.expiry.releaseExpired(guestUserId);
     const roomId = await this.insertRoom(body, pack, {
       type: 'QUICK_MATCH',
       hostUserId,
@@ -168,7 +165,7 @@ export class RoomsService {
 
   /** 다른 방에 있으면 409 ROOM_ALREADY_JOINED (끝났거나 만료된 방은 먼저 풀어 준다) */
   async assertFree(userId: string): Promise<void> {
-    await this.releaseExpired(userId);
+    await this.expiry.releaseExpired(userId);
     const code = await this.activeCodeOf(userId);
     if (code) throw RoomErrors.alreadyJoined(code);
   }
@@ -254,8 +251,8 @@ export class RoomsService {
     if (!owned) throw ClassErrors.notAssigned();
     const pack = rematch?.pack ?? (await this.packs.findVisible(user, body.packId));
     if (pack.wordCount < MIN_BATTLE_WORDS) throw RoomErrors.packTooFewWords();
-    await this.expireOverdue();
-    await this.recoverStalledHostedBy(user.userId);
+    await this.expiry.expireOverdue();
+    await this.expiry.recoverStalledHostedBy(user.userId);
     const roomId = await this.insertRoom(body, pack, {
       type: 'CLASS',
       hostUserId: user.userId,
@@ -295,7 +292,7 @@ export class RoomsService {
       await this.countFailure(user.userId);
       throw RoomErrors.notFound();
     }
-    await this.expireIfOverdue(room);
+    await this.expiry.expireIfOverdue(room);
     return this.view(room.id);
   }
 
@@ -318,8 +315,8 @@ export class RoomsService {
       await this.countFailure(user.userId);
       throw RoomErrors.notFound();
     }
-    await this.expireIfOverdue(found);
-    await this.releaseExpired(user.userId);
+    await this.expiry.expireIfOverdue(found);
+    await this.expiry.releaseExpired(user.userId);
 
     // 반 소속 조회는 잠그기 전에 한다 (잠금을 쥐는 시간을 줄인다). 판정은 예전 순서대로 잠금 안에서
     // 없는 방·이미 참가·강퇴·시작 확인 뒤에 해야 끝난 반 방의 코드도 404로 세어 코드 찔러보기를 막는다
@@ -328,65 +325,7 @@ export class RoomsService {
     try {
       // 같은 방 참가는 서버 안에서 먼저 줄을 세워, 방 잠금을 기다리는 동안 DB 연결을 붙잡지 않게 한다
       joined = await this.joinQueue.run(found.id, () =>
-        this.db.transaction(async (tx) => {
-          const [room] = await tx
-            .select()
-            .from(battleRooms)
-            .where(eq(battleRooms.id, found.id))
-            .for('update');
-          if (!room || room.status === 'EXPIRED' || room.status === 'FINISHED') {
-            throw RoomErrors.notFound();
-          }
-          // 내 기록과 남아 있는 인원을 한 번에 읽는다
-          const rows = await tx
-            .select({
-              userId: battleRoomParticipants.userId,
-              active: battleRoomParticipants.active,
-              state: battleRoomParticipants.state,
-            })
-            .from(battleRoomParticipants)
-            .where(
-              and(
-                eq(battleRoomParticipants.roomId, room.id),
-                or(
-                  eq(battleRoomParticipants.active, true),
-                  eq(battleRoomParticipants.userId, user.userId),
-                ),
-              ),
-            );
-          const mine = rows.find((row) => row.userId === user.userId);
-          if (mine?.active) return false;
-          if (mine?.state === 'KICKED') throw RoomErrors.kicked();
-          if (room.status !== 'WAITING') throw RoomErrors.alreadyStarted();
-          if (!member) throw RoomErrors.classOnly();
-          const occupied = rows.filter((row) => row.active).length;
-          if (occupied >= room.maxParticipants) throw RoomErrors.full();
-
-          // 예전에 방장이었다 나간 사람이 다시 들어와도 방장 표시가 남지 않게 지운다
-          const values = {
-            state: 'CONNECTED' as const,
-            active: true,
-            isHost: false,
-            joinedAt: new Date(),
-            leftAt: null,
-          };
-          if (mine) {
-            await tx
-              .update(battleRoomParticipants)
-              .set(values)
-              .where(
-                and(
-                  eq(battleRoomParticipants.roomId, room.id),
-                  eq(battleRoomParticipants.userId, user.userId),
-                ),
-              );
-          } else {
-            await tx
-              .insert(battleRoomParticipants)
-              .values({ roomId: room.id, userId: user.userId, ...values });
-          }
-          return true;
-        }),
+        this.db.transaction((tx) => this.takeSeat(tx, found.id, user, member)),
       );
     } catch (error) {
       if (isDuplicateKeyError(error, ACTIVE_USER_INDEX)) {
@@ -408,73 +347,75 @@ export class RoomsService {
     return room;
   }
 
-  /** 빠른 매칭을 기다리다 직접 방에 들어가면 대기열에서 뺀다 (실패해도 대기 만료가 정리한다) */
-  private async leaveMatchQueue(userId: string): Promise<void> {
-    await this.matchQueue.remove(userId).catch(() => {});
-  }
-
-  /**
-   * 30분 안에 시작하지 않은 방을 닫는다 (지연 작업과 조회 시점 양쪽에서 부른다).
-   * 방 상태와 참가자 비우기를 한 트랜잭션으로 처리한다. 따로 하면 그 사이에 실패했을 때
-   * 참가자가 끝난 방에 묶여 다른 방에 들어갈 수 없게 된다. 알림은 커밋한 뒤에 보낸다
-   */
-  async expire(roomId: string): Promise<boolean> {
-    const targets = await this.db.transaction(async (tx) => {
-      const [room] = await tx
-        .select({ hostUserId: battleRooms.hostUserId })
-        .from(battleRooms)
-        .where(
-          and(
-            eq(battleRooms.id, roomId),
-            eq(battleRooms.status, 'WAITING'),
-            lte(battleRooms.expiresAt, new Date()),
+  /** 방을 잠가 정원·상태를 확인한 뒤 참가 기록을 만든다. 이미 참가 중이면 false */
+  private async takeSeat(
+    tx: Transaction,
+    roomId: string,
+    user: AuthUser,
+    member: boolean,
+  ): Promise<boolean> {
+    const [room] = await tx
+      .select()
+      .from(battleRooms)
+      .where(eq(battleRooms.id, roomId))
+      .for('update');
+    if (!room || room.status === 'EXPIRED' || room.status === 'FINISHED') {
+      throw RoomErrors.notFound();
+    }
+    // 내 기록과 남아 있는 인원을 한 번에 읽는다
+    const rows = await tx
+      .select({
+        userId: battleRoomParticipants.userId,
+        active: battleRoomParticipants.active,
+        state: battleRoomParticipants.state,
+      })
+      .from(battleRoomParticipants)
+      .where(
+        and(
+          eq(battleRoomParticipants.roomId, room.id),
+          or(
+            eq(battleRoomParticipants.active, true),
+            eq(battleRoomParticipants.userId, user.userId),
           ),
-        )
-        .for('update');
-      if (!room) return null;
-      const members = await this.activeMembers(tx, roomId, room.hostUserId);
-      await tx.update(battleRooms).set({ status: 'EXPIRED' }).where(eq(battleRooms.id, roomId));
+        ),
+      );
+    const mine = rows.find((row) => row.userId === user.userId);
+    if (mine?.active) return false;
+    if (mine?.state === 'KICKED') throw RoomErrors.kicked();
+    if (room.status !== 'WAITING') throw RoomErrors.alreadyStarted();
+    if (!member) throw RoomErrors.classOnly();
+    const occupied = rows.filter((row) => row.active).length;
+    if (occupied >= room.maxParticipants) throw RoomErrors.full();
+
+    // 예전에 방장이었다 나간 사람이 다시 들어와도 방장 표시가 남지 않게 지운다
+    const values = {
+      state: 'CONNECTED' as const,
+      active: true,
+      isHost: false,
+      joinedAt: new Date(),
+      leftAt: null,
+    };
+    if (mine) {
       await tx
         .update(battleRoomParticipants)
-        .set({ active: false })
-        .where(eq(battleRoomParticipants.roomId, roomId));
-      return members;
-    });
-    if (!targets) return false;
-    await this.realtime.sendToUsers(targets, 'ROOM_CLOSED', { reason: 'EXPIRED' }).catch(() => {});
+        .set(values)
+        .where(
+          and(
+            eq(battleRoomParticipants.roomId, room.id),
+            eq(battleRoomParticipants.userId, user.userId),
+          ),
+        );
+    } else {
+      await tx
+        .insert(battleRoomParticipants)
+        .values({ roomId: room.id, userId: user.userId, ...values });
+    }
     return true;
   }
 
-  /**
-   * 지연 작업용. 서버 시계 차이로 아직 만료 시각 전이면 다시 예약하고,
-   * 카운트다운 중이면 취소돼 대기실로 돌아올 수 있으므로 잠시 뒤 다시 확인한다
-   */
-  async expireOrReschedule(roomId: string): Promise<boolean> {
-    if (await this.expire(roomId)) return true;
-    const [room] = await this.db
-      .select({
-        status: battleRooms.status,
-        expiresAt: battleRooms.expiresAt,
-        countdownEndsAt: battleRooms.countdownEndsAt,
-      })
-      .from(battleRooms)
-      .where(eq(battleRooms.id, roomId));
-    const now = Date.now();
-    if (room?.status === 'WAITING' && room.expiresAt.getTime() > now) {
-      await this.queue.scheduleExpiry(roomId, room.expiresAt, true);
-    } else if (room?.status === 'COUNTDOWN') {
-      // 시작 작업이 유실돼 멈춘 카운트다운이면 대기실로 돌린 뒤 대기실 방처럼 만료를 처리한다
-      const stalledBefore = new Date(now - COUNTDOWN_STALL_MS);
-      if (
-        room.countdownEndsAt &&
-        room.countdownEndsAt <= stalledBefore &&
-        (await this.recoverCountdown(roomId, stalledBefore))
-      ) {
-        return this.expireOrReschedule(roomId);
-      }
-      await this.queue.scheduleExpiry(roomId, new Date(now + EXPIRY_RECHECK_MS), true);
-    }
-    return false;
+  /** 빠른 매칭을 기다리다 직접 방에 들어가면 대기열에서 뺀다 (실패해도 대기 만료가 정리한다) */
+  private async leaveMatchQueue(userId: string): Promise<void> {
+    await this.matchQueue.remove(userId).catch(() => {});
   }
 
   async view(roomId: string): Promise<Room> {
@@ -600,209 +541,6 @@ export class RoomsService {
       .orderBy(desc(battleRooms.createdAt))
       .limit(1);
     return room ?? null;
-  }
-
-  private async expireIfOverdue(room: BattleRoom): Promise<void> {
-    if (room.status === 'WAITING' && room.expiresAt <= new Date()) await this.expire(room.id);
-  }
-
-  /**
-   * 지연 작업이 늦어져도 만료된 방이 사용자를 붙잡지 않게 참가 전에 정리한다.
-   * 이미 끝난 방에 활성으로 남은 참가 기록도 풀어 준다
-   */
-  private async releaseExpired(userId: string): Promise<void> {
-    const ended = await this.db
-      .select({ roomId: battleRoomParticipants.roomId })
-      .from(battleRoomParticipants)
-      .innerJoin(battleRooms, eq(battleRooms.id, battleRoomParticipants.roomId))
-      .where(
-        and(
-          eq(battleRoomParticipants.userId, userId),
-          eq(battleRoomParticipants.active, true),
-          inArray(battleRooms.status, ['FINISHED', 'EXPIRED']),
-        ),
-      );
-    if (ended.length > 0) {
-      await this.db
-        .update(battleRoomParticipants)
-        .set({ active: false })
-        .where(
-          and(
-            eq(battleRoomParticipants.userId, userId),
-            inArray(
-              battleRoomParticipants.roomId,
-              ended.map((row) => row.roomId),
-            ),
-          ),
-        );
-    }
-    const overdue = await this.db
-      .select({ id: battleRooms.id })
-      .from(battleRoomParticipants)
-      .innerJoin(battleRooms, eq(battleRooms.id, battleRoomParticipants.roomId))
-      .where(
-        and(
-          eq(battleRoomParticipants.userId, userId),
-          eq(battleRoomParticipants.active, true),
-          eq(battleRooms.status, 'WAITING'),
-          lte(battleRooms.expiresAt, new Date()),
-        ),
-      );
-    for (const room of overdue) await this.expire(room.id);
-    await this.recoverStalled(userId);
-  }
-
-  /**
-   * 멈춘 방을 풀어 준다. 시작 작업이 유실된 카운트다운은 대기실로 돌리고,
-   * 너무 오래 진행 중인 방은 닫는다 (사용자가 다른 방에 들어갈 수 없게 되지 않도록)
-   */
-  private async recoverStalled(userId: string): Promise<void> {
-    const now = Date.now();
-    const stalled = await this.db
-      .selectDistinct({ id: battleRooms.id, status: battleRooms.status })
-      .from(battleRooms)
-      .innerJoin(battleRoomParticipants, eq(battleRoomParticipants.roomId, battleRooms.id))
-      .where(
-        and(
-          eq(battleRoomParticipants.userId, userId),
-          eq(battleRoomParticipants.active, true),
-          or(
-            and(
-              eq(battleRooms.status, 'COUNTDOWN'),
-              lte(battleRooms.countdownEndsAt, new Date(now - COUNTDOWN_STALL_MS)),
-            ),
-            and(
-              eq(battleRooms.status, 'IN_PROGRESS'),
-              lte(battleRooms.startedAt, new Date(now - MAX_BATTLE_MS)),
-            ),
-          ),
-        ),
-      );
-    for (const room of stalled) {
-      if (room.status === 'COUNTDOWN') {
-        await this.recoverCountdown(room.id, new Date(now - COUNTDOWN_STALL_MS));
-      } else {
-        await this.closeStaleInProgress(room.id, new Date(now - MAX_BATTLE_MS));
-      }
-    }
-  }
-
-  /** 멈춘 카운트다운을 대기실로 돌리고 방 사람들에게 `COUNTDOWN_CANCELLED { START_FAILED }`를 보낸다 */
-  private async recoverCountdown(roomId: string, endedBefore: Date): Promise<boolean> {
-    const targets = await this.db.transaction(async (tx) => {
-      const [room] = await tx
-        .select({ hostUserId: battleRooms.hostUserId })
-        .from(battleRooms)
-        .where(
-          and(
-            eq(battleRooms.id, roomId),
-            eq(battleRooms.status, 'COUNTDOWN'),
-            lte(battleRooms.countdownEndsAt, endedBefore),
-          ),
-        )
-        .for('update');
-      if (!room) return null;
-      await tx
-        .update(battleRooms)
-        .set({ status: 'WAITING', countdownEndsAt: null })
-        .where(eq(battleRooms.id, roomId));
-      return this.activeMembers(tx, roomId, room.hostUserId);
-    });
-    if (!targets) return false;
-    await this.realtime
-      .sendToUsers(targets, 'COUNTDOWN_CANCELLED', { reason: 'START_FAILED' })
-      .catch(() => {});
-    return true;
-  }
-
-  private async activeMembers(
-    tx: Transaction,
-    roomId: string,
-    hostUserId: string | null,
-  ): Promise<string[]> {
-    const active = await tx
-      .select({ userId: battleRoomParticipants.userId })
-      .from(battleRoomParticipants)
-      .where(
-        and(eq(battleRoomParticipants.roomId, roomId), eq(battleRoomParticipants.active, true)),
-      );
-    const ids = new Set(active.map((row) => row.userId));
-    if (hostUserId) ids.add(hostUserId);
-    return [...ids];
-  }
-
-  private async closeStaleInProgress(roomId: string, startedBefore: Date): Promise<void> {
-    const targets = await this.db.transaction(async (tx) => {
-      const [room] = await tx
-        .select({ hostUserId: battleRooms.hostUserId })
-        .from(battleRooms)
-        .where(
-          and(
-            eq(battleRooms.id, roomId),
-            eq(battleRooms.status, 'IN_PROGRESS'),
-            lte(battleRooms.startedAt, startedBefore),
-          ),
-        )
-        .for('update');
-      if (!room) return null;
-      const active = await tx
-        .select({ userId: battleRoomParticipants.userId })
-        .from(battleRoomParticipants)
-        .where(
-          and(eq(battleRoomParticipants.roomId, roomId), eq(battleRoomParticipants.active, true)),
-        );
-      await tx.update(battleRooms).set({ status: 'EXPIRED' }).where(eq(battleRooms.id, roomId));
-      await tx
-        .update(battleRoomParticipants)
-        .set({ active: false })
-        .where(eq(battleRoomParticipants.roomId, roomId));
-      const ids = new Set(active.map((row) => row.userId));
-      if (room.hostUserId) ids.add(room.hostUserId);
-      return [...ids];
-    });
-    if (targets) {
-      await this.realtime
-        .sendToUsers(targets, 'ROOM_CLOSED', { reason: 'EXPIRED' })
-        .catch(() => {});
-    }
-  }
-
-  /** 교사용 방은 진행자가 참가자가 아니라 참가자 기준 정리에 걸리지 않으므로 따로 본다 */
-  private async recoverStalledHostedBy(hostUserId: string): Promise<void> {
-    const now = Date.now();
-    const stale = await this.db
-      .select({ id: battleRooms.id })
-      .from(battleRooms)
-      .where(
-        and(
-          eq(battleRooms.hostUserId, hostUserId),
-          eq(battleRooms.status, 'IN_PROGRESS'),
-          lte(battleRooms.startedAt, new Date(now - MAX_BATTLE_MS)),
-        ),
-      );
-    for (const room of stale) {
-      await this.closeStaleInProgress(room.id, new Date(now - MAX_BATTLE_MS));
-    }
-    const stalledBefore = new Date(now - COUNTDOWN_STALL_MS);
-    const stalled = await this.db
-      .select({ id: battleRooms.id })
-      .from(battleRooms)
-      .where(
-        and(
-          eq(battleRooms.hostUserId, hostUserId),
-          eq(battleRooms.status, 'COUNTDOWN'),
-          lte(battleRooms.countdownEndsAt, stalledBefore),
-        ),
-      );
-    for (const room of stalled) await this.recoverCountdown(room.id, stalledBefore);
-  }
-
-  private async expireOverdue(): Promise<void> {
-    const overdue = await this.db
-      .select({ id: battleRooms.id })
-      .from(battleRooms)
-      .where(and(eq(battleRooms.status, 'WAITING'), lte(battleRooms.expiresAt, new Date())));
-    for (const room of overdue) await this.expire(room.id);
   }
 
   private async activeCodeOf(userId: string): Promise<string | null> {

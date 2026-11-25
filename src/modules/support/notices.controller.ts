@@ -1,9 +1,9 @@
-import { Controller, Get, Req } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { CursorQuery } from '../../common/pagination.js';
 import { ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import { NoticeDetail, NoticeList } from './notices.schemas.js';
@@ -21,8 +21,8 @@ export class NoticesController {
   })
   @Get()
   @ZodResponse(NoticeList)
-  list(@ZodQuery(CursorQuery) query: z.infer<typeof CursorQuery>, @Req() request: FastifyRequest) {
-    return this.notices.list(request.user as AuthUser, query);
+  list(@ZodQuery(CursorQuery) query: z.infer<typeof CursorQuery>, @CurrentUser() user: AuthUser) {
+    return this.notices.list(user, query);
   }
 
   @ApiOperation({
@@ -31,7 +31,7 @@ export class NoticesController {
   })
   @Get(':noticeId')
   @ZodResponse(NoticeDetail)
-  detail(@ZodParam('noticeId', z.uuid()) noticeId: string, @Req() request: FastifyRequest) {
-    return this.notices.detail(request.user as AuthUser, noticeId);
+  detail(@ZodParam('noticeId', z.uuid()) noticeId: string, @CurrentUser() user: AuthUser) {
+    return this.notices.detail(user, noticeId);
   }
 }

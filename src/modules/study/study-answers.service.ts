@@ -61,7 +61,7 @@ export class StudyAnswersService {
       }
 
       const [previous] = await tx
-        .select({ idx: studyAnswers.idx })
+        .select({ known: studyAnswers.known, counted: studyAnswers.counted })
         .from(studyAnswers)
         .where(and(eq(studyAnswers.sessionId, session.id), eq(studyAnswers.idx, body.index)));
       // FLASHCARD는 다시 보내면 덮어쓴다
@@ -69,47 +69,15 @@ export class StudyAnswersService {
 
       const graded = this.grade(session, question, body);
       const counted = body.elapsedMs >= MIN_COUNTED_ELAPSED_MS;
-      const answer = {
-        choiceIndex: session.mode === 'CHOICE' ? (body.choiceIndex ?? null) : null,
-        typedAnswer: session.mode === 'TYPING' ? (body.typedAnswer ?? null) : null,
-        known: session.mode === 'FLASHCARD' ? (body.known ?? null) : null,
-        correct: session.mode === 'FLASHCARD' ? null : graded,
-        counted,
-        elapsedMs: body.elapsedMs,
-        submittedAt: new Date(),
-      };
-      if (previous) {
-        await tx
-          .update(studyAnswers)
-          .set(answer)
-          .where(and(eq(studyAnswers.sessionId, session.id), eq(studyAnswers.idx, body.index)));
-      } else {
-        await tx.insert(studyAnswers).values({ sessionId: session.id, idx: body.index, ...answer });
-      }
-      await tx
-        .update(studySessions)
-        .set({
-          answeredCount: previous ? session.answeredCount : session.answeredCount + 1,
-          expiresAt: sessionExpiry(),
-        })
-        .where(eq(studySessions.id, session.id));
-
-      const [word] = await tx
-        .select({ packId: words.packId, english: words.english, meanings: words.meanings })
-        .from(words)
-        .where(eq(words.id, question.wordId));
-      if (word) {
-        if (question.questionType) {
-          await this.updateWrongNote(tx, user.userId, session, question, word.packId, {
+      await this.saveAnswer(tx, session, body, { graded, counted, replaced: Boolean(previous) });
+      // 같은 답을 다시 보내면 진도를 또 쌓지 않는다 (고친 답은 반영한다)
+      const unchanged = previous?.known === (body.known ?? null) && previous?.counted === counted;
+      const word = unchanged
+        ? null
+        : await this.recordProgress(tx, user.userId, session, question, {
             correct: graded,
             counted,
           });
-        }
-        await this.updateProgress(tx, user.userId, session, question.wordId, word.packId, {
-          correct: graded,
-          counted,
-        });
-      }
 
       return {
         index: body.index,
@@ -121,6 +89,60 @@ export class StudyAnswersService {
         counted,
       };
     });
+  }
+
+  /** 답을 새로 쓰거나(다시 보낸 플래시카드는 덮어쓴다) 고친 뒤 대결과 같은 방식으로 세션 진행 수를 맞춘다 */
+  private async saveAnswer(
+    tx: Transaction,
+    session: StudySessionRow,
+    body: SubmitAnswer,
+    verdict: { graded: boolean; counted: boolean; replaced: boolean },
+  ): Promise<void> {
+    const answer = {
+      choiceIndex: session.mode === 'CHOICE' ? (body.choiceIndex ?? null) : null,
+      typedAnswer: session.mode === 'TYPING' ? (body.typedAnswer ?? null) : null,
+      known: session.mode === 'FLASHCARD' ? (body.known ?? null) : null,
+      correct: session.mode === 'FLASHCARD' ? null : verdict.graded,
+      counted: verdict.counted,
+      elapsedMs: body.elapsedMs,
+      submittedAt: new Date(),
+    };
+    if (verdict.replaced) {
+      await tx
+        .update(studyAnswers)
+        .set(answer)
+        .where(and(eq(studyAnswers.sessionId, session.id), eq(studyAnswers.idx, body.index)));
+    } else {
+      await tx.insert(studyAnswers).values({ sessionId: session.id, idx: body.index, ...answer });
+    }
+    await tx
+      .update(studySessions)
+      .set({
+        answeredCount: verdict.replaced ? session.answeredCount : session.answeredCount + 1,
+        expiresAt: sessionExpiry(),
+      })
+      .where(eq(studySessions.id, session.id));
+  }
+
+  /** 오답노트·학습 진도를 갱신하고 정답 공개에 쓸 단어를 돌려준다 */
+  private async recordProgress(
+    tx: Transaction,
+    userId: string,
+    session: StudySessionRow,
+    question: StudyQuestionRow,
+    verdict: { correct: boolean; counted: boolean },
+  ) {
+    const [word] = await tx
+      .select({ packId: words.packId, english: words.english, meanings: words.meanings })
+      .from(words)
+      .where(eq(words.id, question.wordId));
+    if (word) {
+      if (question.questionType) {
+        await this.updateWrongNote(tx, userId, session, question, word.packId, verdict);
+      }
+      await this.updateProgress(tx, userId, session, question.wordId, word.packId, verdict);
+    }
+    return word;
   }
 
   /** FLASHCARD는 "알아요"를 맞힌 것으로 본다 (암기 진행용) */

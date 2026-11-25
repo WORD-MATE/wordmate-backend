@@ -1,15 +1,13 @@
-import { Controller, Get, Post, Req } from '@nestjs/common';
+import { Controller, Get, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import { BattleHistory, BattleHistoryQuery, BattleResult, Room } from './battle.schemas.js';
 import { BattleResultsService } from './battle-results.service.js';
 import { RoomsService } from './rooms.service.js';
-
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 
 @ApiTags('battles')
 @Controller('battles')
@@ -29,9 +27,9 @@ export class BattlesController {
   @ZodResponse(BattleHistory)
   history(
     @ZodQuery(BattleHistoryQuery) query: z.infer<typeof BattleHistoryQuery>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.results.history(currentUser(request), query);
+    return this.results.history(user, query);
   }
 
   @ApiOperation({
@@ -41,8 +39,8 @@ export class BattlesController {
   })
   @Get(':battleId/result')
   @ZodResponse(BattleResult)
-  result(@ZodParam('battleId', z.uuid()) battleId: string, @Req() request: FastifyRequest) {
-    return this.results.result(currentUser(request), battleId);
+  result(@ZodParam('battleId', z.uuid()) battleId: string, @CurrentUser() user: AuthUser) {
+    return this.results.result(user, battleId);
   }
 
   @ApiOperation({
@@ -52,7 +50,7 @@ export class BattlesController {
   })
   @Post(':battleId/rematch')
   @ZodResponse(Room, { status: 201 })
-  rematch(@ZodParam('battleId', z.uuid()) battleId: string, @Req() request: FastifyRequest) {
-    return this.rooms.rematch(currentUser(request), battleId);
+  rematch(@ZodParam('battleId', z.uuid()) battleId: string, @CurrentUser() user: AuthUser) {
+    return this.rooms.rematch(user, battleId);
   }
 }

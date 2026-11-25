@@ -1,8 +1,8 @@
-import { Controller, Get, Req } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import {
   CalendarQuery,
@@ -16,8 +16,6 @@ import {
 } from './records.schemas.js';
 import { RecordsService } from './records.service.js';
 
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
-
 @ApiTags('records')
 @Controller('records')
 export class RecordsController {
@@ -28,9 +26,9 @@ export class RecordsController {
   @ZodResponse(RecordPage)
   list(
     @ZodQuery(RecordListQuery) query: z.infer<typeof RecordListQuery>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.records.list(currentUser(request), query);
+    return this.records.list(user, query);
   }
 
   @ApiOperation({
@@ -40,8 +38,8 @@ export class RecordsController {
   })
   @Get(':recordId')
   @ZodResponse(RecordDetail)
-  detail(@ZodParam('recordId', z.uuid()) recordId: string, @Req() request: FastifyRequest) {
-    return this.records.detail(currentUser(request), recordId);
+  detail(@ZodParam('recordId', z.uuid()) recordId: string, @CurrentUser() user: AuthUser) {
+    return this.records.detail(user, recordId);
   }
 }
 
@@ -56,8 +54,8 @@ export class StatsController {
   })
   @Get('streak')
   @ZodResponse(StreakStats)
-  streak(@Req() request: FastifyRequest) {
-    return this.records.streak(currentUser(request));
+  streak(@CurrentUser() user: AuthUser) {
+    return this.records.streak(user);
   }
 
   @ApiOperation({
@@ -68,9 +66,9 @@ export class StatsController {
   @ZodResponse(CalendarStats)
   calendar(
     @ZodQuery(CalendarQuery) query: z.infer<typeof CalendarQuery>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.records.calendar(currentUser(request), query.month);
+    return this.records.calendar(user, query.month);
   }
 
   @ApiOperation({
@@ -81,8 +79,8 @@ export class StatsController {
   @ZodResponse(SummaryStats)
   summary(
     @ZodQuery(SummaryQuery) query: z.infer<typeof SummaryQuery>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.records.summary(currentUser(request), query.period);
+    return this.records.summary(user, query.period);
   }
 }

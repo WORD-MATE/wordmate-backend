@@ -1,9 +1,10 @@
-import { Controller, Get, HttpCode, Param, Post, Req, Res } from '@nestjs/common';
+import { Controller, Get, HttpCode, Param, Post, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodBody, ZodParam, ZodResponse } from '../../common/zod/decorators.js';
 import { CreateRoom, Room } from './battle.schemas.js';
 import {
@@ -13,8 +14,6 @@ import {
   RoomErrors,
   RoomsService,
 } from './rooms.service.js';
-
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 
 @ApiTags('battles')
 @Controller('battles/rooms')
@@ -28,8 +27,8 @@ export class RoomsController {
   @Auth('STUDENT')
   @Post()
   @ZodResponse(Room, { status: 201 })
-  create(@ZodBody(CreateRoom) body: z.infer<typeof CreateRoom>, @Req() request: FastifyRequest) {
-    return this.rooms.create(currentUser(request), body);
+  create(@ZodBody(CreateRoom) body: z.infer<typeof CreateRoom>, @CurrentUser() user: AuthUser) {
+    return this.rooms.create(user, body);
   }
 
   @ApiOperation({
@@ -40,10 +39,9 @@ export class RoomsController {
   @ZodResponse(Room)
   async get(
     @Param('inviteCode') inviteCode: string,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
-    const user = currentUser(request);
     if (await this.rooms.isCodeBlocked(user.userId)) {
       reply.header('Retry-After', String(JOIN_FAIL_WINDOW_SECONDS));
       throw RoomErrors.attemptsExceeded();
@@ -61,10 +59,9 @@ export class RoomsController {
   @ZodResponse(Room)
   async join(
     @Param('inviteCode') inviteCode: string,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
-    const user = currentUser(request);
     if (await this.rooms.isCodeBlocked(user.userId)) {
       reply.header('Retry-After', String(JOIN_FAIL_WINDOW_SECONDS));
       throw RoomErrors.attemptsExceeded();
@@ -89,8 +86,8 @@ export class ClassRoomsController {
   create(
     @ZodParam('classId', z.uuid()) classId: string,
     @ZodBody(CreateRoom) body: z.infer<typeof CreateRoom>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.rooms.createForClass(currentUser(request), classId, body);
+    return this.rooms.createForClass(user, classId, body);
   }
 }

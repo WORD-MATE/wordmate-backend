@@ -6,7 +6,9 @@ import {
   rankKey,
   scopeKeyFor,
   scopeKeys,
+  tiebreakOf,
   topPercentOf,
+  XP_FACTOR,
   xpOfScore,
 } from './ranking-keys.js';
 
@@ -74,5 +76,17 @@ describe('조회 도우미', () => {
     expect(topPercentOf(101, 400)).toBe(26);
     expect(topPercentOf(1, 1000)).toBe(1);
     expect(topPercentOf(400, 400)).toBe(100);
+  });
+});
+
+describe('tiebreakOf', () => {
+  it('운영 기간 안에서는 XP 자리를 넘지 않고, 늦게 도달할수록 작다', () => {
+    const times = ['2026-01-01T00:00:00Z', '2026-11-20T12:34:56Z', '2030-12-31T23:59:59Z'];
+    const values = times.map((t) => tiebreakOf(new Date(t)));
+    for (const value of values) {
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThan(XP_FACTOR);
+    }
+    expect(values).toEqual([...values].sort((x, y) => y - x));
   });
 });

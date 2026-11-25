@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import {
   AdminSuspiciousPage,
@@ -40,8 +41,9 @@ export class AdminSuspiciousController {
     @ZodParam('userId', z.uuid()) userId: string,
     @ZodParam('date', z.iso.date()) date: string,
     @ZodBody(ReviewSuspicious) body: z.infer<typeof ReviewSuspicious>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ): Promise<void> {
-    await this.suspicious.review(request.user as AuthUser, userId, date, body, request);
+    await this.suspicious.review(user, userId, date, body, request);
   }
 }

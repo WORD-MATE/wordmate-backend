@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { kstDate, kstDayRange, kstMonthRange, kstWeekRange } from './kst.js';
+import { kstDate, kstDayRange, kstMonthRange, kstTime, kstWeekRange } from './kst.js';
 
 const iso = ({ start, end }: { start: Date; end: Date }) => [
   start.toISOString(),
@@ -37,5 +37,13 @@ describe('kstMonthRange', () => {
       '2026-11-30T15:00:00.000Z',
       '2026-12-31T15:00:00.000Z',
     ]);
+  });
+});
+
+describe('kstTime', () => {
+  it('KST 시각을 분 단위 HH:mm으로 (초는 버린다)', () => {
+    expect(kstTime(new Date('2026-11-18T13:00:59.999Z'))).toBe('22:00');
+    expect(kstTime(new Date('2026-11-18T15:00:00.000Z'))).toBe('00:00');
+    expect(kstTime(new Date('2026-11-18T22:05:30.000Z'))).toBe('07:05');
   });
 });

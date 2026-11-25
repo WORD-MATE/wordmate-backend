@@ -47,7 +47,8 @@ export class AuthController {
 
   @ApiOperation({
     summary: '토큰 재발급 (리프레시 토큰 회전)',
-    description: '앱은 본문 refreshToken, 웹은 __Secure-rt 쿠키',
+    description:
+      '앱은 본문 refreshToken, 웹은 __Secure-rt 쿠키. 이미 쓴 토큰도 10초 안에 다시 오면(여러 탭 동시 갱신) 새 토큰을 주고, 그 뒤에 오면 401 AUTH_REFRESH_REUSED로 그 기기를 로그아웃',
   })
   @Post('refresh')
   @HttpCode(200)

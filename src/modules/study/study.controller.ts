@@ -1,9 +1,9 @@
-import { Controller, Delete, Get, HttpCode, Post, Req } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { Idempotent } from '../../common/idempotency/idempotent.decorator.js';
 import { ZodBody, ZodParam, ZodResponse } from '../../common/zod/decorators.js';
 import { DAILY_REVIEW_LIMIT, MIN_COUNTED_ELAPSED_MS } from './grading.js';
@@ -21,7 +21,6 @@ import { StudyAnswersService } from './study-answers.service.js';
 import { StudyCompleteService } from './study-complete.service.js';
 import { SESSION_TTL_DAYS, StudySessionsService } from './study-sessions.service.js';
 
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 const SessionIdParam = () => ZodParam('sessionId', z.uuid());
 
 @ApiTags('study')
@@ -40,8 +39,8 @@ export class StudyController {
   })
   @Post()
   @ZodResponse(StudySession, { status: 201 })
-  start(@ZodBody(StartStudy) body: z.infer<typeof StartStudy>, @Req() request: FastifyRequest) {
-    return this.sessions.start(currentUser(request), body);
+  start(@ZodBody(StartStudy) body: z.infer<typeof StartStudy>, @CurrentUser() user: AuthUser) {
+    return this.sessions.start(user, body);
   }
 
   @ApiOperation({
@@ -50,8 +49,8 @@ export class StudyController {
   })
   @Get('current')
   @ZodResponse(CurrentStudy)
-  current(@Req() request: FastifyRequest) {
-    return this.sessions.current(currentUser(request));
+  current(@CurrentUser() user: AuthUser) {
+    return this.sessions.current(user);
   }
 
   @ApiOperation({
@@ -60,8 +59,8 @@ export class StudyController {
   })
   @Get(':sessionId')
   @ZodResponse(StudySession)
-  get(@SessionIdParam() sessionId: string, @Req() request: FastifyRequest) {
-    return this.sessions.get(currentUser(request), sessionId);
+  get(@SessionIdParam() sessionId: string, @CurrentUser() user: AuthUser) {
+    return this.sessions.get(user, sessionId);
   }
 
   @ApiOperation({
@@ -77,9 +76,9 @@ export class StudyController {
   submit(
     @SessionIdParam() sessionId: string,
     @ZodBody(SubmitAnswer) body: z.infer<typeof SubmitAnswer>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.answers.submit(currentUser(request), sessionId, body);
+    return this.answers.submit(user, sessionId, body);
   }
 
   @ApiOperation({
@@ -94,9 +93,9 @@ export class StudyController {
   complete(
     @SessionIdParam() sessionId: string,
     @ZodBody(CompleteStudy) body: z.infer<typeof CompleteStudy>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.completion.complete(currentUser(request), sessionId, body);
+    return this.completion.complete(user, sessionId, body);
   }
 
   @ApiOperation({
@@ -105,8 +104,8 @@ export class StudyController {
   })
   @Delete(':sessionId')
   @HttpCode(204)
-  async remove(@SessionIdParam() sessionId: string, @Req() request: FastifyRequest): Promise<void> {
-    await this.sessions.remove(currentUser(request), sessionId);
+  async remove(@SessionIdParam() sessionId: string, @CurrentUser() user: AuthUser): Promise<void> {
+    await this.sessions.remove(user, sessionId);
   }
 }
 
@@ -121,7 +120,7 @@ export class StudyReviewController {
   })
   @Get('review')
   @ZodResponse(ReviewSummary)
-  review(@Req() request: FastifyRequest) {
-    return this.sessions.reviewSummary(currentUser(request));
+  review(@CurrentUser() user: AuthUser) {
+    return this.sessions.reviewSummary(user);
   }
 }

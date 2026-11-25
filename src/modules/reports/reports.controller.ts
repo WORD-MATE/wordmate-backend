@@ -1,8 +1,8 @@
-import { Controller, Post, Req } from '@nestjs/common';
+import { Controller, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodBody, ZodResponse } from '../../common/zod/decorators.js';
 import { CreateReport, ReportCreated } from './reports.schemas.js';
 import { ReportsService } from './reports.service.js';
@@ -20,7 +20,7 @@ export class ReportsController {
   })
   @Post()
   @ZodResponse(ReportCreated, { status: 201 })
-  create(@ZodBody(CreateReport) body: CreateReport, @Req() request: FastifyRequest) {
-    return this.reports.create(request.user as AuthUser, body);
+  create(@ZodBody(CreateReport) body: CreateReport, @CurrentUser() user: AuthUser) {
+    return this.reports.create(user, body);
   }
 }

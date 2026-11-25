@@ -1,13 +1,11 @@
-import { Controller, Delete, HttpCode, Post, Req } from '@nestjs/common';
+import { Controller, Delete, HttpCode, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodResponse } from '../../common/zod/decorators.js';
 import { MatchmakingService } from './matchmaking.service.js';
-
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 
 const MatchTicket = z
   .object({
@@ -30,8 +28,8 @@ export class MatchmakingController {
   @Post()
   @HttpCode(202)
   @ZodResponse(MatchTicket, { status: 202 })
-  enqueue(@Req() request: FastifyRequest) {
-    return this.matchmaking.enqueue(currentUser(request));
+  enqueue(@CurrentUser() user: AuthUser) {
+    return this.matchmaking.enqueue(user);
   }
 
   @ApiOperation({
@@ -42,7 +40,7 @@ export class MatchmakingController {
   @Auth('STUDENT')
   @Delete()
   @HttpCode(204)
-  async cancel(@Req() request: FastifyRequest): Promise<void> {
-    await this.matchmaking.cancel(currentUser(request));
+  async cancel(@CurrentUser() user: AuthUser): Promise<void> {
+    await this.matchmaking.cancel(user);
   }
 }

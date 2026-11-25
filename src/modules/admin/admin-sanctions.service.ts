@@ -5,21 +5,29 @@ import { AuditLogService } from '../../common/audit/audit-log.service.js';
 import { AccountBlockService } from '../../common/auth/account-block.service.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { AppException } from '../../common/errors/app-exception.js';
-import { kstDate } from '../../common/time/kst.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
-import { sanctions, users, xpLedger } from '../../infra/db/schema/index.js';
+import { sanctions, users } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
 import { SessionService } from '../auth/session.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { RankingService } from '../ranking/ranking.service.js';
+import { hasOtherActiveAdmin } from '../users/active-admins.js';
+import { XpService } from '../xp/xp.service.js';
 import { AdminUserErrors } from './admin-errors.js';
 import type { ApplySanction } from './admin-sanctions.schemas.js';
+import { keepsLongerSuspension } from './sanction-rules.js';
 
 export const SanctionErrors = {
   self: () =>
     new AppException('ADMIN_SELF_ACTION', '자기 자신에게는 할 수 없습니다.', HttpStatus.CONFLICT),
   notSuspended: () =>
     new AppException('ADMIN_NOT_SUSPENDED', '정지된 계정이 아닙니다.', HttpStatus.CONFLICT),
+  lastAdmin: () =>
+    new AppException(
+      'ADMIN_LAST_ADMIN',
+      '활동 중인 마지막 관리자는 정지할 수 없습니다.',
+      HttpStatus.CONFLICT,
+    ),
 };
 
 const TYPE_NAMES = {
@@ -40,6 +48,7 @@ export class AdminSanctionsService {
     private readonly sessions: SessionService,
     private readonly notifications: NotificationsService,
     private readonly ranking: RankingService,
+    private readonly xp: XpService,
   ) {}
 
   /**
@@ -66,33 +75,30 @@ export class AdminSanctionsService {
       .transaction(async (tx) => {
         const [user] = await tx.select().from(users).where(eq(users.id, body.userId)).for('update');
         if (!user || user.status === 'WITHDRAWN') throw AdminUserErrors.userNotFound();
+        // 다른 사용자 행은 잠그지 않는다 (대결 종료처럼 여러 사용자를 id 순으로 잠그는 곳과 교착되지 않게)
+        if (suspends && user.isAdmin && !(await hasOtherActiveAdmin(tx, user.id))) {
+          throw SanctionErrors.lastAdmin();
+        }
 
         let revokedXp: number | null = null;
         if (body.type === 'XP_REVOKE') {
           // 가진 것보다 많이 회수하지 않는다
           revokedXp = Math.min(body.revokeXp ?? 0, user.totalXp);
           if (revokedXp > 0) {
-            await tx
-              .update(users)
-              .set({ totalXp: user.totalXp - revokedXp })
-              .where(eq(users.id, user.id));
-            const ledgerId = newId();
-            await tx.insert(xpLedger).values({
-              id: ledgerId,
-              userId: user.id,
-              source: 'ADMIN_ADJUST',
+            await this.xp.adjust(tx, user.id, -revokedXp, {
               refKey: `sanction:${sanctionId}`,
-              amount: -revokedXp,
-              date: kstDate(now),
+              now,
             });
           }
         }
         const until = body.type === 'SUSPEND' ? new Date(body.suspendedUntil as string) : null;
         if (suspends) {
-          await tx
-            .update(users)
-            .set({ status: 'SUSPENDED', suspendedUntil: until, suspendReason: body.reason })
-            .where(eq(users.id, user.id));
+          if (!keepsLongerSuspension(user, body.type, until)) {
+            await tx
+              .update(users)
+              .set({ status: 'SUSPENDED', suspendedUntil: until, suspendReason: body.reason })
+              .where(eq(users.id, user.id));
+          }
           await this.sessions.revokeAll(user.id, tx);
         }
         await tx.insert(sanctions).values({

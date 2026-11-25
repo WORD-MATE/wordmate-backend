@@ -28,7 +28,8 @@ export class AuthenticationGuard implements CanActivate {
       const blocked = await this.blocks.blockedAs(user.userId);
       if (blocked === 'WITHDRAWN') throw AuthErrors.invalidToken();
       if (blocked === 'SUSPENDED') throw AuthErrors.accountSuspended(null, null);
-      request.user = user;
+      const adminRevoked = user.isAdmin && (await this.blocks.isAdminRevoked(user.userId));
+      request.user = adminRevoked ? { ...user, isAdmin: false } : user;
     } catch (error) {
       const authorities = this.reflector.getAllAndOverride<Authority[] | undefined>(AUTH_KEY, [
         context.getHandler(),

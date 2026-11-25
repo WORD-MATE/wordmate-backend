@@ -11,10 +11,12 @@ import { BattleFinishService } from './battle-finish.service.js';
 import { BattleResultsService } from './battle-results.service.js';
 import { BattlesController } from './battles.controller.js';
 import { LobbyService } from './lobby.service.js';
+import { LobbyPresenceService } from './lobby-presence.service.js';
 import { MatchQueue } from './match-queue.js';
 import { MatchmakingController } from './matchmaking.controller.js';
 import { MatchmakingService } from './matchmaking.service.js';
 import { PlayService } from './play.service.js';
+import { RoomExpiryService } from './room-expiry.service.js';
 import { ClassRoomsController, RoomsController } from './rooms.controller.js';
 import { RoomsService } from './rooms.service.js';
 
@@ -32,7 +34,9 @@ import { RoomsService } from './rooms.service.js';
     BattleFinishService,
     BattleResultsService,
     RoomsService,
+    RoomExpiryService,
     LobbyService,
+    LobbyPresenceService,
     MatchQueue,
     MatchmakingService,
     PlayService,

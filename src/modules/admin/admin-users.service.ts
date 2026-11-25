@@ -2,9 +2,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, count, desc, eq, like, max, or, type SQL, sql, sum } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { AuditLogService } from '../../common/audit/audit-log.service.js';
+import { AccountBlockService } from '../../common/auth/account-block.service.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import type { Page } from '../../common/pagination.js';
-import { kstDate } from '../../common/time/kst.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import {
   battleResults,
@@ -13,15 +13,14 @@ import {
   studyRecords,
   type User,
   users,
-  xpLedger,
 } from '../../infra/db/schema/index.js';
-import { newId } from '../../infra/db/uuid.js';
 import { BadgesService } from '../badges/badges.service.js';
 import { ClassesService } from '../classes/classes.service.js';
 import { RankingService } from '../ranking/ranking.service.js';
 import { levelOf } from '../users/me.schema.js';
 import { TeacherClassService } from '../users/teacher-class.service.js';
 import { toUserSummary } from '../users/user-summary.js';
+import { XpService } from '../xp/xp.service.js';
 import { AdminUserErrors } from './admin-errors.js';
 import { AdminSanctionsService } from './admin-sanctions.service.js';
 import type {
@@ -51,6 +50,8 @@ export class AdminUsersService {
     private readonly ranking: RankingService,
     private readonly badges: BadgesService,
     private readonly sanctions: AdminSanctionsService,
+    private readonly blocks: AccountBlockService,
+    private readonly xp: XpService,
   ) {}
 
   /** 조회도 감사 로그에 남긴다 (개인정보 열람 기록) */
@@ -154,7 +155,9 @@ export class AdminUsersService {
   }
 
   /**
-   * 교사만 관리자가 될 수 있다. 관리자 행을 모두 잠근 뒤 세어 동시에 회수해도 마지막 관리자가 남는다
+   * 관리자 행을 모두 잠근 뒤 세어 동시에 회수해도 마지막 관리자가 남는다.
+   * 회수하면 이미 받은 토큰으로 관리자 API를 계속 쓰지 못하게 커밋 전에 막는다.
+   * 동시에 회수·재부여해도 마지막에 커밋한 쪽이 표시를 정하도록 대상 행을 잠근 뒤에 다시 세우거나 지운다
    */
   async setAdmin(
     admin: AuthUser,
@@ -162,31 +165,50 @@ export class AdminUsersService {
     isAdmin: boolean,
     request: FastifyRequest,
   ): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      const admins = await tx
-        .select({ id: users.id, status: users.status })
-        .from(users)
-        .where(eq(users.isAdmin, true))
-        .for('update');
-      const activeAdmins = admins.filter((a) => a.status === 'ACTIVE');
-      const [target] = await tx.select().from(users).where(eq(users.id, userId)).for('update');
-      if (!target || target.status === 'WITHDRAWN') throw AdminUserErrors.userNotFound();
-      if (target.isAdmin === isAdmin) return;
-      // 활동 중인 관리자가 하나도 남지 않으면 안 된다 (정지·휴면 관리자는 관리할 수 없음)
-      if (!isAdmin && activeAdmins.every((a) => a.id === userId)) throw AdminUserErrors.lastAdmin();
-      await tx.update(users).set({ isAdmin }).where(eq(users.id, userId));
-      await this.audit.record(
-        {
-          actorId: admin.userId,
-          action: isAdmin ? 'ADMIN_GRANT' : 'ADMIN_REVOKE',
-          targetType: 'USER',
-          targetId: userId,
-          detail: {},
-        },
-        request,
-        tx,
-      );
-    });
+    if (!isAdmin) await this.blocks.revokeAdmin(userId);
+    await this.db
+      .transaction(async (tx) => {
+        const admins = await tx
+          .select({ id: users.id, status: users.status })
+          .from(users)
+          .where(eq(users.isAdmin, true))
+          .for('update');
+        const activeAdmins = admins.filter((a) => a.status === 'ACTIVE');
+        const [target] = await tx.select().from(users).where(eq(users.id, userId)).for('update');
+        if (!target || target.status === 'WITHDRAWN') throw AdminUserErrors.userNotFound();
+        if (isAdmin) await this.blocks.restoreAdmin(userId);
+        else await this.blocks.revokeAdmin(userId);
+        if (target.isAdmin === isAdmin) return;
+        // 활동 중인 관리자가 하나도 남지 않으면 안 된다 (정지·휴면 관리자는 관리할 수 없음)
+        if (!isAdmin && activeAdmins.every((a) => a.id === userId))
+          throw AdminUserErrors.lastAdmin();
+        await tx.update(users).set({ isAdmin }).where(eq(users.id, userId));
+        await this.audit.record(
+          {
+            actorId: admin.userId,
+            action: isAdmin ? 'ADMIN_GRANT' : 'ADMIN_REVOKE',
+            targetType: 'USER',
+            targetId: userId,
+            detail: {},
+          },
+          request,
+          tx,
+        );
+      })
+      .catch(async (error: unknown) => {
+        await this.syncAdminMark(userId).catch(() => {});
+        throw error;
+      });
+  }
+
+  /** 실패하면 표시를 실제 권한에 맞춘다 (관리자가 아닌데 남은 예전 토큰은 계속 막는다) */
+  private async syncAdminMark(userId: string): Promise<void> {
+    const [row] = await this.db
+      .select({ isAdmin: users.isAdmin })
+      .from(users)
+      .where(eq(users.id, userId));
+    if (row?.isAdmin) await this.blocks.restoreAdmin(userId);
+    else await this.blocks.revokeAdmin(userId);
   }
 
   async setClasses(admin: AuthUser, userId: string, classIds: string[], request: FastifyRequest) {
@@ -195,7 +217,6 @@ export class AdminUsersService {
     return this.classes.setTeacherClasses(userId, classIds, request, admin.userId);
   }
 
-  /** 하루 상한을 적용하지 않고, 하루 상한 계산에도 넣지 않는다 (출처 ADMIN_ADJUST) */
   async adjustXp(
     admin: AuthUser,
     userId: string,
@@ -208,16 +229,7 @@ export class AdminUsersService {
       if (!user || user.status === 'WITHDRAWN') throw AdminUserErrors.userNotFound();
       const next = user.totalXp + body.delta;
       if (next < 0) throw AdminUserErrors.xpNegative();
-      await tx.update(users).set({ totalXp: next }).where(eq(users.id, userId));
-      const ledgerId = newId();
-      await tx.insert(xpLedger).values({
-        id: ledgerId,
-        userId,
-        source: 'ADMIN_ADJUST',
-        refKey: ledgerId,
-        amount: body.delta,
-        date: kstDate(now),
-      });
+      await this.xp.adjust(tx, userId, body.delta, { now });
       await this.audit.record(
         {
           actorId: admin.userId,

@@ -1,14 +1,12 @@
-import { Controller, Get, Req } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import { UserProfile, UserSearchPage, UserSearchQuery } from './user-directory.schemas.js';
 import { UserDirectoryService } from './user-directory.service.js';
-
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 
 // /users/me 등 고정 경로는 Fastify가 파라미터 경로보다 먼저 고른다
 @ApiTags('users')
@@ -27,9 +25,9 @@ export class UserDirectoryController {
   @ZodResponse(UserSearchPage)
   search(
     @ZodQuery(UserSearchQuery) query: z.infer<typeof UserSearchQuery>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.directory.search(currentUser(request), query);
+    return this.directory.search(user, query);
   }
 
   @ApiOperation({
@@ -39,7 +37,7 @@ export class UserDirectoryController {
   })
   @Get(':userId')
   @ZodResponse(UserProfile)
-  profile(@ZodParam('userId', z.uuid()) userId: string, @Req() request: FastifyRequest) {
-    return this.directory.profile(currentUser(request), userId);
+  profile(@ZodParam('userId', z.uuid()) userId: string, @CurrentUser() user: AuthUser) {
+    return this.directory.profile(user, userId);
   }
 }
