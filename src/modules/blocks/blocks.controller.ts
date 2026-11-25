@@ -1,14 +1,12 @@
-import { Controller, Delete, Get, HttpCode, Post, Req } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodBody, ZodParam, ZodResponse } from '../../common/zod/decorators.js';
 import { BlockedUserList, BlockUser } from './blocks.schemas.js';
 import { BlocksService } from './blocks.service.js';
-
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 
 @ApiTags('blocks')
 @Auth('STUDENT')
@@ -19,8 +17,8 @@ export class BlocksController {
   @ApiOperation({ summary: '차단 목록', description: '최근에 차단한 순' })
   @Get()
   @ZodResponse(BlockedUserList)
-  list(@Req() request: FastifyRequest) {
-    return this.blocks.list(currentUser(request));
+  list(@CurrentUser() user: AuthUser) {
+    return this.blocks.list(user);
   }
 
   @ApiOperation({
@@ -32,9 +30,9 @@ export class BlocksController {
   @HttpCode(204)
   async block(
     @ZodBody(BlockUser) body: z.infer<typeof BlockUser>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ): Promise<void> {
-    await this.blocks.block(currentUser(request), body.userId);
+    await this.blocks.block(user, body.userId);
   }
 
   @ApiOperation({
@@ -45,8 +43,8 @@ export class BlocksController {
   @HttpCode(204)
   async unblock(
     @ZodParam('userId', z.uuid()) userId: string,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ): Promise<void> {
-    await this.blocks.unblock(currentUser(request), userId);
+    await this.blocks.unblock(user, userId);
   }
 }

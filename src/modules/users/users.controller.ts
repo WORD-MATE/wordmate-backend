@@ -1,9 +1,9 @@
-import { Controller, Get, HttpCode, Patch, Post, Req } from '@nestjs/common';
+import { Controller, Get, HttpCode, Patch, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { SkipTermsCheck } from '../../common/auth/onboarding.decorator.js';
 import { CursorQuery } from '../../common/pagination.js';
 import { ZodBody, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
@@ -24,8 +24,6 @@ import {
 } from './users.schemas.js';
 import { UsersService } from './users.service.js';
 
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
-
 @ApiTags('users')
 @Auth('USER')
 @Controller('users/me')
@@ -41,16 +39,16 @@ export class UsersController {
   @SkipTermsCheck()
   @Get()
   @ZodResponse(Me)
-  me(@Req() request: FastifyRequest) {
-    return this.users.me(currentUser(request).userId);
+  me(@CurrentUser() user: AuthUser) {
+    return this.users.me(user.userId);
   }
 
   @ApiOperation({ summary: '약관 동의 현황', description: '약관 동의 전에도 호출할 수 있음' })
   @SkipTermsCheck()
   @Get('agreements')
   @ZodResponse(AgreementStatus)
-  agreementStatus(@Req() request: FastifyRequest) {
-    return this.agreements.status(currentUser(request).userId);
+  agreementStatus(@CurrentUser() user: AuthUser) {
+    return this.agreements.status(user.userId);
   }
 
   @ApiOperation({
@@ -63,9 +61,8 @@ export class UsersController {
   @ZodResponse(NextStepResponse)
   async submitAgreements(
     @ZodBody(SubmitAgreements) body: z.infer<typeof SubmitAgreements>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    const user = currentUser(request);
     await this.agreements.submit(user.userId, body.items);
     return { nextStep: await this.nextStep.resolve(user) };
   }
@@ -79,9 +76,9 @@ export class UsersController {
   @ZodResponse(Me)
   updateProfile(
     @ZodBody(UpdateProfile) body: z.infer<typeof UpdateProfile>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.users.updateProfile(currentUser(request).userId, body);
+    return this.users.updateProfile(user.userId, body);
   }
 
   @ApiOperation({
@@ -94,9 +91,9 @@ export class UsersController {
   @ZodResponse(PrivacySettings)
   updatePrivacy(
     @ZodBody(UpdatePrivacy) body: z.infer<typeof UpdatePrivacy>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.users.updatePrivacy(currentUser(request).userId, body.rankingPublic);
+    return this.users.updatePrivacy(user.userId, body.rankingPublic);
   }
 
   @ApiOperation({
@@ -108,9 +105,9 @@ export class UsersController {
   @ZodResponse(XpHistoryPage)
   xpHistory(
     @ZodQuery(CursorQuery) query: z.infer<typeof CursorQuery>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.xpHistoryService.list(currentUser(request).userId, query);
+    return this.xpHistoryService.list(user.userId, query);
   }
 }
 

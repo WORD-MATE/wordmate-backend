@@ -1,8 +1,8 @@
-import { Controller, Get, HttpCode, Patch, Put, Req } from '@nestjs/common';
+import { Controller, Get, HttpCode, Patch, Put } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { SkipTeacherClassCheck, SkipTermsCheck } from '../../common/auth/onboarding.decorator.js';
 import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import {
@@ -13,8 +13,6 @@ import {
   UpdateNotificationSettings,
 } from './notifications.schemas.js';
 import { NotificationsService } from './notifications.service.js';
-
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 
 // 약관 재동의·담당 반 선택 전에도 알림(끌 수 없는 제재·새 기기 로그인, 약관 변경 공지 등)은 볼 수 있어야 한다
 @ApiTags('notifications')
@@ -29,23 +27,23 @@ export class NotificationsController {
   @ZodResponse(NotificationPage)
   list(
     @ZodQuery(NotificationListQuery) query: z.infer<typeof NotificationListQuery>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.notifications.list(currentUser(request), query);
+    return this.notifications.list(user, query);
   }
 
   @ApiOperation({ summary: '안 읽은 알림 수' })
   @Get('unread-count')
   @ZodResponse(UnreadCount)
-  unreadCount(@Req() request: FastifyRequest) {
-    return this.notifications.unreadCount(currentUser(request));
+  unreadCount(@CurrentUser() user: AuthUser) {
+    return this.notifications.unreadCount(user);
   }
 
   @ApiOperation({ summary: '알림 설정', description: '계정 단위라 모든 기기에 같이 적용' })
   @Get('settings')
   @ZodResponse(NotificationSettings)
-  settings(@Req() request: FastifyRequest) {
-    return this.notifications.settings(currentUser(request));
+  settings(@CurrentUser() user: AuthUser) {
+    return this.notifications.settings(user);
   }
 
   @ApiOperation({
@@ -57,16 +55,16 @@ export class NotificationsController {
   @ZodResponse(NotificationSettings)
   updateSettings(
     @ZodBody(UpdateNotificationSettings) body: z.infer<typeof UpdateNotificationSettings>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.notifications.updateSettings(currentUser(request), body);
+    return this.notifications.updateSettings(user, body);
   }
 
   @ApiOperation({ summary: '전체 읽음' })
   @Patch('read-all')
   @HttpCode(204)
-  async readAll(@Req() request: FastifyRequest): Promise<void> {
-    await this.notifications.readAll(currentUser(request));
+  async readAll(@CurrentUser() user: AuthUser): Promise<void> {
+    await this.notifications.readAll(user);
   }
 
   @ApiOperation({
@@ -77,8 +75,8 @@ export class NotificationsController {
   @HttpCode(204)
   async read(
     @ZodParam('notificationId', z.uuid()) notificationId: string,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ): Promise<void> {
-    await this.notifications.read(currentUser(request), notificationId);
+    await this.notifications.read(user, notificationId);
   }
 }

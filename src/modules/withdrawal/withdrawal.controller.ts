@@ -1,9 +1,9 @@
-import { Controller, Delete, HttpCode, Req } from '@nestjs/common';
+import { Controller, Delete, HttpCode } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { SkipTermsCheck } from '../../common/auth/onboarding.decorator.js';
 import { ZodBody } from '../../common/zod/decorators.js';
 import { WithdrawRequest } from './withdrawal.schemas.js';
@@ -25,9 +25,9 @@ export class WithdrawalController {
   @HttpCode(204)
   async withdraw(
     @ZodBody(WithdrawRequest) body: z.infer<typeof WithdrawRequest>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ): Promise<void> {
     if (body?.confirm !== true) throw WithdrawalErrors.notConfirmed();
-    await this.withdrawal.withdraw((request.user as AuthUser).userId);
+    await this.withdrawal.withdraw(user.userId);
   }
 }

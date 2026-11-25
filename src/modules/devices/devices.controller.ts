@@ -4,13 +4,12 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { SkipTermsCheck } from '../../common/auth/onboarding.decorator.js';
 import type { ClientInfo } from '../../common/client/client.guard.js';
 import { ZodBody, ZodParam, ZodResponse } from '../../common/zod/decorators.js';
 import { DeviceList, RegisterDevice, RegisterDeviceResponse } from './devices.schemas.js';
 import { DevicesService } from './devices.service.js';
-
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 
 @ApiTags('devices')
 @Auth('USER')
@@ -27,16 +26,20 @@ export class DevicesController {
   @Post()
   @HttpCode(200)
   @ZodResponse(RegisterDeviceResponse)
-  register(@ZodBody(RegisterDevice) body: RegisterDevice, @Req() request: FastifyRequest) {
+  register(
+    @ZodBody(RegisterDevice) body: RegisterDevice,
+    @CurrentUser() user: AuthUser,
+    @Req() request: FastifyRequest,
+  ) {
     const { platform } = request.client as ClientInfo;
-    return this.devices.register(currentUser(request), platform, body);
+    return this.devices.register(user, platform, body);
   }
 
   @ApiOperation({ summary: '로그인한 기기 목록' })
   @Get()
   @ZodResponse(DeviceList)
-  list(@Req() request: FastifyRequest) {
-    return this.devices.list(currentUser(request));
+  list(@CurrentUser() user: AuthUser) {
+    return this.devices.list(user);
   }
 
   @ApiOperation({
@@ -47,8 +50,8 @@ export class DevicesController {
   @HttpCode(204)
   async remove(
     @ZodParam('deviceId', z.uuid()) deviceId: string,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ): Promise<void> {
-    await this.devices.remove(currentUser(request), deviceId);
+    await this.devices.remove(user, deviceId);
   }
 }
