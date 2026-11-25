@@ -1,15 +1,14 @@
-import { Controller, Delete, Get, HttpCode, Put, Req } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, Put } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { CursorQuery } from '../../common/pagination.js';
 import { ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import { WordFavoritesService } from './word-favorites.service.js';
 import { WordSearchService } from './word-search.service.js';
 import { WordSearchQuery, WordWithPackPage } from './words.schemas.js';
 
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 const WordIdParam = () => ZodParam('wordId', z.uuid());
 
 @ApiTags('words')
@@ -29,9 +28,9 @@ export class WordLibraryController {
   @ZodResponse(WordWithPackPage)
   searchWords(
     @ZodQuery(WordSearchQuery) query: z.infer<typeof WordSearchQuery>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.search.search(currentUser(request), query);
+    return this.search.search(user, query);
   }
 
   @ApiOperation({
@@ -42,9 +41,9 @@ export class WordLibraryController {
   @ZodResponse(WordWithPackPage)
   listFavorites(
     @ZodQuery(CursorQuery) query: z.infer<typeof CursorQuery>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.favorites.list(currentUser(request), query);
+    return this.favorites.list(user, query);
   }
 
   @ApiOperation({
@@ -53,8 +52,8 @@ export class WordLibraryController {
   })
   @Put(':wordId/favorite')
   @HttpCode(204)
-  async addFavorite(@WordIdParam() wordId: string, @Req() request: FastifyRequest): Promise<void> {
-    await this.favorites.add(currentUser(request), wordId);
+  async addFavorite(@WordIdParam() wordId: string, @CurrentUser() user: AuthUser): Promise<void> {
+    await this.favorites.add(user, wordId);
   }
 
   @ApiOperation({ summary: '즐겨찾기 해제', description: '즐겨찾기가 아니어도 204' })
@@ -62,8 +61,8 @@ export class WordLibraryController {
   @HttpCode(204)
   async removeFavorite(
     @WordIdParam() wordId: string,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ): Promise<void> {
-    await this.favorites.remove(currentUser(request), wordId);
+    await this.favorites.remove(user, wordId);
   }
 }

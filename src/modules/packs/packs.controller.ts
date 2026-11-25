@@ -1,8 +1,8 @@
-import { Controller, Delete, Get, HttpCode, Patch, Post, Req } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, Patch, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import {
   CreatePack,
@@ -15,7 +15,6 @@ import {
 } from './packs.schemas.js';
 import { PacksService } from './packs.service.js';
 
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 const PackIdParam = () => ZodParam('packId', z.uuid());
 
 @ApiTags('packs')
@@ -39,9 +38,9 @@ export class PacksController {
   @ZodResponse(PackPage)
   list(
     @ZodQuery(PackListQuery) query: z.infer<typeof PackListQuery>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.packs.list(currentUser(request), query);
+    return this.packs.list(user, query);
   }
 
   @ApiOperation({
@@ -50,15 +49,15 @@ export class PacksController {
   })
   @Post()
   @ZodResponse(PackSummary, { status: 201 })
-  create(@ZodBody(CreatePack) body: z.infer<typeof CreatePack>, @Req() request: FastifyRequest) {
-    return this.packs.create(currentUser(request), body);
+  create(@ZodBody(CreatePack) body: z.infer<typeof CreatePack>, @CurrentUser() user: AuthUser) {
+    return this.packs.create(user, body);
   }
 
   @ApiOperation({ summary: '단어팩 상세' })
   @Get(':packId')
   @ZodResponse(PackDetail)
-  detail(@PackIdParam() packId: string, @Req() request: FastifyRequest) {
-    return this.packs.detail(currentUser(request), packId);
+  detail(@PackIdParam() packId: string, @CurrentUser() user: AuthUser) {
+    return this.packs.detail(user, packId);
   }
 
   @ApiOperation({ summary: '단어팩 수정' })
@@ -67,15 +66,15 @@ export class PacksController {
   update(
     @PackIdParam() packId: string,
     @ZodBody(UpdatePack) body: z.infer<typeof UpdatePack>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.packs.update(currentUser(request), packId, body);
+    return this.packs.update(user, packId, body);
   }
 
   @ApiOperation({ summary: '단어팩 삭제', description: '복구 불가. 공유 링크도 무효가 됨' })
   @Delete(':packId')
   @HttpCode(204)
-  async remove(@PackIdParam() packId: string, @Req() request: FastifyRequest): Promise<void> {
-    await this.packs.remove(currentUser(request), packId);
+  async remove(@PackIdParam() packId: string, @CurrentUser() user: AuthUser): Promise<void> {
+    await this.packs.remove(user, packId);
   }
 }

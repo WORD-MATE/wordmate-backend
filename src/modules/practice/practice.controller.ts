@@ -1,14 +1,12 @@
-import { Controller, HttpCode, Post, Req } from '@nestjs/common';
+import { Controller, HttpCode, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodBody, ZodParam, ZodResponse } from '../../common/zod/decorators.js';
 import { CompletePractice, Practice, PracticeResult, StartPractice } from './practice.schemas.js';
 import { PracticeService } from './practice.service.js';
-
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 
 @ApiTags('practice')
 @Controller('practice/sessions')
@@ -25,9 +23,9 @@ export class PracticeController {
   @ZodResponse(Practice, { status: 201 })
   start(
     @ZodBody(StartPractice) body: z.infer<typeof StartPractice>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.practice.start(currentUser(request), body);
+    return this.practice.start(user, body);
   }
 
   @ApiOperation({
@@ -42,8 +40,8 @@ export class PracticeController {
   complete(
     @ZodParam('practiceId', z.uuid()) practiceId: string,
     @ZodBody(CompletePractice) body: z.infer<typeof CompletePractice>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.practice.complete(currentUser(request), practiceId, body);
+    return this.practice.complete(user, practiceId, body);
   }
 }

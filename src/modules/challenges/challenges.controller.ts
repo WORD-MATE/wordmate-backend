@@ -1,9 +1,9 @@
-import { Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
+import { Controller, Get, HttpCode, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { Idempotent } from '../../common/idempotency/idempotent.decorator.js';
 import { ZodBody, ZodParam, ZodResponse } from '../../common/zod/decorators.js';
 import {
@@ -13,8 +13,6 @@ import {
   CompleteChallenge,
 } from './challenges.schemas.js';
 import { ChallengesService } from './challenges.service.js';
-
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 
 @ApiTags('challenges')
 @Auth('STUDENT')
@@ -29,8 +27,8 @@ export class ChallengesController {
   })
   @Get()
   @ZodResponse(ChallengeToday)
-  today(@Req() request: FastifyRequest) {
-    return this.challenges.today(currentUser(request));
+  today(@CurrentUser() user: AuthUser) {
+    return this.challenges.today(user);
   }
 
   @ApiOperation({
@@ -40,8 +38,8 @@ export class ChallengesController {
   })
   @Post('attempt')
   @ZodResponse(ChallengeAttempt, { status: 201 })
-  start(@Req() request: FastifyRequest) {
-    return this.challenges.start(currentUser(request));
+  start(@CurrentUser() user: AuthUser) {
+    return this.challenges.start(user);
   }
 
   @ApiOperation({
@@ -56,8 +54,8 @@ export class ChallengesController {
   complete(
     @ZodParam('attemptId', z.uuid()) attemptId: string,
     @ZodBody(CompleteChallenge) body: z.infer<typeof CompleteChallenge>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.challenges.complete(currentUser(request), attemptId, body);
+    return this.challenges.complete(user, attemptId, body);
   }
 }

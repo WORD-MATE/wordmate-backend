@@ -4,6 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { CommonErrors } from '../../common/errors/app-exception.js';
 import { Idempotent } from '../../common/idempotency/idempotent.decorator.js';
 import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
@@ -21,7 +22,6 @@ import {
 } from './words.schemas.js';
 import { WordsService } from './words.service.js';
 
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 const PackIdParam = () => ZodParam('packId', z.uuid());
 const WordIdParam = () => ZodParam('wordId', z.uuid());
 
@@ -54,9 +54,9 @@ export class WordsController {
   list(
     @PackIdParam() packId: string,
     @ZodQuery(WordListQuery) query: z.infer<typeof WordListQuery>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.words.list(currentUser(request), packId, query);
+    return this.words.list(user, packId, query);
   }
 
   @ApiOperation({
@@ -69,9 +69,9 @@ export class WordsController {
   add(
     @PackIdParam() packId: string,
     @ZodBody(AddWords) body: z.infer<typeof AddWords>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.words.add(currentUser(request), packId, body);
+    return this.words.add(user, packId, body);
   }
 
   @ApiOperation({
@@ -84,9 +84,9 @@ export class WordsController {
   parse(
     @PackIdParam() packId: string,
     @ZodBody(ParseWords) body: z.infer<typeof ParseWords>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.words.parse(currentUser(request), packId, body.text);
+    return this.words.parse(user, packId, body.text);
   }
 
   @ApiOperation({
@@ -105,8 +105,12 @@ export class WordsController {
     },
   })
   @ZodResponse(ParseResult)
-  importFile(@PackIdParam() packId: string, @Req() request: FastifyRequest) {
-    return this.words.importFile(currentUser(request), packId, () => readUploadedFile(request));
+  importFile(
+    @PackIdParam() packId: string,
+    @CurrentUser() user: AuthUser,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.words.importFile(user, packId, () => readUploadedFile(request));
   }
 
   @ApiOperation({ summary: '단어 수정' })
@@ -116,9 +120,9 @@ export class WordsController {
     @PackIdParam() packId: string,
     @WordIdParam() wordId: string,
     @ZodBody(UpdateWord) body: z.infer<typeof UpdateWord>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.words.update(currentUser(request), packId, wordId, body);
+    return this.words.update(user, packId, wordId, body);
   }
 
   @ApiOperation({ summary: '단어 삭제' })
@@ -127,8 +131,8 @@ export class WordsController {
   async remove(
     @PackIdParam() packId: string,
     @WordIdParam() wordId: string,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ): Promise<void> {
-    await this.words.remove(currentUser(request), packId, wordId);
+    await this.words.remove(user, packId, wordId);
   }
 }
