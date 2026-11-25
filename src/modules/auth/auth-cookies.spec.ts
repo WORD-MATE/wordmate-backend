@@ -8,6 +8,7 @@ import {
   readRefreshToken,
   setAuthCookies,
 } from './auth-cookies.js';
+import { REFRESH_TOKEN_TTL_MS } from './session.service.js';
 
 const requestWith = (cookies?: Record<string, string>) => ({ cookies }) as FastifyRequest;
 
@@ -32,7 +33,7 @@ describe('readRefreshToken', () => {
 });
 
 describe('인증 쿠키', () => {
-  it('액세스 토큰은 전체 경로, 리프레시 토큰은 /auth에만 보내고 둘 다 httpOnly·secure', () => {
+  it('액세스 토큰은 전체 경로, 리프레시 토큰은 /auth에만 보내고 둘 다 httpOnly·secure·SameSite=Lax', () => {
     const { reply, calls } = recordingReply();
     setAuthCookies(reply, { accessToken: 'at', refreshToken: 'rt' });
     expect(calls).toEqual([
@@ -43,6 +44,7 @@ describe('인증 쿠키', () => {
         options: expect.objectContaining({
           httpOnly: true,
           secure: true,
+          sameSite: 'lax',
           path: '/',
           maxAge: ACCESS_TOKEN_TTL_SECONDS,
         }),
@@ -51,7 +53,13 @@ describe('인증 쿠키', () => {
         method: 'set',
         name: REFRESH_TOKEN_COOKIE,
         value: 'rt',
-        options: expect.objectContaining({ httpOnly: true, secure: true, path: '/auth' }),
+        options: expect.objectContaining({
+          httpOnly: true,
+          secure: true,
+          sameSite: 'lax',
+          path: '/auth',
+          maxAge: REFRESH_TOKEN_TTL_MS / 1000,
+        }),
       },
     ]);
   });
