@@ -93,4 +93,30 @@ export class XpService {
       todayTotal,
     };
   }
+
+  /**
+   * 관리자 조정(제재 XP 회수 포함). 하루 상한을 적용하지 않고 상한 계산에도 넣지 않는다 (출처 ADMIN_ADJUST).
+   * 호출하는 쪽이 사용자 행을 잠그고 0 아래로 내려가지 않는지 확인한 뒤 같은 트랜잭션에서 부른다
+   */
+  async adjust(
+    tx: Transaction,
+    userId: string,
+    amount: number,
+    refKey?: string,
+    now = new Date(),
+  ): Promise<void> {
+    await tx
+      .update(users)
+      .set({ totalXp: sql`${users.totalXp} + ${amount}` })
+      .where(eq(users.id, userId));
+    const id = newId();
+    await tx.insert(xpLedger).values({
+      id,
+      userId,
+      source: 'ADMIN_ADJUST',
+      refKey: refKey ?? id,
+      amount,
+      date: kstDate(now),
+    });
+  }
 }
