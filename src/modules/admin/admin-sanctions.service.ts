@@ -15,6 +15,7 @@ import { hasOtherActiveAdmin } from '../users/active-admins.js';
 import { XpService } from '../xp/xp.service.js';
 import { AdminUserErrors } from './admin-errors.js';
 import type { ApplySanction } from './admin-sanctions.schemas.js';
+import { keepsLongerSuspension } from './sanction-rules.js';
 
 export const SanctionErrors = {
   self: () =>
@@ -91,13 +92,8 @@ export class AdminSanctionsService {
           }
         }
         const until = body.type === 'SUSPEND' ? new Date(body.suspendedUntil as string) : null;
-        // 이미 더 길게(영구 포함) 정지돼 있으면 줄이지 않는다
-        const keepsLonger =
-          body.type === 'SUSPEND' &&
-          user.status === 'SUSPENDED' &&
-          (user.suspendedUntil === null || (until !== null && user.suspendedUntil >= until));
         if (suspends) {
-          if (!keepsLonger) {
+          if (!keepsLongerSuspension(user, body.type, until)) {
             await tx
               .update(users)
               .set({ status: 'SUSPENDED', suspendedUntil: until, suspendReason: body.reason })
