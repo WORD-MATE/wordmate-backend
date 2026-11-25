@@ -15,11 +15,14 @@ export type PushMessage = {
  */
 export type PushOutcome = 'SENT' | 'INVALID_TOKEN' | 'RETRY' | 'FAILED';
 
-/** 야간(22:00~07:00)에는 보내지 않고, 광고성은 21:00~08:00에 보내지 않는다 (KST) */
+/**
+ * 야간(22:01~07:00)에는 보내지 않고, 광고성은 21:00~08:00에 보내지 않는다 (KST).
+ * 학습 리마인더를 22:00으로 정할 수 있으므로 22:00 그 1분은 보낸다
+ */
 export function isQuietTime(type: NotificationType, at = new Date()): boolean {
   const time = kstTime(at);
   if (type === 'MARKETING') return time >= '21:00' || time < '08:00';
-  return time >= '22:00' || time < '07:00';
+  return time > '22:00' || time < '07:00';
 }
 
 const retryable = (status: number) => status === 429 || status >= 500;

@@ -5,9 +5,10 @@ import { classifyApns, classifyFcm, classifyWebPush, isQuietTime } from './push-
 const kst = (time: string) => new Date(`2026-11-23T${time}:00+09:00`);
 
 describe('isQuietTime', () => {
-  it('야간 22:00~07:00에는 보내지 않는다', () => {
+  it('야간 22:01~07:00에는 보내지 않는다 (22:00 학습 리마인더는 보낸다)', () => {
     expect(isQuietTime('NOTICE', kst('21:59'))).toBe(false);
-    expect(isQuietTime('NOTICE', kst('22:00'))).toBe(true);
+    expect(isQuietTime('STUDY_REMINDER', kst('22:00'))).toBe(false);
+    expect(isQuietTime('NOTICE', kst('22:01'))).toBe(true);
     expect(isQuietTime('NOTICE', kst('03:00'))).toBe(true);
     expect(isQuietTime('NOTICE', kst('06:59'))).toBe(true);
     expect(isQuietTime('NOTICE', kst('07:00'))).toBe(false);
