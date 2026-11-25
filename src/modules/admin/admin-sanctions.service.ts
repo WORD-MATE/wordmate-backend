@@ -5,14 +5,14 @@ import { AuditLogService } from '../../common/audit/audit-log.service.js';
 import { AccountBlockService } from '../../common/auth/account-block.service.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import { AppException } from '../../common/errors/app-exception.js';
-import { kstDate } from '../../common/time/kst.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
-import { sanctions, users, xpLedger } from '../../infra/db/schema/index.js';
+import { sanctions, users } from '../../infra/db/schema/index.js';
 import { newId } from '../../infra/db/uuid.js';
 import { SessionService } from '../auth/session.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { RankingService } from '../ranking/ranking.service.js';
 import { hasOtherActiveAdmin } from '../users/active-admins.js';
+import { XpService } from '../xp/xp.service.js';
 import { AdminUserErrors } from './admin-errors.js';
 import type { ApplySanction } from './admin-sanctions.schemas.js';
 
@@ -47,6 +47,7 @@ export class AdminSanctionsService {
     private readonly sessions: SessionService,
     private readonly notifications: NotificationsService,
     private readonly ranking: RankingService,
+    private readonly xp: XpService,
   ) {}
 
   /**
@@ -83,19 +84,7 @@ export class AdminSanctionsService {
           // 가진 것보다 많이 회수하지 않는다
           revokedXp = Math.min(body.revokeXp ?? 0, user.totalXp);
           if (revokedXp > 0) {
-            await tx
-              .update(users)
-              .set({ totalXp: user.totalXp - revokedXp })
-              .where(eq(users.id, user.id));
-            const ledgerId = newId();
-            await tx.insert(xpLedger).values({
-              id: ledgerId,
-              userId: user.id,
-              source: 'ADMIN_ADJUST',
-              refKey: `sanction:${sanctionId}`,
-              amount: -revokedXp,
-              date: kstDate(now),
-            });
+            await this.xp.adjust(tx, user.id, -revokedXp, `sanction:${sanctionId}`, now);
           }
         }
         const until = body.type === 'SUSPEND' ? new Date(body.suspendedUntil as string) : null;
