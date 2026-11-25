@@ -12,6 +12,7 @@ import { newId } from '../../infra/db/uuid.js';
 import { SessionService } from '../auth/session.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { RankingService } from '../ranking/ranking.service.js';
+import { hasOtherActiveAdmin } from '../users/active-admins.js';
 import { AdminUserErrors } from './admin-errors.js';
 import type { ApplySanction } from './admin-sanctions.schemas.js';
 
@@ -70,21 +71,10 @@ export class AdminSanctionsService {
     if (suspends) await this.blocks.block(body.userId);
     const result = await this.db
       .transaction(async (tx) => {
-        // 관리자 권한 회수와 같은 순서(관리자 행 → 대상)로 잠가 서로 정지해도 활동 중인 관리자가 남는다
-        const admins = suspends
-          ? await tx
-              .select({ id: users.id, status: users.status })
-              .from(users)
-              .where(eq(users.isAdmin, true))
-              .for('update')
-          : [];
         const [user] = await tx.select().from(users).where(eq(users.id, body.userId)).for('update');
         if (!user || user.status === 'WITHDRAWN') throw AdminUserErrors.userNotFound();
-        if (
-          suspends &&
-          user.isAdmin &&
-          admins.every((a) => a.id === user.id || a.status !== 'ACTIVE')
-        ) {
+        // 다른 사용자 행은 잠그지 않는다 (대결 종료처럼 여러 사용자를 id 순으로 잠그는 곳과 교착되지 않게)
+        if (suspends && user.isAdmin && !(await hasOtherActiveAdmin(tx, user.id))) {
           throw SanctionErrors.lastAdmin();
         }
 
