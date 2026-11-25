@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   answerXp,
+  answerXpRate,
   blockedReasonOf,
   countAnswers,
   isPackComplete,
@@ -91,5 +92,15 @@ describe('nextStreak', () => {
     expect(nextStreak({ current: 3, best: 3, lastDate: '2026-12-31' }, '2027-01-01').current).toBe(
       4,
     );
+  });
+});
+
+describe('answerXpRate', () => {
+  it('플래시카드는 0, 오답노트는 1, 그 밖에는 직접 입력 2·4지선다 1', () => {
+    expect(answerXpRate('FLASHCARD', 'PACK')).toBe(0);
+    expect(answerXpRate('TYPING', 'WRONG_NOTE')).toBe(1);
+    expect(answerXpRate('CHOICE', 'WRONG_NOTE')).toBe(1);
+    expect(answerXpRate('TYPING', 'PACK')).toBe(2);
+    expect(answerXpRate('CHOICE', 'FAVORITE')).toBe(1);
   });
 });
