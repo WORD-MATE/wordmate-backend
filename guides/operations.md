@@ -51,13 +51,13 @@ docker run -p 3000:3000 -e DATABASE_URL=... -e VALKEY_URL=... wordmate-backend
 
 `develop`에 머지되면 GitHub Actions(`deploy-dev.yml`)가 이미지를 GHCR(`ghcr.io/word-mate/wordmate-backend`)에 올리고, 서버에 SSH로 접속해 `deploy/dev/compose.yml`로 교체합니다.
 
-- 구성: 학교 플랫폼 도메인(`wordmate-dev.https.gsmsv.site`, HTTPS 처리) → 서버 3000 포트(앱) ← MySQL 8.4 · Valkey 9, 모두 컨테이너
+- 구성: 학교 플랫폼 도메인(`{DEV_DOMAIN}`, HTTPS 처리) → 서버 3000 포트(앱) ← MySQL 8.4 · Valkey 9, 모두 컨테이너
 - 앱이 뜨기 전에 `migrate` 컨테이너가 마이그레이션을 실행합니다.
 - 서버 파일: `~/wordmate/` (`compose.yml`은 배포 때마다 덮어씀, `.env`만 서버에서 관리)
 
 ### 서버 최초 설정
 
-1. 학교 서버 관리 페이지에서 도메인을 추가합니다 (서브도메인 `wordmate-dev`, 내부 포트 `3000`).
+1. 학교 서버 관리 페이지에서 도메인을 추가합니다 (서브도메인 `{서브도메인}`, 내부 포트 `3000`).
 2. 서버에서 `deploy/setup-server.sh`를 실행합니다 (Docker 설치, swap 2GB, `~/wordmate` 생성). 끝나면 다시 로그인합니다.
 3. `~/wordmate/.env`를 만듭니다.
 
@@ -70,7 +70,7 @@ DATAGSM_REDIRECT_URIS=
 CORS_ORIGINS=
 SWAGGER_ENABLED=true
 DATAGSM_API_KEY=         # 학적 동기화 (없으면 건너뜀)
-# TRUST_PROXY=10.0.0.117 # 학교 프록시 주소가 다르면 지정
+# TRUST_PROXY={프록시 주소} # 학교 프록시 주소가 다르면 지정
 ```
 
 4. 배포용 SSH 키를 만들어 공개키를 서버의 `~/.ssh/authorized_keys`에 추가합니다.
@@ -83,7 +83,7 @@ DATAGSM_API_KEY=         # 학적 동기화 (없으면 건너뜀)
 | Secret   | `DEV_SSH_PORT`        | SSH 포트 (22면 생략)                     |
 | Secret   | `DEV_SSH_KEY`         | 배포용 개인키                            |
 | Secret   | `DEV_SSH_KNOWN_HOSTS` | `ssh-keyscan -p {포트} {서버 주소}` 결과 |
-| Variable | `DEV_DOMAIN`          | `wordmate-dev.https.gsmsv.site`          |
+| Variable | `DEV_DOMAIN`          | 개발 서버 도메인                         |
 
 ### 운영 명령
 
@@ -131,14 +131,14 @@ gunzip -c wordmate.sql.gz | docker compose exec -T mysql sh -c 'mysql -uroot -p"
 4. 배포용 SSH 키를 개발 서버와 따로 만들어 공개키를 `~/.ssh/authorized_keys`에 추가합니다.
 5. GitHub에 아래 시크릿·변수를 등록합니다. 시크릿은 Environments → `production`, 변수는 저장소 변수에 넣습니다. `PROD_DOMAIN`이 없으면 배포 단계를 건너뜁니다. `production` 환경에 Required reviewers를 켜 두면 배포 전에 승인을 받습니다.
 
-| 종류     | 이름                   | 값                                            |
-| -------- | ---------------------- | --------------------------------------------- |
-| Secret   | `PROD_SSH_HOST`        | 서버 주소                                     |
-| Secret   | `PROD_SSH_USER`        | `ubuntu`                                      |
-| Secret   | `PROD_SSH_PORT`        | SSH 포트 (22면 생략)                          |
-| Secret   | `PROD_SSH_KEY`         | 배포용 개인키                                 |
-| Secret   | `PROD_SSH_KNOWN_HOSTS` | `ssh-keyscan -p {포트} {서버 주소}` 결과      |
-| Variable | `PROD_DOMAIN`          | 상용 도메인 (예: `wordmate.https.gsmsv.site`) |
+| 종류     | 이름                   | 값                                       |
+| -------- | ---------------------- | ---------------------------------------- |
+| Secret   | `PROD_SSH_HOST`        | 서버 주소                                |
+| Secret   | `PROD_SSH_USER`        | `ubuntu`                                 |
+| Secret   | `PROD_SSH_PORT`        | SSH 포트 (22면 생략)                     |
+| Secret   | `PROD_SSH_KEY`         | 배포용 개인키                            |
+| Secret   | `PROD_SSH_KNOWN_HOSTS` | `ssh-keyscan -p {포트} {서버 주소}` 결과 |
+| Variable | `PROD_DOMAIN`          | 상용 서버 도메인                         |
 
 6. develop을 main에 머지하면 첫 배포가 됩니다. `main` 이미지는 이 워크플로가 처음 돌 때 만들어지므로, 그 전에 서버에서 직접 `docker compose up`을 하면 이미지를 받지 못합니다.
 7. 첫 배포 뒤 관리자가 될 사람이 한 번 로그인하면, DB에서 그 계정을 찾아 최초 관리자로 지정합니다. 이메일이 비어 있는 계정도 있어서 ID로 지정하고, 바뀐 행이 1개인지 확인합니다. 지정한 사람은 다시 로그인해야 관리자 권한이 토큰에 들어갑니다.

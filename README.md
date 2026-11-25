@@ -39,23 +39,23 @@ pnpm dev
 
 ## 명령어
 
-| 명령                          | 설명                                                         |
-| ----------------------------- | ------------------------------------------------------------ |
-| `pnpm dev`                    | 개발 서버 (변경 감지)                                        |
-| `pnpm build`                  | 빌드 (`dist/`)                                               |
-| `pnpm start`                  | 빌드 결과 실행                                               |
-| `pnpm test`                   | 단위 테스트                                                  |
-| `pnpm test:e2e`               | 통합 테스트 (Docker 필요, MySQL·Valkey 컨테이너 자동 실행)   |
-| `pnpm typecheck`              | 타입 검사                                                    |
-| `pnpm lint`                   | 린트·포맷 검사                                               |
-| `pnpm format`                 | 린트·포맷 자동 수정                                          |
-| `pnpm db:generate`            | 스키마 변경으로 마이그레이션 생성 (`drizzle/`)               |
-| `pnpm db:migrate`             | 마이그레이션 적용                                            |
-| `pnpm db:seed <파일>`         | 기본 단어팩 시드 반영 (아래 "기본 단어팩 시드" 참고)         |
-| `pnpm db:seed-morning <파일>` | 오늘의 문장 시드 반영 (아래 "오늘의 문장" 참고)              |
-| `pnpm ranking:rebuild`        | XP 원장에서 이번 주·이번 달·전체 랭킹 재구성 (Valkey 복구용) |
-| `pnpm db:studio`              | Drizzle Studio (DB 브라우저)                                 |
-| `pnpm jwt:keygen`             | JWT 서명용 Ed25519 키 생성                                   |
+| 명령                          | 설명                                                                  |
+| ----------------------------- | --------------------------------------------------------------------- |
+| `pnpm dev`                    | 개발 서버 (변경 감지)                                                 |
+| `pnpm build`                  | 빌드 (`dist/`)                                                        |
+| `pnpm start`                  | 빌드 결과 실행                                                        |
+| `pnpm test`                   | 단위 테스트                                                           |
+| `pnpm test:e2e`               | 통합 테스트 (Docker 필요, MySQL·Valkey 컨테이너 자동 실행)            |
+| `pnpm typecheck`              | 타입 검사                                                             |
+| `pnpm lint`                   | 린트·포맷 검사                                                        |
+| `pnpm format`                 | 린트·포맷 자동 수정                                                   |
+| `pnpm db:generate`            | 스키마 변경으로 마이그레이션 생성 (`drizzle/`)                        |
+| `pnpm db:migrate`             | 마이그레이션 적용                                                     |
+| `pnpm db:seed <파일>`         | 기본 단어팩 시드 반영 ([단어팩·학습](guides/words-and-study.md) 참고) |
+| `pnpm db:seed-morning <파일>` | 오늘의 문장 시드 반영 ([단어팩·학습](guides/words-and-study.md) 참고) |
+| `pnpm ranking:rebuild`        | XP 원장에서 이번 주·이번 달·전체 랭킹 재구성 (Valkey 복구용)          |
+| `pnpm db:studio`              | Drizzle Studio (DB 브라우저)                                          |
+| `pnpm jwt:keygen`             | JWT 서명용 Ed25519 키 생성                                            |
 
 ## 프로젝트 구조
 
@@ -67,6 +67,7 @@ src/
   modules/   도메인별 모듈
 test/        통합 테스트
 drizzle/     마이그레이션
+guides/      기능·운영 문서
 ```
 
 ## API 공통 규칙
@@ -146,3 +147,18 @@ create(@ZodBody(CreatePack) body: z.infer<typeof CreatePack>) { ... }
 | `UPLOAD_SIGNING_SECRET` | `JWT_PRIVATE_KEY`에서 유도               | 이미지 주소 서명 키 (32자 이상). 바꾸면 내준 주소가 바로 무효       |
 
 값이 없거나 형식이 틀리면 서버가 시작되지 않습니다.
+
+## 문서
+
+기능별 동작과 운영 절차는 `guides/`에 있습니다. API 요청·응답 형식은 Swagger UI에서 확인합니다.
+
+- [운영·배포](guides/operations.md): 점검 모드·강제 업데이트, 상태 확인·지표, Docker, 개발·상용 배포, 백업·복구, 모니터링, 정리 작업
+- [부하 테스트](guides/load-test.md): k6 목표와 실행 방법
+- [인증·사용자](guides/auth-and-users.md): 로그인·기기·프로필·탈퇴, 약관, 사용자 검색, 친구, 차단, 신고
+- [단어팩·학습](guides/words-and-study.md): 단어팩·단어·공유·검색, 학습·복습·기록·오답노트, 오늘의 문장
+- [랭킹·보상](guides/ranking-and-rewards.md): 랭킹, 홈, 미션, 배지
+- [대결](guides/battles.md): 실시간 연결, 대결방·대기실·문항 진행·결과, 빠른 매칭, 연습 모드, 오늘의 챌린지
+- [알림](guides/notifications.md): 알림, 푸시, 예약 알림
+- [학급](guides/classes.md): 교사 담당 반, 반 학생 목록·대시보드
+- [고객지원](guides/support.md): FAQ, 공지, 1:1 문의
+- [관리자](guides/admin.md): 사용자 관리, 제재, 신고 처리, 부정 의심, 금칙어, 앱 설정, 약관, 오늘의 문장, 시즌, 정기 작업, 학적 동기화
