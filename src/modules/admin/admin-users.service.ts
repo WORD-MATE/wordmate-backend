@@ -5,7 +5,6 @@ import { AuditLogService } from '../../common/audit/audit-log.service.js';
 import { AccountBlockService } from '../../common/auth/account-block.service.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
 import type { Page } from '../../common/pagination.js';
-import { kstDate } from '../../common/time/kst.js';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import {
   battleResults,
@@ -14,15 +13,14 @@ import {
   studyRecords,
   type User,
   users,
-  xpLedger,
 } from '../../infra/db/schema/index.js';
-import { newId } from '../../infra/db/uuid.js';
 import { BadgesService } from '../badges/badges.service.js';
 import { ClassesService } from '../classes/classes.service.js';
 import { RankingService } from '../ranking/ranking.service.js';
 import { levelOf } from '../users/me.schema.js';
 import { TeacherClassService } from '../users/teacher-class.service.js';
 import { toUserSummary } from '../users/user-summary.js';
+import { XpService } from '../xp/xp.service.js';
 import { AdminUserErrors } from './admin-errors.js';
 import { AdminSanctionsService } from './admin-sanctions.service.js';
 import type {
@@ -53,6 +51,7 @@ export class AdminUsersService {
     private readonly badges: BadgesService,
     private readonly sanctions: AdminSanctionsService,
     private readonly blocks: AccountBlockService,
+    private readonly xp: XpService,
   ) {}
 
   /** 조회도 감사 로그에 남긴다 (개인정보 열람 기록) */
@@ -218,7 +217,6 @@ export class AdminUsersService {
     return this.classes.setTeacherClasses(userId, classIds, request, admin.userId);
   }
 
-  /** 하루 상한을 적용하지 않고, 하루 상한 계산에도 넣지 않는다 (출처 ADMIN_ADJUST) */
   async adjustXp(
     admin: AuthUser,
     userId: string,
@@ -231,16 +229,7 @@ export class AdminUsersService {
       if (!user || user.status === 'WITHDRAWN') throw AdminUserErrors.userNotFound();
       const next = user.totalXp + body.delta;
       if (next < 0) throw AdminUserErrors.xpNegative();
-      await tx.update(users).set({ totalXp: next }).where(eq(users.id, userId));
-      const ledgerId = newId();
-      await tx.insert(xpLedger).values({
-        id: ledgerId,
-        userId,
-        source: 'ADMIN_ADJUST',
-        refKey: ledgerId,
-        amount: body.delta,
-        date: kstDate(now),
-      });
+      await this.xp.adjust(tx, userId, body.delta, { now });
       await this.audit.record(
         {
           actorId: admin.userId,

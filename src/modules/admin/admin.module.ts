@@ -10,6 +10,7 @@ import { PoliciesModule } from '../policies/policies.module.js';
 import { RankingModule } from '../ranking/ranking.module.js';
 import { SupportModule } from '../support/support.module.js';
 import { UsersModule } from '../users/users.module.js';
+import { XpModule } from '../xp/xp.module.js';
 import { AdminAppConfigController } from './admin-app-config.controller.js';
 import { AdminAuditLogsController } from './admin-audit-logs.controller.js';
 import { AdminAuditLogsService } from './admin-audit-logs.service.js';
@@ -48,6 +49,7 @@ import { AdminUsersService } from './admin-users.service.js';
     RankingModule,
     SupportModule,
     UsersModule,
+    XpModule,
   ],
   controllers: [
     AdminAppConfigController,
