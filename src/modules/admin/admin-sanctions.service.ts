@@ -84,7 +84,10 @@ export class AdminSanctionsService {
           // 가진 것보다 많이 회수하지 않는다
           revokedXp = Math.min(body.revokeXp ?? 0, user.totalXp);
           if (revokedXp > 0) {
-            await this.xp.adjust(tx, user.id, -revokedXp, `sanction:${sanctionId}`, now);
+            await this.xp.adjust(tx, user.id, -revokedXp, {
+              refKey: `sanction:${sanctionId}`,
+              now,
+            });
           }
         }
         const until = body.type === 'SUSPEND' ? new Date(body.suspendedUntil as string) : null;

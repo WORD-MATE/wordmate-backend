@@ -102,8 +102,7 @@ export class XpService {
     tx: Transaction,
     userId: string,
     amount: number,
-    refKey?: string,
-    now = new Date(),
+    { refKey, now = new Date() }: { refKey?: string; now?: Date } = {},
   ): Promise<void> {
     await tx
       .update(users)

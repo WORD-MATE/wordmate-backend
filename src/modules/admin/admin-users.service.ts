@@ -217,7 +217,6 @@ export class AdminUsersService {
     return this.classes.setTeacherClasses(userId, classIds, request, admin.userId);
   }
 
-  /** 하루 상한을 적용하지 않고, 하루 상한 계산에도 넣지 않는다 (출처 ADMIN_ADJUST) */
   async adjustXp(
     admin: AuthUser,
     userId: string,
@@ -230,7 +229,7 @@ export class AdminUsersService {
       if (!user || user.status === 'WITHDRAWN') throw AdminUserErrors.userNotFound();
       const next = user.totalXp + body.delta;
       if (next < 0) throw AdminUserErrors.xpNegative();
-      await this.xp.adjust(tx, userId, body.delta, undefined, now);
+      await this.xp.adjust(tx, userId, body.delta, { now });
       await this.audit.record(
         {
           actorId: admin.userId,
