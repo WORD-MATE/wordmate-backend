@@ -4,6 +4,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { SkipClientCheck } from '../../common/client/client.decorators.js';
 import type { ClientInfo } from '../../common/client/client.guard.js';
 import { INQUIRY_TYPE } from '../../common/enums.js';
@@ -21,7 +22,6 @@ import {
 import { readInquiryForm } from './inquiry-form.js';
 import { INQUIRY_IMAGE_MAX_COUNT } from './inquiry-image.js';
 
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 const originOf = (request: FastifyRequest) => `${request.protocol}://${request.host}`;
 
 @ApiTags('support')
@@ -54,8 +54,11 @@ export class InquiriesController {
     },
   })
   @ZodResponse(InquiryCreated, { status: 201 })
-  async create(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
-    const user = currentUser(request);
+  async create(
+    @CurrentUser() user: AuthUser,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
     try {
       await this.inquiries.assertNotTooFrequent(user.userId);
       const form = await readInquiryForm(request);
@@ -71,8 +74,8 @@ export class InquiriesController {
   @ApiOperation({ summary: '내 문의 목록', description: '최신순' })
   @Get()
   @ZodResponse(InquiryList)
-  list(@ZodQuery(CursorQuery) query: z.infer<typeof CursorQuery>, @Req() request: FastifyRequest) {
-    return this.inquiries.list(currentUser(request), query);
+  list(@ZodQuery(CursorQuery) query: z.infer<typeof CursorQuery>, @CurrentUser() user: AuthUser) {
+    return this.inquiries.list(user, query);
   }
 
   @ApiOperation({
@@ -81,8 +84,12 @@ export class InquiriesController {
   })
   @Get(':inquiryId')
   @ZodResponse(InquiryDetail)
-  detail(@ZodParam('inquiryId', z.uuid()) inquiryId: string, @Req() request: FastifyRequest) {
-    return this.inquiries.detail(currentUser(request), inquiryId, originOf(request));
+  detail(
+    @ZodParam('inquiryId', z.uuid()) inquiryId: string,
+    @CurrentUser() user: AuthUser,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.inquiries.detail(user, inquiryId, originOf(request));
   }
 }
 

@@ -1,14 +1,12 @@
-import { Controller, Get, Req } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import { MyRanking, MyRankingQuery, RankingPage, RankingQuery } from './ranking.schemas.js';
 import { CLASS_MIN_PARTICIPANTS, RankingQueryService, TOP_LIMIT } from './ranking-query.service.js';
-
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 
 @ApiTags('ranking')
 @Controller('ranking')
@@ -21,11 +19,8 @@ export class RankingController {
   })
   @Get()
   @ZodResponse(RankingPage)
-  list(
-    @ZodQuery(RankingQuery) query: z.infer<typeof RankingQuery>,
-    @Req() request: FastifyRequest,
-  ) {
-    return this.ranking.list(currentUser(request), query);
+  list(@ZodQuery(RankingQuery) query: z.infer<typeof RankingQuery>, @CurrentUser() user: AuthUser) {
+    return this.ranking.list(user, query);
   }
 
   @ApiOperation({
@@ -37,8 +32,8 @@ export class RankingController {
   @ZodResponse(MyRanking)
   me(
     @ZodQuery(MyRankingQuery) query: z.infer<typeof MyRankingQuery>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.ranking.me(currentUser(request), query);
+    return this.ranking.me(user, query);
   }
 }

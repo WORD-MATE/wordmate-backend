@@ -1,7 +1,7 @@
-import { Controller, Get, Req } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodResponse } from '../../common/zod/decorators.js';
 import { Home } from './home.schemas.js';
 import { HomeService, RECOMMENDED_PACK_COUNT } from './home.service.js';
@@ -17,7 +17,7 @@ export class HomeController {
   })
   @Get()
   @ZodResponse(Home)
-  get(@Req() request: FastifyRequest) {
-    return this.home.home(request.user as AuthUser);
+  get(@CurrentUser() user: AuthUser) {
+    return this.home.home(user);
   }
 }

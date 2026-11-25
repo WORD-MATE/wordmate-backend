@@ -1,9 +1,9 @@
-import { Controller, Delete, Get, HttpCode, Post, Req } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import {
   FriendList,
@@ -14,8 +14,6 @@ import {
 } from './friends.schemas.js';
 import { FRIEND_LIMIT, FriendsService } from './friends.service.js';
 
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
-
 @ApiTags('friends')
 @Auth('STUDENT')
 @Controller('friends')
@@ -25,8 +23,8 @@ export class FriendsController {
   @ApiOperation({ summary: '친구 목록', description: `페이지네이션 없음 (최대 ${FRIEND_LIMIT}명)` })
   @Get()
   @ZodResponse(FriendList)
-  list(@Req() request: FastifyRequest) {
-    return this.friends.list(currentUser(request));
+  list(@CurrentUser() user: AuthUser) {
+    return this.friends.list(user);
   }
 
   @ApiOperation({ summary: '받은·보낸 친구 요청' })
@@ -34,9 +32,9 @@ export class FriendsController {
   @ZodResponse(FriendRequestList)
   requests(
     @ZodQuery(FriendRequestQuery) query: z.infer<typeof FriendRequestQuery>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.friends.requests(currentUser(request), query);
+    return this.friends.requests(user, query);
   }
 
   @ApiOperation({
@@ -48,9 +46,9 @@ export class FriendsController {
   @ZodResponse(FriendRequestCreated, { status: 201 })
   send(
     @ZodBody(SendFriendRequest) body: z.infer<typeof SendFriendRequest>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.friends.request(currentUser(request), body.userId);
+    return this.friends.request(user, body.userId);
   }
 
   @ApiOperation({
@@ -62,9 +60,9 @@ export class FriendsController {
   @HttpCode(204)
   async accept(
     @ZodParam('requestId', z.uuid()) requestId: string,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ): Promise<void> {
-    await this.friends.accept(currentUser(request), requestId);
+    await this.friends.accept(user, requestId);
   }
 
   @ApiOperation({
@@ -75,9 +73,9 @@ export class FriendsController {
   @HttpCode(204)
   async removeRequest(
     @ZodParam('requestId', z.uuid()) requestId: string,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ): Promise<void> {
-    await this.friends.removeRequest(currentUser(request), requestId);
+    await this.friends.removeRequest(user, requestId);
   }
 
   @ApiOperation({ summary: '친구 삭제', description: '양쪽에서 함께 지움. 404 FRIEND_NOT_FOUND' })
@@ -85,8 +83,8 @@ export class FriendsController {
   @HttpCode(204)
   async remove(
     @ZodParam('userId', z.uuid()) userId: string,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ): Promise<void> {
-    await this.friends.remove(currentUser(request), userId);
+    await this.friends.remove(user, userId);
   }
 }

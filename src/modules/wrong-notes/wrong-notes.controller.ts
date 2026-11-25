@@ -1,8 +1,8 @@
-import { Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
+import { Controller, Get, HttpCode, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodBody, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import {
   DeletedCount,
@@ -13,8 +13,6 @@ import {
   WrongNotePage,
 } from './wrong-notes.schemas.js';
 import { WrongNotesService } from './wrong-notes.service.js';
-
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 
 @ApiTags('wrong-notes')
 @Controller('wrong-notes')
@@ -30,9 +28,9 @@ export class WrongNotesController {
   @ZodResponse(WrongNotePage)
   list(
     @ZodQuery(WrongNoteListQuery) query: z.infer<typeof WrongNoteListQuery>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.wrongNotes.list(currentUser(request), query);
+    return this.wrongNotes.list(user, query);
   }
 
   @ApiOperation({
@@ -42,11 +40,8 @@ export class WrongNotesController {
   @Post('delete')
   @HttpCode(200)
   @ZodResponse(DeletedCount)
-  remove(
-    @ZodBody(WrongNoteIds) body: z.infer<typeof WrongNoteIds>,
-    @Req() request: FastifyRequest,
-  ) {
-    return this.wrongNotes.remove(currentUser(request), body);
+  remove(@ZodBody(WrongNoteIds) body: z.infer<typeof WrongNoteIds>, @CurrentUser() user: AuthUser) {
+    return this.wrongNotes.remove(user, body);
   }
 
   @ApiOperation({
@@ -58,8 +53,8 @@ export class WrongNotesController {
   @ZodResponse(GraduatedCount)
   graduate(
     @ZodBody(WrongNoteIds) body: z.infer<typeof WrongNoteIds>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.wrongNotes.graduate(currentUser(request), body);
+    return this.wrongNotes.graduate(user, body);
   }
 }

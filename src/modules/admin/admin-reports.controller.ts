@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import {
   AdminReportGroupDetail,
@@ -51,8 +52,9 @@ export class AdminReportsController {
   async update(
     @GroupIdParam() groupId: string,
     @ZodBody(UpdateReportGroup) body: z.infer<typeof UpdateReportGroup>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ): Promise<void> {
-    await this.reports.update(request.user as AuthUser, groupId, body, request);
+    await this.reports.update(user, groupId, body, request);
   }
 }

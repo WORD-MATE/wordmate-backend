@@ -1,13 +1,12 @@
-import { Controller, Delete, Get, HttpCode, Post, Req } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodParam, ZodResponse } from '../../common/zod/decorators.js';
 import { PackShareService, PREVIEW_WORD_LIMIT } from './pack-share.service.js';
 import { PackSummary, SharedPackPreview, ShareInfo } from './packs.schemas.js';
 
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 const PackIdParam = () => ZodParam('packId', z.uuid());
 const ShareCodeParam = () => ZodParam('shareCode', z.string().regex(/^[A-Za-z0-9]{12}$/));
 
@@ -24,8 +23,8 @@ export class PackShareController {
   @Post(':packId/share')
   @HttpCode(200)
   @ZodResponse(ShareInfo)
-  share(@PackIdParam() packId: string, @Req() request: FastifyRequest) {
-    return this.shares.share(currentUser(request), packId);
+  share(@PackIdParam() packId: string, @CurrentUser() user: AuthUser) {
+    return this.shares.share(user, packId);
   }
 
   @ApiOperation({
@@ -34,8 +33,8 @@ export class PackShareController {
   })
   @Delete(':packId/share')
   @HttpCode(204)
-  async unshare(@PackIdParam() packId: string, @Req() request: FastifyRequest): Promise<void> {
-    await this.shares.unshare(currentUser(request), packId);
+  async unshare(@PackIdParam() packId: string, @CurrentUser() user: AuthUser): Promise<void> {
+    await this.shares.unshare(user, packId);
   }
 
   @ApiOperation({
@@ -44,8 +43,8 @@ export class PackShareController {
   })
   @Get('shared/:shareCode')
   @ZodResponse(SharedPackPreview)
-  preview(@ShareCodeParam() shareCode: string, @Req() request: FastifyRequest) {
-    return this.shares.preview(currentUser(request), shareCode);
+  preview(@ShareCodeParam() shareCode: string, @CurrentUser() user: AuthUser) {
+    return this.shares.preview(user, shareCode);
   }
 
   @ApiOperation({
@@ -55,7 +54,7 @@ export class PackShareController {
   })
   @Post('shared/:shareCode/copy')
   @ZodResponse(PackSummary, { status: 201 })
-  copy(@ShareCodeParam() shareCode: string, @Req() request: FastifyRequest) {
-    return this.shares.copy(currentUser(request), shareCode);
+  copy(@ShareCodeParam() shareCode: string, @CurrentUser() user: AuthUser) {
+    return this.shares.copy(user, shareCode);
   }
 }

@@ -6,6 +6,7 @@ import { AppConfig, AppConfigService } from '../../common/app-config/app-config.
 import { AuditLogService } from '../../common/audit/audit-log.service.js';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodBody, ZodResponse } from '../../common/zod/decorators.js';
 import { AdminAppConfig } from './admin-app-config.schemas.js';
 
@@ -37,13 +38,14 @@ export class AdminAppConfigController {
   @ZodResponse(AppConfig)
   async put(
     @ZodBody(AdminAppConfig) body: z.infer<typeof AdminAppConfig>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ) {
     const before = await this.config.get(true);
     await this.config.set(body);
     await this.audit.record(
       {
-        actorId: (request.user as AuthUser).userId,
+        actorId: user.userId,
         action: 'APP_CONFIG_CHANGE',
         targetType: 'APP_CONFIG',
         targetId: null,

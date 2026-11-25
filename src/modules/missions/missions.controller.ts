@@ -1,14 +1,12 @@
-import { Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
+import { Controller, Get, HttpCode, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodParam, ZodResponse } from '../../common/zod/decorators.js';
 import { MissionClaimResult, MissionList } from './missions.schemas.js';
 import { MissionsService } from './missions.service.js';
-
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 
 @ApiTags('missions')
 @Auth('STUDENT')
@@ -22,8 +20,8 @@ export class MissionsController {
   })
   @Get()
   @ZodResponse(MissionList)
-  list(@Req() request: FastifyRequest) {
-    return this.missions.list(currentUser(request));
+  list(@CurrentUser() user: AuthUser) {
+    return this.missions.list(user);
   }
 
   @ApiOperation({
@@ -34,7 +32,7 @@ export class MissionsController {
   @Post(':missionId/claim')
   @HttpCode(200)
   @ZodResponse(MissionClaimResult)
-  claim(@ZodParam('missionId', z.uuid()) missionId: string, @Req() request: FastifyRequest) {
-    return this.missions.claim(currentUser(request), missionId);
+  claim(@ZodParam('missionId', z.uuid()) missionId: string, @CurrentUser() user: AuthUser) {
+    return this.missions.claim(user, missionId);
   }
 }

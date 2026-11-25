@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import {
   AdminSeasonDetail,
@@ -53,9 +54,10 @@ export class AdminSeasonsController {
   async updateExclusions(
     @SeasonIdParam() seasonId: string,
     @ZodBody(UpdateSeasonExclusions) body: z.infer<typeof UpdateSeasonExclusions>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ): Promise<void> {
-    await this.seasons.updateExclusions(request.user as AuthUser, seasonId, body, request);
+    await this.seasons.updateExclusions(user, seasonId, body, request);
   }
 
   @ApiOperation({
@@ -66,7 +68,11 @@ export class AdminSeasonsController {
   @Post(':seasonId/rerun')
   @HttpCode(202)
   @ZodResponse(SeasonRerunQueued, { status: 202 })
-  rerun(@SeasonIdParam() seasonId: string, @Req() request: FastifyRequest) {
-    return this.seasons.rerun(request.user as AuthUser, seasonId, request);
+  rerun(
+    @SeasonIdParam() seasonId: string,
+    @CurrentUser() user: AuthUser,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.seasons.rerun(user, seasonId, request);
   }
 }

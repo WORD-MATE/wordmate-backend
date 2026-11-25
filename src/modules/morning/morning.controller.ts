@@ -1,9 +1,9 @@
-import { Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
+import { Controller, Get, HttpCode, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { Idempotent } from '../../common/idempotency/idempotent.decorator.js';
 import { CursorQuery } from '../../common/pagination.js';
 import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
@@ -18,7 +18,6 @@ import {
 import { MorningService } from './morning.service.js';
 import { MORNING_XP } from './morning-rules.js';
 
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 const DateParam = () => ZodParam('date', z.iso.date());
 
 @ApiTags('morning')
@@ -34,15 +33,15 @@ export class MorningController {
   })
   @Get('today')
   @ZodResponse(MorningSentence)
-  today(@Req() request: FastifyRequest) {
-    return this.morning.today(currentUser(request));
+  today(@CurrentUser() user: AuthUser) {
+    return this.morning.today(user);
   }
 
   @ApiOperation({ summary: '지난 문장 목록', description: '게시된 문장만 최신순' })
   @Get()
   @ZodResponse(MorningList)
-  list(@ZodQuery(CursorQuery) query: z.infer<typeof CursorQuery>, @Req() request: FastifyRequest) {
-    return this.morning.list(currentUser(request), query);
+  list(@ZodQuery(CursorQuery) query: z.infer<typeof CursorQuery>, @CurrentUser() user: AuthUser) {
+    return this.morning.list(user, query);
   }
 
   @ApiOperation({
@@ -51,8 +50,8 @@ export class MorningController {
   })
   @Get(':date')
   @ZodResponse(MorningSentence)
-  byDate(@DateParam() date: string, @Req() request: FastifyRequest) {
-    return this.morning.byDate(currentUser(request), date);
+  byDate(@DateParam() date: string, @CurrentUser() user: AuthUser) {
+    return this.morning.byDate(user, date);
   }
 
   @ApiOperation({
@@ -67,9 +66,9 @@ export class MorningController {
   complete(
     @DateParam() date: string,
     @ZodBody(CompleteMorningQuiz) body: z.infer<typeof CompleteMorningQuiz>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.morning.complete(currentUser(request), date, body);
+    return this.morning.complete(user, date, body);
   }
 
   @ApiOperation({
@@ -85,8 +84,8 @@ export class MorningController {
   saveWords(
     @DateParam() date: string,
     @ZodBody(SaveMorningWords) body: z.infer<typeof SaveMorningWords>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.morning.saveWords(currentUser(request), date, body);
+    return this.morning.saveWords(user, date, body);
   }
 }

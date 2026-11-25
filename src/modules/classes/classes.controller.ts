@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { SkipTeacherClassCheck } from '../../common/auth/onboarding.decorator.js';
 import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import { NextStepService } from '../users/next-step.service.js';
@@ -19,8 +20,6 @@ import {
   TeacherClassList,
 } from './classes.schemas.js';
 import { ClassesService } from './classes.service.js';
-
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 
 @ApiTags('classes')
 @Auth('TEACHER', 'ADMIN')
@@ -55,8 +54,8 @@ export class ClassDashboardController {
   })
   @Get(':classId/students')
   @ZodResponse(ClassStudentList)
-  students(@ZodParam('classId', z.uuid()) classId: string, @Req() request: FastifyRequest) {
-    return this.dashboards.students(currentUser(request), classId);
+  students(@ZodParam('classId', z.uuid()) classId: string, @CurrentUser() user: AuthUser) {
+    return this.dashboards.students(user, classId);
   }
 
   @ApiOperation({
@@ -68,9 +67,9 @@ export class ClassDashboardController {
   dashboard(
     @ZodParam('classId', z.uuid()) classId: string,
     @ZodQuery(DashboardQuery) query: z.infer<typeof DashboardQuery>,
-    @Req() request: FastifyRequest,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.dashboards.dashboard(currentUser(request), classId, query.period);
+    return this.dashboards.dashboard(user, classId, query.period);
   }
 }
 
@@ -88,8 +87,8 @@ export class TeachersController {
   @ApiOperation({ summary: '내 담당 반' })
   @Get('classes')
   @ZodResponse(TeacherClassList)
-  myClasses(@Req() request: FastifyRequest) {
-    return this.teacherClasses.list(currentUser(request).userId);
+  myClasses(@CurrentUser() user: AuthUser) {
+    return this.teacherClasses.list(user.userId);
   }
 
   @ApiOperation({
@@ -100,9 +99,9 @@ export class TeachersController {
   @ZodResponse(SetTeacherClassesResponse)
   async setMyClasses(
     @ZodBody(SetTeacherClasses) body: z.infer<typeof SetTeacherClasses>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ) {
-    const user = currentUser(request);
     const classes = await this.classes.setTeacherClasses(user.userId, body.classIds, request);
     return { classes, nextStep: await this.nextStep.resolve(user) };
   }

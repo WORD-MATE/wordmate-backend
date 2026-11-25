@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { Idempotent } from '../../common/idempotency/idempotent.decorator.js';
 import { ZodBody, ZodResponse } from '../../common/zod/decorators.js';
 import { ApplySanction, SanctionCreated } from './admin-sanctions.schemas.js';
@@ -25,8 +26,9 @@ export class AdminSanctionsController {
   @ZodResponse(SanctionCreated, { status: 201 })
   apply(
     @ZodBody(ApplySanction) body: z.infer<typeof ApplySanction>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ) {
-    return this.sanctions.apply(request.user as AuthUser, body, request);
+    return this.sanctions.apply(user, body, request);
   }
 }

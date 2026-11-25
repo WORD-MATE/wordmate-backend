@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import {
   AdminInquiryPage,
@@ -38,8 +39,9 @@ export class AdminInquiriesController {
   async answer(
     @ZodParam('inquiryId', z.uuid()) inquiryId: string,
     @ZodBody(AnswerInquiry) body: z.infer<typeof AnswerInquiry>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ): Promise<void> {
-    await this.inquiries.answer(request.user as AuthUser, inquiryId, body, request);
+    await this.inquiries.answer(user, inquiryId, body, request);
   }
 }

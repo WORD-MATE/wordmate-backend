@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import { parseMorningText } from '../morning/morning-parser.js';
 import {
@@ -18,7 +19,6 @@ import {
 } from './admin-morning.schemas.js';
 import { AdminMorningService } from './admin-morning.service.js';
 
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 const MorningIdParam = () => ZodParam('morningId', z.uuid());
 
 @ApiTags('admin')
@@ -65,9 +65,10 @@ export class AdminMorningController {
   @ZodResponse(AdminMorningCreated, { status: 201 })
   create(
     @ZodBody(CreateAdminMorning) body: z.infer<typeof CreateAdminMorning>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ) {
-    return this.morning.create(currentUser(request), body, request);
+    return this.morning.create(user, body, request);
   }
 
   @ApiOperation({
@@ -80,9 +81,10 @@ export class AdminMorningController {
   async update(
     @MorningIdParam() morningId: string,
     @ZodBody(UpdateAdminMorning) body: z.infer<typeof UpdateAdminMorning>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ): Promise<void> {
-    await this.morning.update(currentUser(request), morningId, body, request);
+    await this.morning.update(user, morningId, body, request);
   }
 
   @ApiOperation({
@@ -94,9 +96,10 @@ export class AdminMorningController {
   @HttpCode(204)
   async publish(
     @MorningIdParam() morningId: string,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ): Promise<void> {
-    await this.morning.publish(currentUser(request), morningId, request);
+    await this.morning.publish(user, morningId, request);
   }
 
   @ApiOperation({
@@ -107,8 +110,9 @@ export class AdminMorningController {
   @HttpCode(204)
   async unpublish(
     @MorningIdParam() morningId: string,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ): Promise<void> {
-    await this.morning.unpublish(currentUser(request), morningId, request);
+    await this.morning.unpublish(user, morningId, request);
   }
 }

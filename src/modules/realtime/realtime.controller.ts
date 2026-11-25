@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodResponse } from '../../common/zod/decorators.js';
 import { WS_PATH } from './realtime.gateway.js';
 import { RealtimeService, TICKET_TTL_SECONDS } from './realtime.service.js';
@@ -27,10 +28,8 @@ export class RealtimeController {
   @Post('ticket')
   @HttpCode(200)
   @ZodResponse(RealtimeTicket)
-  async ticket(@Req() request: FastifyRequest) {
-    const { ticket, expiresAt } = await this.realtime.issueTicket(
-      (request.user as AuthUser).userId,
-    );
+  async ticket(@CurrentUser() user: AuthUser, @Req() request: FastifyRequest) {
+    const { ticket, expiresAt } = await this.realtime.issueTicket(user.userId);
     // 프록시 뒤에서도 바깥 주소로 안내하도록 trustProxy가 반영된 protocol·host를 쓴다
     const scheme = request.protocol === 'https' ? 'wss' : 'ws';
     return {
