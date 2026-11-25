@@ -157,7 +157,8 @@ export class AdminUsersService {
 
   /**
    * 관리자 행을 모두 잠근 뒤 세어 동시에 회수해도 마지막 관리자가 남는다.
-   * 회수하면 이미 받은 토큰으로 관리자 API를 계속 쓰지 못하게 커밋 전에 막고, 실패하면 푼다
+   * 회수하면 이미 받은 토큰으로 관리자 API를 계속 쓰지 못하게 커밋 전에 막는다.
+   * 동시에 회수·재부여해도 마지막에 커밋한 쪽이 표시를 정하도록 대상 행을 잠근 뒤에 다시 세우거나 지운다
    */
   async setAdmin(
     admin: AuthUser,
@@ -166,7 +167,7 @@ export class AdminUsersService {
     request: FastifyRequest,
   ): Promise<void> {
     if (!isAdmin) await this.blocks.revokeAdmin(userId);
-    const changed = await this.db
+    await this.db
       .transaction(async (tx) => {
         const admins = await tx
           .select({ id: users.id, status: users.status })
@@ -176,7 +177,9 @@ export class AdminUsersService {
         const activeAdmins = admins.filter((a) => a.status === 'ACTIVE');
         const [target] = await tx.select().from(users).where(eq(users.id, userId)).for('update');
         if (!target || target.status === 'WITHDRAWN') throw AdminUserErrors.userNotFound();
-        if (target.isAdmin === isAdmin) return false;
+        if (isAdmin) await this.blocks.restoreAdmin(userId);
+        else await this.blocks.revokeAdmin(userId);
+        if (target.isAdmin === isAdmin) return;
         // 활동 중인 관리자가 하나도 남지 않으면 안 된다 (정지·휴면 관리자는 관리할 수 없음)
         if (!isAdmin && activeAdmins.every((a) => a.id === userId))
           throw AdminUserErrors.lastAdmin();
@@ -192,14 +195,21 @@ export class AdminUsersService {
           request,
           tx,
         );
-        return true;
       })
       .catch(async (error: unknown) => {
-        if (!isAdmin) await this.blocks.restoreAdmin(userId);
+        await this.syncAdminMark(userId).catch(() => {});
         throw error;
       });
-    // 다시 맡기면 예전 회수 표시가 새 토큰의 관리자 표시까지 가리지 않게 지운다
-    if (isAdmin && changed) await this.blocks.restoreAdmin(userId);
+  }
+
+  /** 실패하면 표시를 실제 권한에 맞춘다 (관리자가 아닌데 남은 예전 토큰은 계속 막는다) */
+  private async syncAdminMark(userId: string): Promise<void> {
+    const [row] = await this.db
+      .select({ isAdmin: users.isAdmin })
+      .from(users)
+      .where(eq(users.id, userId));
+    if (row?.isAdmin) await this.blocks.restoreAdmin(userId);
+    else await this.blocks.revokeAdmin(userId);
   }
 
   async setClasses(admin: AuthUser, userId: string, classIds: string[], request: FastifyRequest) {
