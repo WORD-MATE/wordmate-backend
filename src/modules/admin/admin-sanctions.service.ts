@@ -20,6 +20,12 @@ export const SanctionErrors = {
     new AppException('ADMIN_SELF_ACTION', '자기 자신에게는 할 수 없습니다.', HttpStatus.CONFLICT),
   notSuspended: () =>
     new AppException('ADMIN_NOT_SUSPENDED', '정지된 계정이 아닙니다.', HttpStatus.CONFLICT),
+  lastAdmin: () =>
+    new AppException(
+      'ADMIN_LAST_ADMIN',
+      '활동 중인 마지막 관리자는 정지할 수 없습니다.',
+      HttpStatus.CONFLICT,
+    ),
 };
 
 const TYPE_NAMES = {
@@ -64,8 +70,23 @@ export class AdminSanctionsService {
     if (suspends) await this.blocks.block(body.userId);
     const result = await this.db
       .transaction(async (tx) => {
+        // 관리자 권한 회수와 같은 순서(관리자 행 → 대상)로 잠가 서로 정지해도 활동 중인 관리자가 남는다
+        const admins = suspends
+          ? await tx
+              .select({ id: users.id, status: users.status })
+              .from(users)
+              .where(eq(users.isAdmin, true))
+              .for('update')
+          : [];
         const [user] = await tx.select().from(users).where(eq(users.id, body.userId)).for('update');
         if (!user || user.status === 'WITHDRAWN') throw AdminUserErrors.userNotFound();
+        if (
+          suspends &&
+          user.isAdmin &&
+          admins.every((a) => a.id === user.id || a.status !== 'ACTIVE')
+        ) {
+          throw SanctionErrors.lastAdmin();
+        }
 
         let revokedXp: number | null = null;
         if (body.type === 'XP_REVOKE') {
@@ -88,11 +109,18 @@ export class AdminSanctionsService {
           }
         }
         const until = body.type === 'SUSPEND' ? new Date(body.suspendedUntil as string) : null;
+        // 이미 더 길게(영구 포함) 정지돼 있으면 줄이지 않는다
+        const keepsLonger =
+          body.type === 'SUSPEND' &&
+          user.status === 'SUSPENDED' &&
+          (user.suspendedUntil === null || (until !== null && user.suspendedUntil >= until));
         if (suspends) {
-          await tx
-            .update(users)
-            .set({ status: 'SUSPENDED', suspendedUntil: until, suspendReason: body.reason })
-            .where(eq(users.id, user.id));
+          if (!keepsLonger) {
+            await tx
+              .update(users)
+              .set({ status: 'SUSPENDED', suspendedUntil: until, suspendReason: body.reason })
+              .where(eq(users.id, user.id));
+          }
           await this.sessions.revokeAll(user.id, tx);
         }
         await tx.insert(sanctions).values({

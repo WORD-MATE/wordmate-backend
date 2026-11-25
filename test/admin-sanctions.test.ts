@@ -178,6 +178,32 @@ describe('제재', () => {
     expect(account).toMatchObject({ status: 'SUSPENDED', suspendedUntil: null });
   });
 
+  it('이미 더 길게 정지돼 있으면 새 기간 정지로 줄이지 않는다', async () => {
+    const user = await makeUser();
+    expect((await sanction({ userId: user.userId, type: 'BAN', reason: '영구' })).statusCode).toBe(
+      201,
+    );
+    expect(
+      (
+        await sanction({
+          userId: user.userId,
+          type: 'SUSPEND',
+          reason: '추가 신고',
+          suspendedUntil: inAnHour(),
+        })
+      ).statusCode,
+    ).toBe(201);
+    const [account] = await db.select().from(users).where(eq(users.id, user.userId));
+    expect(account).toMatchObject({
+      status: 'SUSPENDED',
+      suspendedUntil: null,
+      suspendReason: '영구',
+    });
+    expect(await db.select().from(sanctions).where(eq(sanctions.userId, user.userId))).toHaveLength(
+      2,
+    );
+  });
+
   it('잘못된 요청과 자기 자신', async () => {
     const user = await makeUser();
     for (const body of [

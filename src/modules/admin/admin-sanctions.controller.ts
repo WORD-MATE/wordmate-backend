@@ -18,7 +18,7 @@ export class AdminSanctionsController {
   @ApiOperation({
     summary: '제재',
     description:
-      'WARNING·XP_REVOKE(가진 만큼만 회수)는 SANCTION 알림, SUSPEND(기간 필수)·BAN은 계정 정지와 모든 세션 폐기(사유는 로그인 때 안내). 409 ADMIN_SELF_ACTION, 404 USER_NOT_FOUND',
+      'WARNING·XP_REVOKE(가진 만큼만 회수)는 SANCTION 알림, SUSPEND(기간 필수)·BAN은 계정 정지와 모든 세션 폐기(사유는 로그인 때 안내). 이미 더 길게 정지돼 있으면 기간을 줄이지 않음. 409 ADMIN_SELF_ACTION / ADMIN_LAST_ADMIN(활동 중인 마지막 관리자), 404 USER_NOT_FOUND',
   })
   @Post()
   @Idempotent()
