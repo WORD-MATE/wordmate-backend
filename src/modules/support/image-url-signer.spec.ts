@@ -4,6 +4,7 @@ import {
   IMAGE_URL_TTL_SECONDS,
   imageUrlQuery,
   isValidImageSignature,
+  signImage,
 } from './image-url-signer.js';
 
 const secret = deriveSigningSecret(undefined, 'test-private-key');
@@ -42,5 +43,17 @@ describe('이미지 주소 서명', () => {
     const other = deriveSigningSecret('x'.repeat(32), 'test-private-key');
     expect(isValidImageSignature(other, imageId, String(exp), sig, now)).toBe(false);
     expect(deriveSigningSecret(undefined, 'another-key').equals(secret)).toBe(false);
+  });
+});
+
+describe('signImage', () => {
+  it('같은 입력이면 같은 서명이고, 이미지·만료·비밀값 중 하나만 달라도 바뀐다', () => {
+    const exp = 1_800_000_000;
+    const sig = signImage(secret, imageId, exp);
+    expect(signImage(secret, imageId, exp)).toBe(sig);
+    expect(sig).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(signImage(secret, imageId, exp + 1)).not.toBe(sig);
+    expect(signImage(secret, `${imageId.slice(0, -1)}2`, exp)).not.toBe(sig);
+    expect(signImage(deriveSigningSecret(undefined, 'other-key'), imageId, exp)).not.toBe(sig);
   });
 });

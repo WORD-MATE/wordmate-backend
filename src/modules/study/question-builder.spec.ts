@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildQuestion, pickDistractors, type QuizWord, shuffled } from './question-builder.js';
+import {
+  buildQuestion,
+  pickDistractors,
+  type QuizWord,
+  questionTypeOf,
+  shuffled,
+} from './question-builder.js';
 
 const word = (id: string, english: string, meanings: string[], packId = 'p1'): QuizWord => ({
   id,
@@ -102,5 +108,13 @@ describe('shuffled', () => {
     const result = shuffled(items);
     expect(items).toEqual([1, 2, 3, 4, 5]);
     expect([...result].sort()).toEqual(items);
+  });
+});
+
+describe('questionTypeOf', () => {
+  it('플래시카드는 오답 유형이 없고, 나머지는 방향_방식', () => {
+    expect(questionTypeOf('FLASHCARD', 'EN_TO_KO')).toBeNull();
+    expect(questionTypeOf('CHOICE', 'EN_TO_KO')).toBe('EN_TO_KO_CHOICE');
+    expect(questionTypeOf('TYPING', 'KO_TO_EN')).toBe('KO_TO_EN_TYPING');
   });
 });
