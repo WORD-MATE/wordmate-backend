@@ -70,10 +70,13 @@ export class StudyAnswersService {
       const graded = this.grade(session, question, body);
       const counted = body.elapsedMs >= MIN_COUNTED_ELAPSED_MS;
       await this.saveAnswer(tx, session, body, { graded, counted, replaced: Boolean(previous) });
-      const word = await this.recordProgress(tx, user.userId, session, question, {
-        correct: graded,
-        counted,
-      });
+      // 다시 보낸 플래시카드는 답만 고치고 진도는 처음 답 기준으로 둔다 (다시 보낼 때마다 쌓이지 않게)
+      const word = previous
+        ? null
+        : await this.recordProgress(tx, user.userId, session, question, {
+            correct: graded,
+            counted,
+          });
 
       return {
         index: body.index,
