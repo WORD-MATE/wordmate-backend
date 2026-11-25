@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import {
   CreateForbiddenWord,
@@ -14,7 +15,6 @@ import {
 } from './admin-forbidden-words.schemas.js';
 import { AdminForbiddenWordsService } from './admin-forbidden-words.service.js';
 
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 const WordIdParam = () => ZodParam('wordId', z.uuid());
 
 @ApiTags('admin')
@@ -39,9 +39,10 @@ export class AdminForbiddenWordsController {
   @ZodResponse(ForbiddenWordCreated, { status: 201 })
   create(
     @ZodBody(CreateForbiddenWord) body: z.infer<typeof CreateForbiddenWord>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ) {
-    return this.words.create(currentUser(request), body, request);
+    return this.words.create(user, body, request);
   }
 
   @ApiOperation({
@@ -53,15 +54,20 @@ export class AdminForbiddenWordsController {
   async update(
     @WordIdParam() wordId: string,
     @ZodBody(UpdateForbiddenWord) body: z.infer<typeof UpdateForbiddenWord>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ): Promise<void> {
-    await this.words.update(currentUser(request), wordId, body.word, request);
+    await this.words.update(user, wordId, body.word, request);
   }
 
   @ApiOperation({ summary: '금칙어 삭제', description: '404 ADMIN_FORBIDDEN_WORD_NOT_FOUND' })
   @Delete(':wordId')
   @HttpCode(204)
-  async remove(@WordIdParam() wordId: string, @Req() request: FastifyRequest): Promise<void> {
-    await this.words.remove(currentUser(request), wordId, request);
+  async remove(
+    @WordIdParam() wordId: string,
+    @CurrentUser() user: AuthUser,
+    @Req() request: FastifyRequest,
+  ): Promise<void> {
+    await this.words.remove(user, wordId, request);
   }
 }

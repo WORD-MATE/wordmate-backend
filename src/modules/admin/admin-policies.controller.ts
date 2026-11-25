@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { ZodBody, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import {
   AdminPolicyList,
@@ -35,8 +36,9 @@ export class AdminPoliciesController {
   @ZodResponse(PolicyCreated, { status: 201 })
   create(
     @ZodBody(CreatePolicy) body: z.infer<typeof CreatePolicy>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ) {
-    return this.policies.create(request.user as AuthUser, body, request);
+    return this.policies.create(user, body, request);
   }
 }

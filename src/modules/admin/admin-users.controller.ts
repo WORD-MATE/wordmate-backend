@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Auth } from '../../common/auth/auth.decorator.js';
 import type { AuthUser } from '../../common/auth/auth-user.js';
+import { CurrentUser } from '../../common/auth/current-user.decorator.js';
 import { Idempotent } from '../../common/idempotency/idempotent.decorator.js';
 import { ZodBody, ZodParam, ZodQuery, ZodResponse } from '../../common/zod/decorators.js';
 import { TeacherClassList } from '../classes/classes.schemas.js';
@@ -20,7 +21,6 @@ import {
 } from './admin-users.schemas.js';
 import { AdminUsersService } from './admin-users.service.js';
 
-const currentUser = (request: FastifyRequest): AuthUser => request.user as AuthUser;
 const UserIdParam = () => ZodParam('userId', z.uuid());
 
 @ApiTags('admin')
@@ -37,9 +37,10 @@ export class AdminUsersController {
   @ZodResponse(AdminUserPage)
   search(
     @ZodQuery(AdminUserQuery) query: z.infer<typeof AdminUserQuery>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ) {
-    return this.users.search(currentUser(request), query, request);
+    return this.users.search(user, query, request);
   }
 
   @ApiOperation({
@@ -48,8 +49,12 @@ export class AdminUsersController {
   })
   @Get(':userId')
   @ZodResponse(AdminUserDetail)
-  detail(@UserIdParam() userId: string, @Req() request: FastifyRequest) {
-    return this.users.detail(currentUser(request), userId, request);
+  detail(
+    @UserIdParam() userId: string,
+    @CurrentUser() user: AuthUser,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.users.detail(user, userId, request);
   }
 
   @ApiOperation({
@@ -63,9 +68,9 @@ export class AdminUsersController {
   async setStatus(
     @UserIdParam() userId: string,
     @ZodBody(SetUserStatus) body: z.infer<typeof SetUserStatus>,
+    @CurrentUser() admin: AuthUser,
     @Req() request: FastifyRequest,
   ): Promise<void> {
-    const admin = currentUser(request);
     if (body.status === 'ACTIVE') {
       await this.sanctions.unsuspend(admin, userId, body.reason, request);
       return;
@@ -91,9 +96,10 @@ export class AdminUsersController {
   async setAdmin(
     @UserIdParam() userId: string,
     @ZodBody(SetAdmin) body: z.infer<typeof SetAdmin>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ): Promise<void> {
-    await this.users.setAdmin(currentUser(request), userId, body.isAdmin, request);
+    await this.users.setAdmin(user, userId, body.isAdmin, request);
   }
 
   @ApiOperation({
@@ -105,9 +111,10 @@ export class AdminUsersController {
   setClasses(
     @UserIdParam() userId: string,
     @ZodBody(SetUserClasses) body: z.infer<typeof SetUserClasses>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ) {
-    return this.users.setClasses(currentUser(request), userId, body.classIds, request);
+    return this.users.setClasses(user, userId, body.classIds, request);
   }
 
   @ApiOperation({
@@ -122,8 +129,9 @@ export class AdminUsersController {
   adjustXp(
     @UserIdParam() userId: string,
     @ZodBody(XpAdjustment) body: z.infer<typeof XpAdjustment>,
+    @CurrentUser() user: AuthUser,
     @Req() request: FastifyRequest,
   ) {
-    return this.users.adjustXp(currentUser(request), userId, body, request);
+    return this.users.adjustXp(user, userId, body, request);
   }
 }
