@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Controller, Get, Req } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { eq } from 'drizzle-orm';
@@ -6,7 +6,7 @@ import type { FastifyRequest } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AppConfigService } from '../src/common/app-config/app-config.service.js';
 import { type Database, DB } from '../src/infra/db/db.module.js';
-import { users } from '../src/infra/db/schema/index.js';
+import { refreshTokens, users } from '../src/infra/db/schema/index.js';
 import type { DataGsmProfile } from '../src/modules/auth/datagsm/datagsm.client.js';
 import { DataGsmClient } from '../src/modules/auth/datagsm/datagsm.client.js';
 import { createTestApp, inject } from './support/create-test-app.js';
@@ -172,7 +172,18 @@ describe('DataGSM 로그인·토큰 재발급·로그아웃', () => {
     expect((await login()).statusCode).toBe(200);
   });
 
-  it('리프레시 토큰을 회전하고, 이미 쓴 토큰이 다시 오면 기기의 토큰 전체를 폐기한다', async () => {
+  it('여러 탭이 같은 토큰으로 동시에 갱신해도 로그아웃되지 않는다', async () => {
+    const { refreshToken: first } = (await login()).json();
+
+    const results = await Promise.all([refresh(first), refresh(first)]);
+    expect(results.map((r) => r.statusCode)).toEqual([200, 200]);
+    const [a, b] = results.map((r) => r.json().refreshToken as string) as [string, string];
+    expect(a).not.toBe(b);
+    expect((await refresh(a)).statusCode).toBe(200);
+    expect((await refresh(b)).statusCode).toBe(200);
+  });
+
+  it('리프레시 토큰을 회전하고, 쓴 지 유예 시간이 지난 토큰이 다시 오면 기기의 토큰 전체를 폐기한다', async () => {
     const { refreshToken: first } = (await login()).json();
 
     const rotated = await refresh(first);
@@ -180,6 +191,10 @@ describe('DataGSM 로그인·토큰 재발급·로그아웃', () => {
     const second = rotated.json().refreshToken;
     expect(second).not.toBe(first);
 
+    await db
+      .update(refreshTokens)
+      .set({ usedAt: new Date(Date.now() - 11_000) })
+      .where(eq(refreshTokens.tokenHash, createHash('sha256').update(first).digest('hex')));
     const reused = await refresh(first);
     expect(reused.statusCode).toBe(401);
     expect(reused.json().code).toBe('AUTH_REFRESH_REUSED');

@@ -9,6 +9,9 @@ import { newId } from '../../infra/db/uuid.js';
 
 export const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+/** 여러 탭이 같은 토큰으로 동시에 갱신해도 로그아웃되지 않게, 쓴 직후 이 시간 안의 재사용은 탈취로 보지 않는다 */
+export const REFRESH_REUSE_GRACE_MS = 10 * 1000;
+
 export const CLEARED_PUSH = {
   pushType: null,
   pushToken: null,
@@ -52,7 +55,10 @@ export class SessionService {
         .for('update');
 
       if (!row || row.device.revokedAt) return { kind: 'expired' } as const;
-      if (row.token.usedAt) {
+      const reusedLate =
+        row.token.usedAt !== null &&
+        now.getTime() - row.token.usedAt.getTime() > REFRESH_REUSE_GRACE_MS;
+      if (reusedLate) {
         await tx
           .update(devices)
           .set({ revokedAt: now, ...CLEARED_PUSH })
@@ -61,7 +67,13 @@ export class SessionService {
       }
       if (row.token.expiresAt <= now) return { kind: 'expired' } as const;
 
-      await tx.update(refreshTokens).set({ usedAt: now }).where(eq(refreshTokens.id, row.token.id));
+      // 유예 시간 안의 재사용이면 새 토큰만 하나 더 준다 (먼저 받은 토큰도 그대로 쓸 수 있다)
+      if (!row.token.usedAt) {
+        await tx
+          .update(refreshTokens)
+          .set({ usedAt: now })
+          .where(eq(refreshTokens.id, row.token.id));
+      }
       await tx.update(devices).set({ lastUsedAt: now }).where(eq(devices.id, row.device.id));
       const next = await this.issue(tx, row.device.id, now);
       return {
