@@ -9,7 +9,9 @@ import { type Database, DB } from '../src/infra/db/db.module.js';
 import {
   dailyStudiedWords,
   dailyStudyStats,
+  devices,
   packs,
+  refreshTokens,
   studyRecordItems,
   studyRecords,
   studySessions,
@@ -201,11 +203,13 @@ describe('정리 작업', () => {
     const result = await processor.process({ name: MaintenanceJob.dailyCleanup } as Job);
     expect(Object.keys(result).sort()).toEqual([
       'expiredSessions',
+      'purgedDevices',
       'purgedFavorites',
       'purgedInquiryImages',
       'purgedJobRuns',
       'purgedNotifications',
       'purgedPractices',
+      'purgedRefreshTokens',
       'purgedSessions',
       'purgedWithdrawnSuspensions',
     ]);
@@ -238,5 +242,47 @@ describe('정리 작업', () => {
       .from(wordFavorites)
       .where(eq(wordFavorites.userId, user.userId));
     expect(left.map((f) => f.wordId)).toEqual([kept]);
+  });
+  it('만료된 리프레시 토큰과 폐기한 지 30일 지난 기기를 지운다', async () => {
+    const user = await makeUser();
+    const now = new Date();
+    const [live, old] = [newId(), newId()];
+    await db.insert(devices).values([
+      { id: live, userId: user.userId, platform: 'WEB', lastUsedAt: now },
+      {
+        id: old,
+        userId: user.userId,
+        platform: 'WEB',
+        lastUsedAt: now,
+        revokedAt: new Date(now.getTime() - 31 * DAY_MS),
+      },
+    ]);
+    const token = (deviceId: string, expiresAt: Date) => ({
+      deviceId,
+      tokenHash: newId().replaceAll('-', '').padEnd(64, '0'),
+      expiresAt,
+    });
+    await db
+      .insert(refreshTokens)
+      .values([
+        token(live, new Date(now.getTime() - 1000)),
+        token(live, new Date(now.getTime() + DAY_MS)),
+        token(old, new Date(now.getTime() + DAY_MS)),
+      ]);
+
+    expect(await maintenance.purgeRefreshTokens(now)).toBeGreaterThanOrEqual(1);
+    expect(await maintenance.purgeRevokedDevices(now)).toBeGreaterThanOrEqual(1);
+
+    const left = await db
+      .select({ deviceId: refreshTokens.deviceId, expiresAt: refreshTokens.expiresAt })
+      .from(refreshTokens)
+      .where(inArray(refreshTokens.deviceId, [live, old]));
+    expect(left).toHaveLength(1);
+    expect(left[0]?.deviceId).toBe(live);
+    expect(
+      (
+        await db.select({ id: devices.id }).from(devices).where(eq(devices.userId, user.userId))
+      ).map((d) => d.id),
+    ).toEqual([live]);
   });
 });

@@ -2,9 +2,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, isNotNull, lt, lte, sql } from 'drizzle-orm';
 import { type Database, DB } from '../../infra/db/db.module.js';
 import {
+  devices,
   jobRuns,
   notifications,
   practiceSessions,
+  refreshTokens,
   studySessions,
   withdrawnSuspensions,
   wordFavorites,
@@ -16,6 +18,9 @@ import { NOTIFICATION_RETENTION_DAYS } from '../notifications/notification-rules
 export const ENDED_SESSION_RETENTION_DAYS = 7;
 const BATCH = 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** 로그아웃·정지로 폐기한 기기를 남겨 두는 기간 (기기 목록·감사 확인용) */
+const REVOKED_DEVICE_RETENTION_DAYS = 30;
 
 /** 정기 작업 실행 기록 보관 기간 */
 const JOB_RUN_RETENTION_DAYS = 7;
@@ -120,6 +125,45 @@ export class MaintenanceService {
       const [result] = await this.db.delete(jobRuns).where(
         inArray(
           jobRuns.id,
+          rows.map((row) => row.id),
+        ),
+      );
+      return result.affectedRows;
+    });
+  }
+
+  /** 만료된 리프레시 토큰은 재사용 감지에도 쓰이지 않으므로 지운다 (갱신할 때마다 한 줄씩 쌓인다) */
+  async purgeRefreshTokens(now = new Date()): Promise<number> {
+    return inBatches(async () => {
+      const rows = await this.db
+        .select({ id: refreshTokens.id })
+        .from(refreshTokens)
+        .where(lt(refreshTokens.expiresAt, now))
+        .limit(BATCH);
+      if (rows.length === 0) return 0;
+      const [result] = await this.db.delete(refreshTokens).where(
+        inArray(
+          refreshTokens.id,
+          rows.map((row) => row.id),
+        ),
+      );
+      return result.affectedRows;
+    });
+  }
+
+  /** 폐기한 지 오래된 기기는 지운다 (남은 리프레시 토큰도 함께 지워진다) */
+  async purgeRevokedDevices(now = new Date()): Promise<number> {
+    const before = new Date(now.getTime() - REVOKED_DEVICE_RETENTION_DAYS * DAY_MS);
+    return inBatches(async () => {
+      const rows = await this.db
+        .select({ id: devices.id })
+        .from(devices)
+        .where(lt(devices.revokedAt, before))
+        .limit(BATCH);
+      if (rows.length === 0) return 0;
+      const [result] = await this.db.delete(devices).where(
+        inArray(
+          devices.id,
           rows.map((row) => row.id),
         ),
       );
