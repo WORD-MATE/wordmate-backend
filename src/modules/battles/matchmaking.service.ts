@@ -175,6 +175,8 @@ export class MatchmakingService implements OnModuleInit, BeforeApplicationShutdo
         await this.matchQueue.clearFound([waiting.userId]);
         return;
       }
+      // 마지막 시도 뒤에 또 짝지으면 그 상대는 대기열에서 빠진 채 결과를 받지 못한다
+      if (attempt === PAIR_ATTEMPTS - 1) break;
       // 처리 중 표시는 그대로 둔 채(취소 요청이 사이에 끼어도 처리 중으로 보이게) 다음 대기자를 본다.
       // 그사이 생긴 차단도 반영한다
       waiting.excluded = await this.excluded(waiting.userId);

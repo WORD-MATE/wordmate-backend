@@ -78,6 +78,8 @@ export class MaintenanceProcessor extends WorkerHost implements OnApplicationBoo
           purgedJobRuns: await this.maintenance.purgeJobRuns(),
           purgedInquiryImages: await this.inquiries.sweepOrphanImages(),
           purgedWithdrawnSuspensions: await this.maintenance.purgeWithdrawnSuspensions(),
+          purgedRefreshTokens: await this.maintenance.purgeRefreshTokens(),
+          purgedDevices: await this.maintenance.purgeRevokedDevices(),
         };
       default:
         // 같은 큐에 작업을 추가하고 여기 처리를 빠뜨리면 조용히 다른 작업이 돌지 않게 실패시킨다

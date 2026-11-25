@@ -61,7 +61,7 @@ export class StudyAnswersService {
       }
 
       const [previous] = await tx
-        .select({ idx: studyAnswers.idx })
+        .select({ known: studyAnswers.known, counted: studyAnswers.counted })
         .from(studyAnswers)
         .where(and(eq(studyAnswers.sessionId, session.id), eq(studyAnswers.idx, body.index)));
       // FLASHCARD는 다시 보내면 덮어쓴다
@@ -70,10 +70,14 @@ export class StudyAnswersService {
       const graded = this.grade(session, question, body);
       const counted = body.elapsedMs >= MIN_COUNTED_ELAPSED_MS;
       await this.saveAnswer(tx, session, body, { graded, counted, replaced: Boolean(previous) });
-      const word = await this.recordProgress(tx, user.userId, session, question, {
-        correct: graded,
-        counted,
-      });
+      // 같은 답을 다시 보내면 진도를 또 쌓지 않는다 (고친 답은 반영한다)
+      const unchanged = previous?.known === (body.known ?? null) && previous?.counted === counted;
+      const word = unchanged
+        ? null
+        : await this.recordProgress(tx, user.userId, session, question, {
+            correct: graded,
+            counted,
+          });
 
       return {
         index: body.index,

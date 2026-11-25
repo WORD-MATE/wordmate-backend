@@ -16,6 +16,8 @@ import { AppException, CommonErrors } from '../errors/app-exception.js';
 import { IDEMPOTENT, type IdempotentOptions } from './idempotent.decorator.js';
 
 const TTL_SECONDS = 24 * 60 * 60;
+/** 처리 중에 서버가 꺼져 지우지 못해도 같은 키로 다시 보낼 수 있게 처리 중 표시는 짧게 둔다 */
+const PROCESSING_TTL_SECONDS = 5 * 60;
 const PROCESSING = '__processing__';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -94,7 +96,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
   }
 
   private async acquire(key: string): Promise<Stored | null> {
-    const acquired = await this.valkey.set(key, PROCESSING, 'EX', TTL_SECONDS, 'NX');
+    const acquired = await this.valkey.set(key, PROCESSING, 'EX', PROCESSING_TTL_SECONDS, 'NX');
     if (acquired) return null;
 
     const value = await this.valkey.get(key);

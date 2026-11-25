@@ -203,6 +203,26 @@ describe('관리자 사용자 관리', () => {
     expect(await actionsBy(admin.userId)).toContain('XP_ADJUST');
   });
 
+  it('회수된 관리자는 이미 받은 토큰으로도 관리자 API를 쓰지 못하고, 다시 맡기면 쓸 수 있다', async () => {
+    const student = await makeUser();
+    const asAdmin = { ...student, isAdmin: true };
+    const grant = (isAdmin: boolean) =>
+      call(admin, 'PUT', `/admin/users/${student.userId}/admin`, { isAdmin });
+
+    expect((await grant(true)).statusCode).toBe(204);
+    expect((await call(asAdmin, 'GET', '/admin/users')).statusCode).toBe(200);
+    expect((await grant(false)).statusCode).toBe(204);
+    expect((await call(asAdmin, 'GET', '/admin/users')).statusCode).toBe(403);
+    expect(
+      (await call(asAdmin, 'PUT', `/admin/users/${student.userId}/admin`, { isAdmin: true }))
+        .statusCode,
+    ).toBe(403);
+
+    expect((await grant(true)).statusCode).toBe(204);
+    expect((await call(asAdmin, 'GET', '/admin/users')).statusCode).toBe(200);
+    expect((await grant(false)).statusCode).toBe(204);
+  });
+
   it('관리자만 쓸 수 있다', async () => {
     const student = await makeUser();
     expect((await call(student, 'GET', '/admin/users')).statusCode).toBe(403);

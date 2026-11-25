@@ -84,7 +84,7 @@ export class StudySessionsService {
 
     const ordered = body.shuffle ? shuffled(candidates) : candidates;
     const selected = ordered.slice(0, body.questionCount ?? ordered.length);
-    const questions = await this.buildQuestions(body, selected, candidates);
+    const questions = await this.buildQuestions(user.userId, body, selected, candidates);
 
     const sessionId = newId();
     try {
@@ -327,6 +327,7 @@ export class StudySessionsService {
    * (즐겨찾기처럼 여러 팩에 걸친 학습에서 팩 단어가 4개 미만인 경우)
    */
   private async buildQuestions(
+    userId: string,
     body: StartStudy,
     selected: QuizWord[],
     candidates: QuizWord[],
@@ -337,10 +338,18 @@ export class StudySessionsService {
         poolsByPack.set(candidates[0]?.packId as string, candidates);
       } else {
         const packIds = [...new Set(selected.map((word) => word.packId))];
+        // 대결에서 틀린 남의 비공개 팩 단어는 보기로 쓰지 않는다 (그 팩의 다른 단어가 드러난다)
         const packWords = await this.db
           .select(quizWordColumns)
           .from(words)
-          .where(and(inArray(words.packId, packIds), isNull(words.deletedAt)));
+          .innerJoin(packs, eq(packs.id, words.packId))
+          .where(
+            and(
+              inArray(words.packId, packIds),
+              isNull(words.deletedAt),
+              or(eq(packs.type, 'DEFAULT'), eq(packs.ownerUserId, userId)),
+            ),
+          );
         for (const word of packWords) {
           const pool = poolsByPack.get(word.packId) ?? [];
           pool.push(word);

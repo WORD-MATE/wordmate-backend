@@ -37,7 +37,10 @@ export const refreshTokens = mysqlTable(
     usedAt: datetime('used_at', { mode: 'date', fsp: 3 }),
     createdAt: timestamps.createdAt,
   },
-  (t) => [index('refresh_tokens_device_idx').on(t.deviceId)],
+  (t) => [
+    index('refresh_tokens_device_idx').on(t.deviceId),
+    index('refresh_tokens_expires_idx').on(t.expiresAt),
+  ],
 );
 
 export type Device = typeof devices.$inferSelect;

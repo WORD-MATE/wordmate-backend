@@ -188,6 +188,26 @@ describe('학습 답안 제출', () => {
     expect((await answer(user, sessionId, { index: 1, known: true })).statusCode).toBe(404);
   });
 
+  it('플래시카드에 같은 답을 다시 보내면 진도를 또 쌓지 않고, 고친 답은 반영한다', async () => {
+    const user = await makeUser();
+    const packId = await createPack(user);
+    const { sessionId } = await start(user, packId, 'FLASHCARD');
+    const progress = async () =>
+      db
+        .select({
+          totalCorrect: userWordProgress.totalCorrect,
+          totalWrong: userWordProgress.totalWrong,
+        })
+        .from(userWordProgress)
+        .where(eq(userWordProgress.userId, user.userId));
+
+    await answer(user, sessionId, { index: 0, known: false });
+    await answer(user, sessionId, { index: 0, known: false });
+    expect(await progress()).toEqual([{ totalCorrect: 0, totalWrong: 1 }]);
+    await answer(user, sessionId, { index: 0, known: true });
+    expect(await progress()).toEqual([{ totalCorrect: 1, totalWrong: 1 }]);
+  });
+
   it('답안은 분당 기본 한도(120)를 넘겨 몰아서 보내도 막히지 않는다', async () => {
     const user = await makeUser();
     const packId = await createPack(user, 150);
